@@ -1,5 +1,5 @@
 Name:				uhc-util
-Version:			0.1.0.0
+Version:			0.1.0.1
 cabal-version:      >= 1.6
 License:			BSD3
 Copyright:			Utrecht University, Department of Information and Computing Sciences, Software Technology group
@@ -18,7 +18,7 @@ library
     base >= 4 && < 5,
     mtl >= 2 && < 3,
     fgl >= 5.4 && < 6.0,
-    directory >= 1.1 && < 1.2,
+    directory >= 1.2 && < 2,
     hashable >= 1.1 && < 1.2,
     old-time >= 1.1 && < 1.2,
     containers >= 0.4 && < 0.5,
