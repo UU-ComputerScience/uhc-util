@@ -36,6 +36,8 @@ module UHC.Util.FPath
   , filePathMkPrefix, filePathUnPrefix
   , filePathCoalesceSeparator
   , filePathMkAbsolute, filePathUnAbsolute
+  
+  , fpathGetModificationTime
   )
 where
 
@@ -46,6 +48,7 @@ import System.IO
 import System.Directory
 
 import UHC.Util.Utils
+import UHC.Util.Time
 
 -------------------------------------------------------------------------------------------
 -- Making prefix and inverse, where a prefix has a tailing '/'
@@ -351,3 +354,11 @@ searchPathForReadableFile paths suffs fp
   = do fs <- searchPathForReadableFiles True paths suffs fp
        return (listToMaybe fs)
 
+-------------------------------------------------------------------------------------------
+-- Get modification time, with old-time + time compatibility
+-------------------------------------------------------------------------------------------
+
+fpathGetModificationTime :: FPath -> IO UTCTime
+fpathGetModificationTime fp = do let fn = fpathToStr fp
+                                 t <- getModificationTime fn
+                                 return (toUTCTime t)

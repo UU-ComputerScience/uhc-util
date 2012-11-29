@@ -19,15 +19,15 @@ library
     mtl >= 2 && < 3,
     fgl >= 5.4 && < 6.0,
     hashable >= 1.1 && < 1.2,
-    containers >= 0.4 && < 0.5,
+    containers >= 0.4 && < 0.6,
     directory >= 1.1 && < 2,
-    array >= 0.4 && < 0.5,
+    array >= 0.3 && < 0.5,
     process >= 1.1 && < 1.2,
     binary >= 0.5 && < 1,
     bytestring >= 0.9 && < 1,
     uulib >= 0.9 && < 1,
     time-compat >= 0.1.0.1 && < 0.2,
-    time >= 1.4 && < 2
+    time >= 1.2 && < 1.5
   Exposed-Modules:
     UHC.Util.AGraph,
     UHC.Util.Binary,
