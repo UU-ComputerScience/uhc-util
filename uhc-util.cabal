@@ -13,33 +13,21 @@ Category:			Development
 Description:		General purpose utilities for UHC and related tools
 Synopsis:			UHC utilities
 
-Flag directory-uses-UTCTime
-  Description: Use the directory version which uses UTCTime
-  Default:     True
-
 library
-  if flag(directory-uses-UTCTime)
-    build-depends:
-      directory >= 1.2 && < 2,
-      time >= 1.4 && < 2
-    cpp-options:
-      -DDIRECTORY_USES_UTCTIME
-  else
-    build-depends:
-      directory >= 1.1 && < 1.2,
-      old-time >= 1.1 && < 1.2
   Build-Depends:
     base >= 4 && < 5,
     mtl >= 2 && < 3,
     fgl >= 5.4 && < 6.0,
-    directory >= 1.2 && < 2,
     hashable >= 1.1 && < 1.2,
     containers >= 0.4 && < 0.5,
+    directory >= 1.1 && < 2,
     array >= 0.4 && < 0.5,
     process >= 1.1 && < 1.2,
     binary >= 0.5 && < 1,
     bytestring >= 0.9 && < 1,
-    uulib >= 0.9 && < 1
+    uulib >= 0.9 && < 1,
+    time-compat >= 0.1.0.1 && < 0.2,
+    time >= 1.4 && < 2
   Exposed-Modules:
     UHC.Util.AGraph,
     UHC.Util.Binary,

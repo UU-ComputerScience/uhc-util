@@ -2,8 +2,11 @@
 
 -- wrapping around different versions of directory, enforcing different time packages to be used.
 
+#define DIRECTORY_USES_UTCTIME 1
+
 module UHC.Util.Time
   (
+        module Data.Time.Compat,
 #	ifdef DIRECTORY_USES_UTCTIME
 		module Data.Time,
 		module Data.Time.Clock,
@@ -23,6 +26,7 @@ import Data.Time.Clock
 #else
 import System.Time
 #endif
+import Data.Time.Compat
 
 #ifdef DIRECTORY_USES_UTCTIME
 -- | a for now alias for old-time ClockTime
