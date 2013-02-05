@@ -1,5 +1,5 @@
 Name:				uhc-util
-Version:			0.1.0.2
+Version:			0.1.1.0
 cabal-version:      >= 1.6
 License:			BSD3
 Copyright:			Utrecht University, Department of Information and Computing Sciences, Software Technology group
@@ -27,7 +27,8 @@ library
     bytestring >= 0.9 && < 1,
     uulib >= 0.9 && < 1,
     time-compat >= 0.1.0.1 && < 0.2,
-    time >= 1.2 && < 1.5
+    time >= 1.2 && < 1.5,
+    syb  >= 0.3.6
   Exposed-Modules:
     UHC.Util.AGraph,
     UHC.Util.Binary,
@@ -45,7 +46,11 @@ library
     UHC.Util.Rel,
     UHC.Util.ScanUtils,
     UHC.Util.Utils,
-    UHC.Util.Time
+    UHC.Util.Time,
+    UHC.Util.VarLookup,
+    UHC.Util.VarMp,
+    UHC.Util.ScopeMapGam,
+    UHC.Util.AssocL
   Ghc-Options:		
   HS-Source-Dirs:     	src
   Build-Tools:		
