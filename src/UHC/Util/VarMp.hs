@@ -98,7 +98,7 @@ import Control.Monad
 import Data.Typeable (Typeable)
 import Data.Generics (Data)
 -- import EH100.Base.Binary
--- import EH100.Base.Serialize
+import UHC.Util.Serialize
 
 
 
@@ -562,9 +562,9 @@ instance Serialize VarMpInfo where
               5 -> liftM VMILabel   sget
               6 -> liftM VMIOffset  sget
               7 -> liftM VMIPredSeq sget
+-}
 
 instance (Ord k, Serialize k, Serialize v) => Serialize (VarMp' k v) where
   sput (VarMp a b) = sput a >> sput b
   sget = liftM2 VarMp sget sget
 
--}

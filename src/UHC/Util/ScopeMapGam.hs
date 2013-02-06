@@ -19,9 +19,8 @@ Conceptually thus the invariant is that no entry is in the map which is not in s
 {-# LANGUAGE DeriveDataTypeable #-}
 
 module UHC.Util.ScopeMapGam
-    ( SGam(..) -- constructors should not be visible
+    ( SGam
     , emptySGam
-    , SGamElt(..) -- should not be visible, but because of serialization is... for now
     , sgamFilterMapEltAccumWithKey, sgamMapEltWithKey, sgamMapThr, sgamMap
     , sgamMetaLevSingleton, sgamSingleton
     , sgamUnionWith, sgamUnion
@@ -45,7 +44,7 @@ import UHC.Util.AssocL
 -- import EH100.Base.Common
 import Data.Typeable (Typeable)
 import Data.Generics (Data)
--- import EH100.Base.Serialize
+import UHC.Util.Serialize
 import Control.Monad
 -- import EH100.Base.Binary
 
@@ -237,7 +236,6 @@ sgamNoDups :: Ord k => SGam k v -> SGam k v
 sgamNoDups g@(SGam {sgScp = scp, sgMap = m})
   = g {sgMap = mapFilterInScp' scp (\(e:_) -> [e]) m}
 
-{-
 instance (Serialize v) => Serialize (SGamElt v) where
   sput (SGamElt a b) = sput a >> sput b
   sget = liftM2 SGamElt sget sget
@@ -249,4 +247,3 @@ instance (Ord k, Serialize k, Serialize v) => Serialize (SGam k v) where
 -- instance (Binary v) => Serialize (SGamElt v)
 -- instance (Ord k, Binary k, Binary v) => Serialize (SGam k v)
 
--}
