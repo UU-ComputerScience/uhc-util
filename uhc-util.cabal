@@ -13,6 +13,10 @@ Category:			Development
 Description:		General purpose utilities for UHC and related tools
 Synopsis:			UHC utilities
 
+source-repository head
+  type:     git
+  location: git://github.com/UU-ComputerScience/uhc-utils.git
+
 library
   Build-Depends:
     base >= 4 && < 5,
