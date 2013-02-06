@@ -6,10 +6,9 @@ Insertion is efficient, lookup also, because a single Map is used.
 
 The Map holds multiple entries, each with its own scope identifier.
 An SGam holds
-\begin{itemize}
-\item a stack of scopes, encoding the nesting, where
-\item each scope holds mappings for MetaLev's
-\end{itemize}
+- a stack of scopes, encoding the nesting, where
+- each scope holds mappings for MetaLev's
+
 Results are filtered out w.r.t. this stack, i.e. are checked to be in scope.
 In principle this can be done eagerly, that is, immediately after a change in scope, in particular in sgamPop.
 After some experimentation it did turn out that doing this lazily is overall faster, that is, when the SGam is consulted (lookup, conversion to association list, etc).
@@ -20,7 +19,9 @@ Conceptually thus the invariant is that no entry is in the map which is not in s
 {-# LANGUAGE DeriveDataTypeable #-}
 
 module UHC.Util.ScopeMapGam
-    ( SGam, emptySGam
+    ( SGam(..) -- constructors should not be visible
+    , emptySGam
+    , SGamElt(..) -- should not be visible, but because of serialization is... for now
     , sgamFilterMapEltAccumWithKey, sgamMapEltWithKey, sgamMapThr, sgamMap
     , sgamMetaLevSingleton, sgamSingleton
     , sgamUnionWith, sgamUnion
@@ -47,6 +48,8 @@ import Data.Generics (Data)
 -- import EH100.Base.Serialize
 import Control.Monad
 -- import EH100.Base.Binary
+
+-- Scope Gam, a Gam with entries having a level in a scope, and the Gam a scope
 
 type Scp = [Int]									-- ^ a stack of scope idents defines what's in scope
 

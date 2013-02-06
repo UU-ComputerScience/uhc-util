@@ -1,10 +1,3 @@
-{- |
-VarLookup abstracts from a Map.
-The purpose is to be able to combine maps only for the purpose of searching without actually merging the maps.
-This then avoids the later need to unmerge such mergings.
-The class interface serves to hide this.
--}
-
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE FlexibleInstances #-}
@@ -34,6 +27,13 @@ type MetaLev = Int
 -- | Base level (of values, usually)
 metaLevVal :: MetaLev
 metaLevVal = 0
+
+{- |
+VarLookup abstracts from a Map.
+The purpose is to be able to combine maps only for the purpose of searching without actually merging the maps.
+This then avoids the later need to unmerge such mergings.
+The class interface serves to hide this.
+-}
 
 class VarLookup m k v where
   varlookupWithMetaLev :: MetaLev -> k -> m -> Maybe v
@@ -66,6 +66,13 @@ varlookupFix m = \k -> varlookup k m
 -- | simulate deletion
 varlookupFixDel :: Ord k => [k] -> VarLookupFix k v -> VarLookupFix k v
 varlookupFixDel ks f = \k -> if k `elem` ks then Nothing else f k
+
+{- |
+VarLookupCmb abstracts the 'combining' of/from a substitution.
+The interface goes along with VarLookup but is split off to avoid functional dependency restrictions.
+The purpose is to be able to combine maps only for the purpose of searching without actually merging the maps.
+This then avoids the later need to unmerge such mergings.
+-}
 
 infixr 7 |+>
 

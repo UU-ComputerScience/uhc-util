@@ -27,6 +27,7 @@ module UHC.Util.VarMp
 	-- , vmiMbTy
 	-- , tyAsVarMp', tyAsVarMp
 	-- , varmpFilterTy
+	, varmpFilter
 	, varmpDel, (|\>)
 	, varmpUnion, varmpUnions
 	--, varmpTyLookupCyc
@@ -164,6 +165,8 @@ varmpSelectMetaLev mlevs (VarMp mlev ms)
 varmpAsMap :: VarMp' k v -> (Map.Map k v, Map.Map k v -> VarMp' k v)
 varmpAsMap (VarMp mlev (m:ms)) = (m, \m' -> VarMp mlev (m':ms))
 
+-- VarMp: properties
+
 varmpSize :: VarMp' k v -> Int
 varmpSize (VarMp _ m) = sum $ map Map.size m
 
@@ -172,6 +175,8 @@ varmpKeys (VarMp _ fm) = Map.keys $ Map.unions fm
 
 varmpKeysSet :: Ord k => VarMp' k v -> Set.Set k
 varmpKeysSet (VarMp _ fm) = Set.unions $ map Map.keysSet fm
+
+-- VarMp construction
 
 varmpMetaLevSingleton :: MetaLev -> k -> v -> VarMp' k v
 varmpMetaLevSingleton mlev k v = VarMp mlev [Map.singleton k v]
@@ -202,6 +207,8 @@ varmpToAssocTyL :: VarMp' k VarMpInfo -> AssocL k Ty
 varmpToAssocTyL c = [ (v,t) | (v,VMITy t) <- varmpToAssocL c ]
 -}
 
+-- VarMp: combine
+
 infixr 7 `varmpPlus`
 
 varmpPlus :: Ord k => VarMp' k v -> VarMp' k v -> VarMp' k v
@@ -215,12 +222,6 @@ varmpUnions [ ] = emptyVarMp
 varmpUnions [x] = x
 varmpUnions l   = foldr1 varmpPlus l
 
-varmpMapMaybe :: Ord k => (a -> Maybe b) -> VarMp' k a -> VarMp' k b
-varmpMapMaybe f m = m {varmpMpL = map (Map.mapMaybe f) $ varmpMpL m}
-
-varmpMap :: Ord k => (a -> b) -> VarMp' k a -> VarMp' k b
-varmpMap f m = m {varmpMpL = map (Map.map f) $ varmpMpL m}
-
 -- | combine by taking the lowest level, adapting the lists with maps accordingly
 varmpUnionWith :: Ord k => (v -> v -> v) -> VarMp' k v -> VarMp' k v -> VarMp' k v
 varmpUnionWith f (VarMp l1 ms1) (VarMp l2 ms2)
@@ -232,8 +233,20 @@ varmpUnionWith f (VarMp l1 ms1) (VarMp l2 ms2)
         cmb ms1      []       = ms1
         cmb []       ms2      = ms2
 
+-- Fold: map
+
+varmpMapMaybe :: Ord k => (a -> Maybe b) -> VarMp' k a -> VarMp' k b
+varmpMapMaybe f m = m {varmpMpL = map (Map.mapMaybe f) $ varmpMpL m}
+
+varmpMap :: Ord k => (a -> b) -> VarMp' k a -> VarMp' k b
+varmpMap f m = m {varmpMpL = map (Map.map f) $ varmpMpL m}
+
+-- Insertion
+
 varmpInsertWith :: Ord k => (v -> v -> v) -> k -> v -> VarMp' k v -> VarMp' k v
 varmpInsertWith f k v = varmpUnionWith f (varmpSingleton k v)
+
+-- Lookup as VarLookup
 
 instance Ord k => VarLookup (VarMp' k v) k v where
   varlookupWithMetaLev l k    (VarMp vmlev ms) = lkup (l-vmlev) ms
@@ -453,6 +466,8 @@ varmpLabelLookup2 :: VarMp -> LabelVarId -> Maybe Label
 varmpLabelLookup2 m v = varmpLabelLookup v m
 -}
 
+-- VarMp stack, for nested/local behavior
+
 newtype VarMpStk' k v
   = VarMpStk [VarMp' k v]
   deriving (Show)
@@ -485,6 +500,8 @@ instance Ord k => VarLookup (VarMpStk' k v) k v where
 
 instance Ord k => VarLookupCmb (VarMpStk' k v) (VarMpStk' k v) where
   (VarMpStk s1) |+> (VarMpStk s2) = VarMpStk (s1 |+> s2)
+
+-- Pretty printing
 
 ppVarMpV :: (PP k, PP v) => VarMp' k v -> PP_Doc
 ppVarMpV = ppVarMp vlist
