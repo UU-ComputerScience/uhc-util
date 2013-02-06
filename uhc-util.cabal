@@ -31,12 +31,14 @@ library
     syb  >= 0.3.6
   Exposed-Modules:
     UHC.Util.AGraph,
+    UHC.Util.AssocL,
     UHC.Util.Binary,
     UHC.Util.CompileRun,
+    UHC.Util.Control.Monad,
     UHC.Util.Debug,
     UHC.Util.DependencyGraph,
-    UHC.Util.FPath,
     UHC.Util.FastSeq,
+    UHC.Util.FPath,
     UHC.Util.Nm,
     UHC.Util.ParseErrPrettyPrint,
     UHC.Util.ParseUtils,
@@ -45,12 +47,12 @@ library
     UHC.Util.PrettyUtils,
     UHC.Util.Rel,
     UHC.Util.ScanUtils,
-    UHC.Util.Utils,
-    UHC.Util.Time,
-    UHC.Util.VarLookup,
-    UHC.Util.VarMp,
     UHC.Util.ScopeMapGam,
-    UHC.Util.AssocL
+    UHC.Util.Serialize,
+    UHC.Util.Time,
+    UHC.Util.Utils,
+    UHC.Util.VarLookup,
+    UHC.Util.VarMp
   Ghc-Options:		
   HS-Source-Dirs:     	src
   Build-Tools:		

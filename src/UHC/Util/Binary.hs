@@ -6,6 +6,9 @@ module UHC.Util.Binary
   ( module Data.Binary
   , module Data.Binary.Get
   , module Data.Binary.Put
+  , module UHC.Util.Control.Monad
+  , module Data.Typeable
+  , module Data.Generics
 
   , hGetBinary
   , getBinaryFile
@@ -14,15 +17,29 @@ module UHC.Util.Binary
   , hPutBinary
   , putBinaryFile
   , putBinaryFPath
+
+  , putEnum, getEnum
+  , putEnum8, getEnum8
+  , putList, getList
   )
   where
 
 import qualified Data.ByteString.Lazy as L
+import Data.Typeable (Typeable,Typeable1)
+import Data.Generics (Data)
 import Data.Binary
 import Data.Binary.Put(runPut,putWord16be)
 import Data.Binary.Get(runGet,getWord16be)
 import System.IO
 import Control.Monad
+import UHC.Util.Control.Monad
+
+{-
+import Data.Generics.Aliases
+import Data.Word
+import Data.Array
+import Control.Monad
+-}
 
 import UHC.Util.FPath
 
@@ -72,4 +89,40 @@ putBinaryFPath fp pt
   = do { fpathEnsureExists fp
        ; putBinaryFile (fpathToStr fp) pt
        }
+
+-------------------------------------------------------------------------
+-- Enum based put/get
+-------------------------------------------------------------------------
+
+-- | put an Enum
+putEnum :: Enum x => x -> Put
+putEnum x = put (fromEnum x)
+
+-- | get an Enum
+getEnum :: Enum x => Get x
+getEnum = do n <- get
+             return (toEnum n)
+
+
+-- | put an Enum as Word8
+putEnum8 :: Enum x => x -> Put
+putEnum8 x = putWord8 (fromIntegral $ fromEnum x)
+
+-- | get an Enum from Word8
+getEnum8 :: Enum x => Get x
+getEnum8 = do n <- getWord8
+              return (toEnum $ fromIntegral n)
+
+-- | put a []
+putList :: (Binary a, Binary b) => (x -> Bool) -> (x -> (a,b)) -> x -> Put
+putList isNil getCons x | isNil x   = putWord8 0
+                        | otherwise = let (a,b) = getCons x in putWord8 1 >> put a >> put b
+
+-- | get a []
+getList :: (Binary a, Binary b) => x -> (a -> b -> x) -> Get x
+getList nil cons
+  = do tag <- getWord8
+       case tag of
+         0 -> return nil
+         1 -> liftM2 cons get get
 
