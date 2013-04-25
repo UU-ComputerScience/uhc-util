@@ -202,6 +202,18 @@ consecutiveBy isConsec (x:xs)  =  ys : consecutiveBy isConsec zs
                             | otherwise    = ([x],yys)
 
 -------------------------------------------------------------------------
+-- Partitioning with rebuild
+-------------------------------------------------------------------------
+
+-- | Partition, but also return a function which will rebuild according to the original ordering of list elements
+partitionAndRebuild :: (v -> Bool) -> [v] -> ([v], [v], [v'] -> [v'] -> [v'])
+partitionAndRebuild f (v:vs)
+  | f v                  = (v : vs1,     vs2, \(r:r1)   r2  -> r : mk r1 r2)
+  | otherwise            = (    vs1, v : vs2, \   r1 (r:r2) -> r : mk r1 r2)
+  where (vs1,vs2,mk) = partitionAndRebuild f vs
+partitionAndRebuild _ [] = ([], [], \_ _ -> [])
+
+-------------------------------------------------------------------------
 -- Ordering
 -------------------------------------------------------------------------
 

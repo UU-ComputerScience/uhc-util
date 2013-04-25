@@ -29,6 +29,7 @@ module UHC.Util.VarMp
 	-- , varmpFilterTy
 	, varmpFilter
 	, varmpDel, (|\>)
+	, varmpAlter
 	, varmpUnion, varmpUnions
 	--, varmpTyLookupCyc
 	--, varmpTyLookupCyc2
@@ -107,8 +108,8 @@ import UHC.Util.Serialize
 
 data VarMp' k v
   = VarMp
-      { varmpMetaLev 	:: !MetaLev				-- the base meta level
-      , varmpMpL 		:: [Map.Map k v]		-- for each level a map, starting at the base meta level
+      { varmpMetaLev 	:: !MetaLev				-- ^ the base meta level
+      , varmpMpL 		:: [Map.Map k v]		-- ^ for each level a map, starting at the base meta level
       }
   deriving ( Eq, Ord
            , Typeable, Data
@@ -138,11 +139,16 @@ varmpPartition f (VarMp l m)
   = (VarMp l p1, VarMp l p2)
   where (p1,p2) = unzip $ map (Map.partitionWithKey f) m
 
+(|\>) :: Ord k => VarMp' k v -> [k] -> VarMp' k v
+(|\>) = flip varmpDel
+
+-- | Delete
 varmpDel :: Ord k => [k] -> VarMp' k v -> VarMp' k v
 varmpDel tvL c = varmpFilter (const.not.(`elem` tvL)) c
 
-(|\>) :: Ord k => VarMp' k v -> [k] -> VarMp' k v
-(|\>) = flip varmpDel
+-- | Alter irrespective of level
+varmpAlter :: Ord k => (Maybe v -> Maybe v) -> k -> VarMp' k v -> VarMp' k v
+varmpAlter f k (VarMp l c) = VarMp l (map (Map.alter f k) c)
 
 -- shift up the level,
 -- or down when negative, throwing away the lower levels
