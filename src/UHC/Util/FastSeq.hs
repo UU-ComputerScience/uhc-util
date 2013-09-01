@@ -12,7 +12,9 @@ module UHC.Util.FastSeq
   )
   where
 
-import Prelude hiding (null,map)
+import           Prelude hiding (null,map)
+import           Data.Monoid
+import qualified Data.ListLike as LL
 import qualified Data.List as L
 import qualified UHC.Util.Utils as U
 
@@ -35,6 +37,22 @@ type Seq a = FastSeq a
 
 empty :: FastSeq a
 empty = FSeqNil
+
+-------------------------------------------------------------------------
+-- Instances
+-------------------------------------------------------------------------
+
+instance Monoid (FastSeq a) where
+  mempty  = empty
+  mappend = union
+  mconcat = unions
+
+{-
+instance LL.FoldableLL (FastSeq a) a where
+  foldl op e seq = 
+
+instance LL.ListLike (FastSeq a) a where
+-}
 
 -------------------------------------------------------------------------
 -- Observations
@@ -65,6 +83,32 @@ size (x1 ::+: x2) = size x1 + 1
 
 singleton :: a -> FastSeq a
 singleton = FSeq
+
+-------------------------------------------------------------------------
+-- Deconstruction
+-------------------------------------------------------------------------
+
+-- | View as head and tail, if possible
+viewMbCons :: FastSeq a -> Maybe (a, FastSeq a)
+viewMbCons FSeqNil         = Nothing
+viewMbCons (FSeq  x)       = Just (x, FSeqNil)
+viewMbCons (FSeqL (h:t))   = Just (h, FSeqL t)
+viewMbCons (FSeqL []   )   = Nothing
+viewMbCons (h  :+:: t )    = Just (h, t)
+viewMbCons (i  ::+: l )    = maybe (Just (l, FSeqNil)) (\(h,t) -> Just (h, t ::+: l)) $ viewMbCons i
+viewMbCons (s1 :++: s2)    = maybe (viewMbCons s2) (\(h,t) -> Just (h, t :++: s2)) $ viewMbCons s1
+
+{-
+-- | View as init and last, if possible
+viewMbSnoc :: FastSeq a -> Maybe (FastSeq a, a)
+viewMbSnoc FSeqNil         = Nothing
+viewMbSnoc (FSeqL (h:t))   = Just (h, FSeqL t)
+viewMbSnoc (FSeqL []   )   = Nothing
+viewMbSnoc (h  :+:: t )    = Just (h, t)
+viewMbSnoc (i  ::+: l )    = maybe (Just (l, FSeqNil)) (\(h,t) -> Just (h, t ::+: l)) $ viewMbSnoc i
+viewMbSnoc (s1 :++: s2)    = maybe (viewMbSnoc s2) (\(h,t) -> Just (h, t :++: s2)) $ viewMbSnoc s1
+-}
+
 
 -------------------------------------------------------------------------
 -- Conversion

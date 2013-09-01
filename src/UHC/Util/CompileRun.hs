@@ -179,7 +179,7 @@ mkEmptyCompileRun nm info
 ppCR :: (PP n,PP u) => CompileRun n u i e -> PP_Doc
 ppCR cr
   = "CR" >#< show (crState cr) >|< ":" >#<
-      (   (ppListSepVV "[" "]" "," $ map (\(n,u) -> pp n >#< "->" >#< pp u) $ Map.toList $ crCUCache $ cr)
+      (   (ppBracketsCommasBlock $ map (\(n,u) -> pp n >#< "->" >#< pp u) $ Map.toList $ crCUCache $ cr)
       >-< ppBracketsCommas (map ppBracketsCommas $ crCompileOrder $ cr)
       )
 

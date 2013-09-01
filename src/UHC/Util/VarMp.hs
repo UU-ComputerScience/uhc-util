@@ -519,10 +519,10 @@ ppVarMp ppL (VarMp mlev ms)
         ]
 
 instance (PP k, PP v) => PP (VarMp' k v) where
-  pp = ppVarMp (ppListSepFill "" "" ", ")
+  pp = ppVarMp (ppCommas')
 
 instance (PP k, PP v) => PP (VarMpStk' k v) where
-  pp (VarMpStk s) = ppListSepFill "" "" "; " $ map pp s
+  pp (VarMpStk s) = ppSemis' $ map pp s
 
 {-
 ppVarMpInfoCfgTy :: CfgPPTy -> VarMpInfo -> PP_Doc
