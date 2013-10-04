@@ -275,3 +275,13 @@ mapLookup2' f k1 k2 m1
 mapLookup2 :: (Ord k1, Ord k2) => k1 -> k2 -> Map.Map k1 (Map.Map k2 v2) -> Maybe v2
 mapLookup2 k1 k2 m1 = fmap snd $ mapLookup2' id k1 k2 m1
 {-# INLINE mapLookup2 #-}
+
+-------------------------------------------------------------------------
+-- Monad
+-------------------------------------------------------------------------
+
+-- | loop over monads yielding a Maybe from a start value, yielding the first Just or the start (when no Just is returned)
+firstMaybeM :: Monad m => a -> [a -> m (Maybe a)] -> m a
+firstMaybeM x []     = return x
+firstMaybeM x (s:ss) = do mx <- s x
+                          maybe (firstMaybeM x ss) return mx

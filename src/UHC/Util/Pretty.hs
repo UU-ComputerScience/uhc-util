@@ -30,12 +30,21 @@ module UHC.Util.Pretty
   -- * Block, horizontal/vertical as required
   , ppBlock, ppBlock'
   , ppBlockWithStrings, ppBlockWithStrings'
+  
   , ppParensCommasBlock
   , ppCurlysBlock
   , ppCurlysSemisBlock
   , ppCurlysCommasBlock
   , ppParensSemisBlock
   , ppBracketsCommasBlock
+  
+  , ppParensCommasBlockH
+  , ppCurlysBlockH
+  , ppCurlysSemisBlockH
+  , ppCurlysCommasBlockH
+  , ppParensSemisBlockH
+  , ppBracketsCommasBlockH
+  
   , ppBracketsCommasV
   
   -- * Vertical PP of list only
@@ -47,11 +56,16 @@ module UHC.Util.Pretty
   , ppSpaces
   , ppCurlysCommas, ppCurlysCommas', ppCurlysCommasWith
   , ppCurlysSemis, ppCurlysSemis'
+  , ppParensSpaces
   , ppParensCommas, ppParensCommas'
   , ppBracketsCommas
   , ppBracketsCommas'
   , ppHorizontally
   , ppListSepFill
+
+  -- * Conditional
+  , ppMbPre, ppMbPost
+  , ppListPre, ppListPost
 
   -- * Misc
   , ppDots, ppMb, ppUnless, ppWhen
@@ -67,6 +81,7 @@ module UHC.Util.Pretty
 -- import UU.Pretty
 -- import UHC.Util.Chitil.Pretty
 import UHC.Util.PrettySimple
+import UHC.Util.Utils
 import UHC.Util.FPath
 import System.IO
 import Data.List
@@ -100,26 +115,51 @@ ppListSepFill o c s pps
         l [p]     = o >|< pp p >|< c
         l (p:ps)  = hlist ((o >|< pp p) : map (s >|<) ps) >|< c
 
+ppBlock'' :: (PP ocs, PP a) => Bool -> ocs -> ocs -> ocs -> ocs -> [a] -> [PP_Doc]
+ppBlock'' _    osngl _ c _ []                   = [osngl >|< c]
+ppBlock'' _    osngl o c _ [a] | isSingleLine x = [osngl >|< x >|< c]
+                               | otherwise      = [o >|< x] ++ [pp c]
+                               where x = pp a
+ppBlock'' hori osngl o c s aa@(a:as)               -- = [o >|< a] ++ map (s >|<) as ++ [pp c]
+                               | hori && all isSingleLine xx = [osngl >|< x >|< hlist (map (s >|<) xs) >|< c]
+                               | otherwise                   = [o >|< x] ++ map (s >|<) xs ++ [pp c]
+                               where xx@(x:xs) = map pp aa
+
 ppBlock' :: (PP ocs, PP a) => ocs -> ocs -> ocs -> ocs -> [a] -> [PP_Doc]
-ppBlock' osngl _ c _ []                   = [osngl >|< c]
-ppBlock' osngl o c _ [a] | isSingleLine x = [osngl >|< x >|< c]
-                         | otherwise      = [o >|< x] ++ [pp c]
-                         where x = pp a
-ppBlock' _     o c s (a:as)               = [o >|< a] ++ map (s >|<) as ++ [pp c]
+ppBlock' = ppBlock'' False
+{-# INLINE ppBlock' #-}
+
+ppBlockH' :: (PP ocs, PP a) => ocs -> ocs -> ocs -> ocs -> [a] -> [PP_Doc]
+ppBlockH' = ppBlock'' True
+{-# INLINE ppBlockH' #-}
 
 -- | PP list with open, separator, and close in a possibly multiline block structure
 ppBlock :: (PP ocs, PP a) => ocs -> ocs -> ocs -> [a] -> PP_Doc
 ppBlock o c s = vlist . ppBlock' o o c s
 
 -- | See 'ppBlock', but with string delimiters aligned properly, yielding a list of elements
-ppBlockWithStrings' :: (PP a) => String -> String -> String -> [a] -> [PP_Doc]
-ppBlockWithStrings' o c s = ppBlock' o (pad o) c (pad s)
+ppBlockWithStrings'' :: (PP a) => Bool -> String -> String -> String -> [a] -> [PP_Doc]
+ppBlockWithStrings'' hori o c s = ppBlock'' hori o (pad o) c (pad s)
   where l = maximum $ map length [o,s]
         pad s = s ++ replicate (l - length s) ' '
+
+-- | See 'ppBlock', but with string delimiters aligned properly, yielding a list of elements
+ppBlockWithStrings' :: (PP a) => String -> String -> String -> [a] -> [PP_Doc]
+ppBlockWithStrings' = ppBlockWithStrings'' False
+{-# INLINE ppBlockWithStrings' #-}
+
+-- | See 'ppBlock', but with string delimiters aligned properly, yielding a list of elements
+ppBlockWithStringsH' :: (PP a) => String -> String -> String -> [a] -> [PP_Doc]
+ppBlockWithStringsH' = ppBlockWithStrings'' True
+{-# INLINE ppBlockWithStringsH' #-}
 
 -- | See 'ppBlock', but with string delimiters aligned properly
 ppBlockWithStrings :: (PP a) => String -> String -> String -> [a] -> PP_Doc
 ppBlockWithStrings o c s = vlist . ppBlockWithStrings' o c s
+
+-- | See 'ppBlock', but with string delimiters aligned properly
+ppBlockWithStringsH :: (PP a) => String -> String -> String -> [a] -> PP_Doc
+ppBlockWithStringsH o c s = vlist . ppBlockWithStringsH' o c s
 
 -- | PP horizontally: list separated by comma
 ppCommas :: PP a => [a] -> PP_Doc
@@ -144,28 +184,61 @@ ppSpaces = ppListSep "" "" " "
 -- | PP horizontally or vertically with "{", " ", and "}" in a possibly multiline block structure
 ppCurlysBlock :: PP a => [a] -> PP_Doc
 ppCurlysBlock = ppBlockWithStrings "{" "}" "  "
+{-# INLINE ppCurlysBlock #-}
+
+-- | PP horizontally or vertically with "{", " ", and "}" in a possibly multiline block structure
+ppCurlysBlockH :: PP a => [a] -> PP_Doc
+ppCurlysBlockH = ppBlockWithStringsH "{" "}" "  "
+{-# INLINE ppCurlysBlockH #-}
 
 -- | PP horizontally or vertically with "{", ";", and "}" in a possibly multiline block structure
 ppCurlysSemisBlock :: PP a => [a] -> PP_Doc
 ppCurlysSemisBlock = ppBlockWithStrings "{" "}" "; "
+{-# INLINE ppCurlysSemisBlock #-}
+
+-- | PP horizontally or vertically with "{", ";", and "}" in a possibly multiline block structure
+ppCurlysSemisBlockH :: PP a => [a] -> PP_Doc
+ppCurlysSemisBlockH = ppBlockWithStringsH "{" "}" "; "
+{-# INLINE ppCurlysSemisBlockH #-}
 
 -- | PP horizontally or vertically with "{", ",", and "}" in a possibly multiline block structure
 ppCurlysCommasBlock :: PP a => [a] -> PP_Doc
 ppCurlysCommasBlock = ppBlockWithStrings "{" "}" ", "
+{-# INLINE ppCurlysCommasBlock #-}
+
+-- | PP horizontally or vertically with "{", ",", and "}" in a possibly multiline block structure
+ppCurlysCommasBlockH :: PP a => [a] -> PP_Doc
+ppCurlysCommasBlockH = ppBlockWithStringsH "{" "}" ", "
+{-# INLINE ppCurlysCommasBlockH #-}
 
 -- | PP horizontally or vertically with "(", ";", and ")" in a possibly multiline block structure
 ppParensSemisBlock :: PP a => [a] -> PP_Doc
 ppParensSemisBlock = ppBlockWithStrings "(" ")" "; "
+{-# INLINE ppParensSemisBlock #-}
+
+-- | PP horizontally or vertically with "(", ";", and ")" in a possibly multiline block structure
+ppParensSemisBlockH :: PP a => [a] -> PP_Doc
+ppParensSemisBlockH = ppBlockWithStringsH "(" ")" "; "
+{-# INLINE ppParensSemisBlockH #-}
 
 -- | PP horizontally or vertically with "(", ",", and ")" in a possibly multiline block structure
 ppParensCommasBlock :: PP a => [a] -> PP_Doc
 ppParensCommasBlock = ppBlockWithStrings "(" ")" ", "
+{-# INLINE ppParensCommasBlock #-}
+
+-- | PP horizontally or vertically with "(", ",", and ")" in a possibly multiline block structure
+ppParensCommasBlockH :: PP a => [a] -> PP_Doc
+ppParensCommasBlockH = ppBlockWithStringsH "(" ")" ", "
+{-# INLINE ppParensCommasBlockH #-}
 
 -- | PP horizontally or vertically with "[", ",", and "]" in a possibly multiline block structure
-ppBracketsCommasV, ppBracketsCommasBlock :: PP a => [a] -> PP_Doc
+ppBracketsCommasV, ppBracketsCommasBlock, ppBracketsCommasBlockH :: PP a => [a] -> PP_Doc
 ppBracketsCommasBlock = ppBlockWithStrings "[" "]" ", "
-{-# DEPRECATED ppBracketsCommasV "Use ppBracketsCommasBlock" #-}
+{-# INLINE ppBracketsCommasBlock #-}
+ppBracketsCommasBlockH = ppBlockWithStringsH "[" "]" ", "
+{-# INLINE ppBracketsCommasBlockH #-}
 ppBracketsCommasV = ppBracketsCommasBlock
+{-# DEPRECATED ppBracketsCommasV "Use ppBracketsCommasBlock" #-}
 
 -- | PP horizontally with "[", ",", and "]"
 ppBracketsCommas :: PP a => [a] -> PP_Doc
@@ -174,6 +247,10 @@ ppBracketsCommas = ppListSep "[" "]" ","
 -- | PP horizontally with "[", ", ", and "]"
 ppBracketsCommas' :: PP a => [a] -> PP_Doc
 ppBracketsCommas' = ppListSep "[" "]" ", "
+
+-- | PP horizontally with "(", " ", and ")"
+ppParensSpaces :: PP a => [a] -> PP_Doc
+ppParensSpaces = ppListSep "(" ")" " "
 
 -- | PP horizontally with "(", ",", and ")"
 ppParensCommas :: PP a => [a] -> PP_Doc
@@ -278,6 +355,34 @@ aside sep l r | isSingleLine l' && isSingleLine r' = l' >|< sep >|< r'
 (>-#-<) = aside " "
 
 -------------------------------------------------------------------------
+-- Conditional
+-------------------------------------------------------------------------
+
+-- | Only prefix with a 'Maybe' and extra space when 'Just'
+ppMbPre :: (PP x, PP r) => (a -> x) -> Maybe a -> r -> PP_Doc
+ppMbPre  p = maybe pp (\v rest -> p v >#< rest)
+
+-- | Only suffix with a 'Maybe' and extra space when 'Just'
+ppMbPost :: (PP x, PP r) => (a -> x) -> Maybe a -> r -> PP_Doc
+ppMbPost p = maybe pp (\v rest -> rest >#< p v)
+
+-- | Only prefix with a list and extra space when non-empty
+ppListPre :: (PP x, PP r) => ([a] -> x) -> [a] -> r -> PP_Doc
+ppListPre p = maybeNull pp (\l rest -> p l >#< rest)
+
+-- | Only suffix with a list and extra space when non-empty
+ppListPost :: (PP x, PP r) => ([a] -> x) -> [a] -> r -> PP_Doc
+ppListPost p = maybeNull pp (\l rest -> p l >#< rest)
+
+-- | Guard around PP: if False pass through
+ppUnless :: PP x => Bool -> x -> PP_Doc
+ppUnless b x = if b then empty else pp x
+
+-- | Guard around PP: if True pass through
+ppWhen :: PP x => Bool -> x -> PP_Doc
+ppWhen b x = if b then pp x else empty
+
+-------------------------------------------------------------------------
 -- Misc
 -------------------------------------------------------------------------
 
@@ -286,12 +391,6 @@ ppDots = ppListSep "" "" "."
 
 ppMb :: PP a => Maybe a -> PP_Doc
 ppMb = maybe empty pp
-
-ppUnless :: Bool -> PP_Doc -> PP_Doc
-ppUnless b p = if b then empty else p
-
-ppWhen :: Bool -> PP_Doc -> PP_Doc
-ppWhen b p = if b then p else empty
 
 instance PP a => PP (Maybe a) where
   pp = maybe (pp "?") pp
