@@ -28,7 +28,8 @@ module UHC.Util.Pretty
   , ppVBar
   
   -- * Block, horizontal/vertical as required
-  , ppBlock, ppBlock'
+  , ppBlock, ppBlockH
+  , ppBlock'
   , ppBlockWithStrings, ppBlockWithStrings'
   
   , ppParensCommasBlock
@@ -136,6 +137,10 @@ ppBlockH' = ppBlock'' True
 -- | PP list with open, separator, and close in a possibly multiline block structure
 ppBlock :: (PP ocs, PP a) => ocs -> ocs -> ocs -> [a] -> PP_Doc
 ppBlock o c s = vlist . ppBlock' o o c s
+
+-- | PP list with open, separator, and close in a possibly multiline block structure
+ppBlockH :: (PP ocs, PP a) => ocs -> ocs -> ocs -> [a] -> PP_Doc
+ppBlockH o c s = vlist . ppBlockH' o o c s
 
 -- | See 'ppBlock', but with string delimiters aligned properly, yielding a list of elements
 ppBlockWithStrings'' :: (PP a) => Bool -> String -> String -> String -> [a] -> [PP_Doc]
@@ -342,7 +347,7 @@ infixr 2 >-|-<, >-#-<
 
 aside :: (PP a, PP b) => String -> a -> b -> PP_Doc
 aside sep l r | isSingleLine l' && isSingleLine r' = l' >|< sep >|< r'
-              | otherwise                          = l' >-< r'
+              | otherwise                          = l' >-< sep >|< r'
   where l' = pp l
         r' = pp r
 
@@ -392,11 +397,44 @@ ppDots = ppListSep "" "" "."
 ppMb :: PP a => Maybe a -> PP_Doc
 ppMb = maybe empty pp
 
+-------------------------------------------------------------------------
+-- Instances
+-------------------------------------------------------------------------
+
 instance PP a => PP (Maybe a) where
   pp = maybe (pp "?") pp
 
 instance PP Bool where
   pp = pp . show
+
+instance (PP a, PP b) => PP (a,b) where
+  pp (a,b) = "(" >|< a >-|-< "," >|< b >-|-< ")"
+
+{-
+instance (PP a, PP b, PP c) => PP (a,b,c) where
+  pp (a,b,c) = ppParensCommasBlock [a,b,c]
+
+instance (PP a, PP b, PP c, PP d) => PP (a,b,c,d) where
+  pp (a,b,c,d) = ppParensCommasBlock [a,b,c,d]
+
+instance (PP a, PP b, PP c, PP d, PP e) => PP (a,b,c,d,e) where
+  pp (a,b,c,d,e) = ppParensCommasBlock [a,b,c,d,e]
+
+instance (PP a, PP b, PP c, PP d, PP e, PP f) => PP (a,b,c,d,e,f) where
+  pp (a,b,c,d,e,f) = ppParensCommasBlock [a,b,c,d,e,f]
+
+instance (PP a, PP b, PP c, PP d, PP e, PP f, PP g) => PP (a,b,c,d,e,f,g) where
+  pp (a,b,c,d,e,f,g) = ppParensCommasBlock [a,b,c,d,e,f,g]
+
+instance (PP a, PP b, PP c, PP d, PP e, PP f, PP g, PP h) => PP (a,b,c,d,e,f,g,h) where
+  pp (a,b,c,d,e,f,g,h) = ppParensCommasBlock [a,b,c,d,e,f,g,h]
+
+instance (PP a, PP b, PP c, PP d, PP e, PP f, PP g, PP h, PP i) => PP (a,b,c,d,e,f,g,h,i) where
+  pp (a,b,c,d,e,f,g,h,i) = ppParensCommasBlock [a,b,c,d,e,f,g,h,i]
+
+instance (PP a, PP b, PP c, PP d, PP e, PP f, PP g, PP h, PP i, PP j) => PP (a,b,c,d,e,f,g,h,i,j) where
+  pp (a,b,c,d,e,f,g,h,i,j) = ppParensCommasBlock [a,b,c,d,e,f,g,h,i,j]
+-}
 
 -------------------------------------------------------------------------
 -- PP printing to file
