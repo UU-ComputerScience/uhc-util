@@ -1,5 +1,5 @@
 Name:				uhc-util
-Version:			0.1.3.0
+Version:			0.1.3.1
 cabal-version:      >= 1.6
 License:			BSD3
 Copyright:			Utrecht University, Department of Information and Computing Sciences, Software Technology group
@@ -20,18 +20,18 @@ source-repository head
 library
   Build-Depends:
     base >= 4 && < 5,
-    mtl >= 2 && < 3,
-    fgl >= 5.4 && < 6.0,
-    hashable >= 1.1 && < 1.3,
-    containers >= 0.4 && < 0.6,
-    directory >= 1.1 && < 2,
-    array >= 0.3 && < 0.5,
-    process >= 1.1 && < 1.2,
-    binary >= 0.5 && < 1,
-    bytestring >= 0.9 && < 1,
-    uulib >= 0.9 && < 1,
-    time-compat >= 0.1.0.1 && < 0.2,
-    time >= 1.2 && < 1.5,
+    mtl >= 2,
+    fgl >= 5.4,
+    hashable >= 1.1,
+    containers >= 0.4,
+    directory >= 1.1,
+    array >= 0.3,
+    process >= 1.1,
+    binary >= 0.5,
+    bytestring >= 0.9,
+    uulib >= 0.9,
+    time-compat >= 0.1.0.1,
+    time >= 1.2,
     ListLike >= 4.0.0,
     syb  >= 0.3.6
   Exposed-Modules:
