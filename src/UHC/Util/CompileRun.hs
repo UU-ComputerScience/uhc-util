@@ -117,7 +117,7 @@ class CompileRunStateInfo i n p where
 -- Instances
 -------------------------------------------------------------------------
 
-instance CompileRunError String p
+instance CompileRunError String ()
 
 -------------------------------------------------------------------------
 -- Locatable
