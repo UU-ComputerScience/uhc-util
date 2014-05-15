@@ -9,6 +9,7 @@ module UHC.Util.ParseUtils
   , parsePlain
   , parseOffsideToResMsgs
   , parseToResMsgs
+  , parseToResWith
   
   , parseOffsideToResMsgsStopAtErr
   
@@ -74,9 +75,16 @@ parsePlain :: (Symbol s, InputState inp s pos)
 parsePlain p inp
   = valFromPair (parse p inp)
 
-parseToResMsgs :: (Symbol s,InputState inp s pos) => AnaParser inp Pair s pos a -> inp -> (a,[Message s pos])
+-- | Invoke parser, yielding result + errors
+parseToResMsgs :: (Symbol s, InputState inp s pos) => AnaParser inp Pair s pos a -> inp -> (a,[Message s pos])
 parseToResMsgs p inp
   = toResMsgs (parse p inp)
+
+-- | Invoke parser, yielding result + errors processed with a function
+parseToResWith :: (Symbol s, Show s, Eq s, InputState inp s pos) => (pos -> String -> String -> e) -> AnaParser inp Pair s pos a -> inp -> (a,[e])
+parseToResWith f p inp
+  = (r, map (fromMessage f) e)
+  where (r,e) = toResMsgs (parse p inp)
 
 parseOffsideToResMsgs
   :: (Symbol s, InputState i s p, Position p)
