@@ -1,19 +1,28 @@
 {-# LANGUAGE RankNTypes, FlexibleContexts #-}
 
 module UHC.Util.ParseUtils
-  ( PlainParser
+  ( -- * Specific parser types
+    PlainParser
   , LayoutParser, LayoutParser2
   
+  -- * Top level wrappers/invocations
   , parsePlain
   , parseOffsideToResMsgs
   , parseToResMsgs
   
   , parseOffsideToResMsgsStopAtErr
   
+  -- * Additional parser combinators
   , pAnyFromMap, pAnyKey
   , pMaybe, pMb
   
   , pDo
+  
+  -- * Re-exports
+  , position
+  
+  -- * Dealing with Message
+  , fromMessage
   )
   where
 
@@ -23,6 +32,7 @@ import UU.Parsing
 import UU.Parsing.Machine
 import UU.Parsing.Offside
 import UU.Scanner.Position( Position(..) )
+import UU.Scanner.GenToken
 
 -------------------------------------------------------------------------
 -- Type(s) of parsers
@@ -169,4 +179,12 @@ pMb = pMaybe Nothing Just
 -- given (non-empty) key->value map, return parser for all keys returning corresponding value
 pAnyFromMap :: (IsParser p s) => (k -> p a1) -> Map.Map k v -> p v
 pAnyFromMap pKey m = foldr1 (<|>) [ v <$ pKey k | (k,v) <- Map.toList m ]
+
+-------------------------------------------------------------------------
+-- Dealing with error Message
+-------------------------------------------------------------------------
+
+-- | Convert from Message to anything using a function taking as String position, expected symbol and action taken respectively
+fromMessage :: (Show s, Eq s) => (p -> String -> String -> x) -> Message s p -> x
+fromMessage f (Msg e p a) = f p (show e) (show a)
 
