@@ -116,6 +116,7 @@ ppListSepFill o c s pps
         l [p]     = o >|< pp p >|< c
         l (p:ps)  = hlist ((o >|< pp p) : map (s >|<) ps) >|< c
 
+-- | PP in a blocklike fashion, possibly on a single horizontal line if indicated, yielding the lines of the block
 ppBlock'' :: (PP ocs, PP a) => Bool -> ocs -> ocs -> ocs -> ocs -> [a] -> [PP_Doc]
 ppBlock'' _    osngl _ c _ []                   = [osngl >|< c]
 ppBlock'' _    osngl o c _ [a] | isSingleLine x = [osngl >|< x >|< c]
@@ -126,10 +127,12 @@ ppBlock'' hori osngl o c s aa@(a:as)               -- = [o >|< a] ++ map (s >|<)
                                | otherwise                   = [o >|< x] ++ map (s >|<) xs ++ [pp c]
                                where xx@(x:xs) = map pp aa
 
+-- | PP in a blocklike fashion, vertically
 ppBlock' :: (PP ocs, PP a) => ocs -> ocs -> ocs -> ocs -> [a] -> [PP_Doc]
 ppBlock' = ppBlock'' False
 {-# INLINE ppBlock' #-}
 
+-- | PP in a blocklike fashion, vertically, possibly horizontally
 ppBlockH' :: (PP ocs, PP a) => ocs -> ocs -> ocs -> ocs -> [a] -> [PP_Doc]
 ppBlockH' = ppBlock'' True
 {-# INLINE ppBlockH' #-}

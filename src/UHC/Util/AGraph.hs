@@ -17,7 +17,7 @@ module UHC.Util.AGraph
 import Data.Graph.Inductive.Graph     (empty, insNodes, gelem, lab, lpre, lsuc, delEdge, delNode)
 import Data.Graph.Inductive.NodeMap   (NodeMap, new, mkNodes, mkNode_, insMapEdge)
 import Data.Graph.Inductive.Tree      (Gr)
-import Data.Graph.Inductive.Graphviz  (graphviz')
+-- import Data.Graph.Inductive.Graphviz  (graphviz')
 
 import Data.Maybe (fromJust)
 import Data.List(nub)
@@ -25,7 +25,12 @@ import Data.List(nub)
 data AGraph a b = AGr { agraphNodeMap :: NodeMap a, agraphGraph :: Gr a b}
 
 instance (Show a, Show b) => Show (AGraph a b) where
+  show (AGr _ gr) = "AGraph (to be redone: use of graphviz)"
+
+{- Depends on Graphviz
+instance (Show a, Show b) => Show (AGraph a b) where
   show (AGr _ gr) = graphviz' gr
+-}
 
 insertEdges :: Ord a => [(a, a, b)] -> AGraph a b -> AGraph a b
 insertEdges = flip (foldr insertEdge)

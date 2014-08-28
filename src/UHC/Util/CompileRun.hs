@@ -7,7 +7,10 @@
 module UHC.Util.CompileRun
   ( CompileRunState(..)
   , CompileRun(..)
+
   , CompilePhase
+  , CompilePhaseT
+  
   , CompileUnit(..)
   , CompileUnitState(..)
   , CompileRunError(..)
@@ -44,6 +47,7 @@ module UHC.Util.CompileRun
 import Data.Maybe
 import System.Exit
 import Control.Monad
+import Control.Monad.Error as ME
 import Control.Monad.State
 import System.IO
 import qualified Data.Map as Map
@@ -134,6 +138,7 @@ class FileLocatable x loc | loc -> x where		-- funcdep has unlogical direction, 
 data CompileRunState err
   = CRSOk									-- continue
   | CRSFail									-- fail and stop
+  | CRSFailMsg String						-- fail with a message and stop
   | CRSStopSeq								-- stop current cpSeq
   | CRSStopAllSeq							-- stop current cpSeq, but also the surrounding ones
   | CRSStop									-- stop completely
@@ -149,18 +154,19 @@ data CompileRun nm unit info err
       , crStateInfo     :: info
       }
 
+instance Error (CompileRunState err) where
+  noMsg = CRSOk
+  strMsg = CRSFailMsg
+  
 instance Show (CompileRunState err) where
   show CRSOk				= "CRSOk"
   show CRSFail				= "CRSFail"
+  show (CRSFailMsg s)		= "CRSFail: " ++ s
   show CRSStopSeq			= "CRSStopSeq"
   show CRSStopAllSeq		= "CRSStopAllSeq"
   show CRSStop				= "CRSStop"
   show (CRSFailErrL _ _ _)	= "CRSFailErrL"
   show (CRSErrInfoL _ _ _)	= "CRSErrInfoL"
-
-type CompilePhase n u i e a = StateT (CompileRun n u i e) IO a
-
-
 
 mkEmptyCompileRun :: n -> i -> CompileRun n u i e
 mkEmptyCompileRun nm info
@@ -171,6 +177,141 @@ mkEmptyCompileRun nm info
       , crState			= CRSOk
       , crStateInfo		= info
       }
+
+-------------------------------------------------------------------------
+-- Monad impl (20140804 AD, not (yet?) put into action, too much code still breaks)
+-------------------------------------------------------------------------
+
+-- type CompilePhase n u i e a = CompilePhaseT n u i e (StateT (CompileRun n u i e) (ErrorT (CompileRunState e) IO)) a
+-- type CompilePhase n u i e a = CompilePhase_S_E_IO n u i e a
+type CompilePhase n u i e a = StateT (CompileRun n u i e) IO a
+
+type CompilePhase_S_E_T_State n u i e = CompileRun n u i e
+type CompilePhase_S_E_T_Error n u i e = CompileRunState e
+
+newtype CompilePhase_S_E_T n u i e m a
+  = CompilePhase_S_E_T { runCompilePhase_S_E_T :: StateT (CompilePhase_S_E_T_State n u i e) (ErrorT (CompilePhase_S_E_T_Error n u i e) m) a }
+
+type CompilePhase_S_E_IO n u i e a = CompilePhase_S_E_T n u i e IO a
+  -- = CompilePhase_S_E_IO { runCompilePhase_S_E_IO :: StateT (CompilePhase_S_E_IO_State n u i e) (ErrorT (CompilePhase_S_E_IO_Error n u i e) IO) a }
+
+instance CompileRunError e p => Monad (CompilePhase_S_E_T n u i e IO) where
+  return x = CompilePhase_S_E_T $ return x -- \cr -> return (x, cr)
+  cp >>= f = CompilePhase_S_E_T $ do -- \cr1 -> do
+        x <- runCompilePhase_S_E_T cp -- (x,cr2) <- runCompilePhase_S_E_T cp cr1
+        let modf f = do {modify f ; return x}
+        cr <- get
+        case crState cr of
+          CRSFailErrL about es mbLim
+            -> do { let (showErrs,omitErrs) = maybe (es,[]) (flip splitAt es) mbLim
+                  ; liftIO (unless (null about) (hPutPPLn stderr (pp about)))
+                  ; liftIO $ unless (null showErrs) $ 
+                           do { hPutPPLn stderr (crePPErrL showErrs)
+                              ; unless (null omitErrs) $ hPutStrLn stderr "... and more errors"
+                              ; hFlush stderr
+                              }
+                  ; if creAreFatal es then liftIO exitFailure else modf crSetOk
+                  }
+          CRSErrInfoL about doPrint is
+            -> do { if null is
+                    then return x
+                    else liftIO (do { hFlush stdout
+                                    ; hPutPPLn stderr (about >#< "found errors" >-< e)
+                                    ; return x
+                                    })
+                  ; if not (null is) then liftIO exitFailure else return x
+                  }
+            where e = empty -- if doPrint then crePPErrL is else empty
+          CRSFailMsg msg
+            -> do { liftIO $ hPutStrLn stderr msg
+                  ; liftIO exitFailure
+                  }
+          CRSFail
+            -> do { liftIO exitFailure
+                  }
+          CRSStop
+            -> do { liftIO $ exitWith ExitSuccess
+                  }
+          _ -> return x
+        cr <- get
+        case crState cr of
+          CRSOk         -> runCompilePhase_S_E_T (f x)
+          CRSStopSeq    -> do { modf crSetOk ; ME.throwError CRSStopSeq }
+          CRSStopAllSeq -> do { modf crSetStopAllSeq ; ME.throwError CRSStopAllSeq }
+          crs           -> ME.throwError crs
+
+instance CompileRunError e p => MonadIO (CompilePhase_S_E_T n u i e IO) where
+  liftIO = CompilePhase_S_E_T . liftIO
+
+instance MonadTrans (CompilePhase_S_E_T n u i e) where
+  lift = CompilePhase_S_E_T . lift . lift
+
+instance CompileRunError e p => MonadState (CompilePhase_S_E_T_State n u i e) (CompilePhase_S_E_T n u i e IO) where
+  get = CompilePhase_S_E_T get
+  put = CompilePhase_S_E_T . put
+
+-- | 'CompileRun' as state in specific StateT variant with non standard >>=
+-- newtype CompilePhaseT n u i e m a = CompilePhaseT {runCompilePhaseT :: CompileRun n u i e -> m (a, CompileRun n u i e)}
+newtype CompilePhaseT n u i e m a
+  = CompilePhaseT {runCompilePhaseT :: m a}
+
+instance ( Monad m, MonadIO m, MonadError (CompileRunState e) m, MonadState (CompileRun n u i e) m
+         , CompileRunError e p
+         ) => Monad (CompilePhaseT n u i e m) where
+  return x = CompilePhaseT $ return x -- \cr -> return (x, cr)
+  cp >>= f = CompilePhaseT $ do -- \cr1 -> do
+        x <- runCompilePhaseT cp -- (x,cr2) <- runCompilePhaseT cp cr1
+        let modf f = do {modify f ; return x}
+        cr <- get
+        case crState cr of
+          CRSFailErrL about es mbLim
+            -> do { let (showErrs,omitErrs) = maybe (es,[]) (flip splitAt es) mbLim
+                  ; liftIO (unless (null about) (hPutPPLn stderr (pp about)))
+                  ; liftIO $ unless (null showErrs) $ 
+                           do { hPutPPLn stderr (crePPErrL showErrs)
+                              ; unless (null omitErrs) $ hPutStrLn stderr "... and more errors"
+                              ; hFlush stderr
+                              }
+                  ; if creAreFatal es then liftIO exitFailure else modf crSetOk
+                  }
+          CRSErrInfoL about doPrint is
+            -> do { if null is
+                    then return x
+                    else liftIO (do { hFlush stdout
+                                    ; hPutPPLn stderr (about >#< "found errors" >-< e)
+                                    ; return x
+                                    })
+                  ; if not (null is) then liftIO exitFailure else return x
+                  }
+            where e = empty -- if doPrint then crePPErrL is else empty
+          CRSFailMsg msg
+            -> do { liftIO $ hPutStrLn stderr msg
+                  ; liftIO exitFailure
+                  }
+          CRSFail
+            -> do { liftIO exitFailure
+                  }
+          CRSStop
+            -> do { liftIO $ exitWith ExitSuccess
+                  }
+          _ -> return x
+        cr <- get
+        case crState cr of
+          CRSOk         -> runCompilePhaseT (f x)
+          CRSStopSeq    -> do { modf crSetOk ; ME.throwError CRSStopSeq }
+          CRSStopAllSeq -> do { modf crSetStopAllSeq ; ME.throwError CRSStopAllSeq }
+          crs           -> ME.throwError crs
+
+instance MonadTrans (CompilePhaseT n u i e) where
+  lift = CompilePhaseT
+
+{-
+instance MonadError m => MonadError (CompilePhaseT n u i e m) where
+  liftIO = CompilePhaseT . liftIO
+-}
+
+instance (Monad m, MonadIO m, Monad (CompilePhaseT n u i e m)) => MonadIO (CompilePhaseT n u i e m) where
+  liftIO = lift . liftIO
 
 -------------------------------------------------------------------------
 -- Pretty printing
@@ -191,16 +332,16 @@ crPPMsg m cr = do { hPutPPLn stdout (pp m) ; return cr }
 
 cpPP :: (PP n,PP u) => String -> CompilePhase n u i e ()
 cpPP m
- = do { lift (hPutStrLn stderr (m ++ ":"))
+ = do { liftIO (hPutStrLn stderr (m ++ ":"))
       ; cr <- get
-      ; lift (hPutPPLn stderr (ppCR cr))
-      ; lift (hFlush stderr)
+      ; liftIO (hPutPPLn stderr (ppCR cr))
+      ; liftIO (hFlush stderr)
       ; return ()
       }
 
 cpPPMsg :: (PP m) => m -> CompilePhase n u i e ()
 cpPPMsg m
- = do { lift (hPutPPLn stdout (pp m))
+ = do { liftIO (hPutPPLn stdout (pp m))
       ; return ()
       }
 
@@ -219,6 +360,9 @@ crCU modNm = panicJust ("crCU: " ++ show modNm) . crMbCU modNm
 -------------------------------------------------------------------------
 -- State manipulation, sequencing: non monadic
 -------------------------------------------------------------------------
+
+crSetOk :: CompileRun n u i e -> CompileRun n u i e
+crSetOk cr = cr {crState = CRSOk}
 
 crSetFail :: CompileRun n u i e -> CompileRun n u i e
 crSetFail cr = cr {crState = CRSFail}
@@ -277,9 +421,9 @@ cpFindFilesForFPathInLocations getfp putres stopAtFirst suffs locs mbModNm mbFp
           then do { let fp = maybe (mkFPath $ panicJust ("cpFindFileForFPath") $ mbModNm) id mbFp
                         modNm = maybe (mkCMNm $ fpathBase $ fp) id mbModNm
                         suffs' = map fst suffs
-                  ; fpsFound <- lift (searchLocationsForReadableFiles (\l f -> getfp l modNm f)
-                                                                      stopAtFirst locs suffs' fp
-                                     )
+                  ; fpsFound <- liftIO (searchLocationsForReadableFiles (\l f -> getfp l modNm f)
+                                                                        stopAtFirst locs suffs' fp
+                                       )
                   ; case fpsFound of
                       []
                         -> do { cpSetErrs (creMkNotFoundErrL (crsiImportPosOfCUKey modNm (crStateInfo cr)) (fpathToStr fp) (map show locs) suffs')
@@ -398,7 +542,7 @@ cpUpdSI = cpUpdStateInfo
 cpUpdCUM :: (Ord n,CompileUnit u n l s) => n -> (u -> IO u) -> CompilePhase n u i e ()
 cpUpdCUM modNm upd
   = do { cr <- get
-       ; cu <- lift (maybe (upd cuDefault) upd (crMbCU modNm cr))
+       ; cu <- liftIO (maybe (upd cuDefault) upd (crMbCU modNm cr))
        ; put (cr {crCUCache = Map.insert modNm cu (crCUCache cr)})
        }
 
@@ -483,6 +627,9 @@ cpEmpty = return ()
 
 -- sequence of phases, each may stop the whole sequencing
 cpSeq :: CompileRunError e p => [CompilePhase n u i e ()] -> CompilePhase n u i e ()
+{-
+cpSeq = sequence_
+-}
 cpSeq []     = return ()
 cpSeq (a:as) = do { a
                   ; cpHandleErr
@@ -500,35 +647,37 @@ cpSeqWhen True as = cpSeq as
 cpSeqWhen _    _  = return ()
 
 -- handle possible error in sequence
+{-
+-}
 cpHandleErr :: CompileRunError e p => CompilePhase n u i e ()
 cpHandleErr
   = do { cr <- get
        ; case crState cr of
            CRSFailErrL about es (Just lim)
              -> do { let (showErrs,omitErrs) = splitAt lim es
-                   ; lift (unless (null about) (hPutPPLn stderr (pp about)))
-                   ; lift (putErr' (if null omitErrs then return () else hPutStrLn stderr "... and more errors") showErrs)
+                   ; liftIO (unless (null about) (hPutPPLn stderr (pp about)))
+                   ; liftIO (putErr' (if null omitErrs then return () else hPutStrLn stderr "... and more errors") showErrs)
                    ; failOrNot es
                    }
            CRSFailErrL about es Nothing
-             -> do { lift (unless (null about) (hPutPPLn stderr (pp about)))
-                   ; lift (putErr' (return ()) es)
+             -> do { liftIO (unless (null about) (hPutPPLn stderr (pp about)))
+                   ; liftIO (putErr' (return ()) es)
                    ; failOrNot es
                    }
            CRSErrInfoL about doPrint is
              -> do { if null is
                      then return ()
-                     else lift (do { hFlush stdout
-                                   ; hPutPPLn stderr (about >#< "found errors" >-< e)
-                                   })
-                   ; if not (null is) then lift exitFailure else return ()
+                     else liftIO (do { hFlush stdout
+                                     ; hPutPPLn stderr (about >#< "found errors" >-< e)
+                                     })
+                   ; if not (null is) then liftIO exitFailure else return ()
                    }
              where e = empty -- if doPrint then crePPErrL is else empty
            CRSFail
-             -> do { lift exitFailure
+             -> do { liftIO exitFailure
                    }
            CRSStop
-             -> do { lift $ exitWith ExitSuccess
+             -> do { liftIO $ exitWith ExitSuccess
                    }
            _ -> return ()
        }
@@ -538,5 +687,5 @@ cpHandleErr
                                 ; m
                                 ; hFlush stderr
                                 }
-        failOrNot es = if creAreFatal es then lift exitFailure else cpSetOk
+        failOrNot es = if creAreFatal es then liftIO exitFailure else cpSetOk
 
