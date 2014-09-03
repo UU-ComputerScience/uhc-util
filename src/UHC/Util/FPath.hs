@@ -1,10 +1,18 @@
 {-# LANGUAGE TypeSynonymInstances, FlexibleInstances #-}
 
+{-| Library for manipulating a more structured version of FilePath.
+    Note: the library should use System.FilePath functionality but does not do so yet.
+ -}
+
 module UHC.Util.FPath
-  ( FPath(..), fpathSuff
+  ( 
+  -- * FPath datatype, FPATH class for overloaded construction
+    FPath(..), fpathSuff
   , FPATH(..)
   , FPathError -- (..)
   , emptyFPath
+  
+  -- * Construction, deconstruction, predicates
   -- , mkFPath
   , fpathFromStr
   , mkFPathFromDirsFile
@@ -20,10 +28,7 @@ module UHC.Util.FPath
   , fpathSplitDirBy
   , mkTopLevelFPath
 
-  , fpathDirSep, fpathDirSepChar
-
-  , fpathOpenOrStdin, openFPath
-
+  -- * SearchPath
   , SearchPath
   , FileSuffixes, FileSuffix
   , mkInitSearchPath, searchPathFromFPath, searchPathFromFPaths
@@ -33,11 +38,18 @@ module UHC.Util.FPath
 
   , fpathEnsureExists
 
+  -- * Path as prefix
   , filePathMkPrefix, filePathUnPrefix
   , filePathCoalesceSeparator
   , filePathMkAbsolute, filePathUnAbsolute
   
+  -- * Misc
   , fpathGetModificationTime
+
+  , fpathDirSep, fpathDirSepChar
+
+  , fpathOpenOrStdin, openFPath
+
   )
 where
 
@@ -54,17 +66,20 @@ import UHC.Util.Time
 -- Making prefix and inverse, where a prefix has a tailing '/'
 -------------------------------------------------------------------------------------------
 
-filePathMkPrefix :: String -> String
+-- | Construct a filepath to be a prefix (i.e. ending with '/' as last char)
+filePathMkPrefix :: FilePath -> FilePath
 filePathMkPrefix d@(_:_) | last d /= '/'    = d ++ "/"
 filePathMkPrefix d                          = d
 
-filePathUnPrefix :: String -> String
+-- | Remove from a filepath a possibly present '/' as last char
+filePathUnPrefix :: FilePath -> FilePath
 filePathUnPrefix d | isJust il && l == '/'  = filePathUnPrefix i
   where il = initlast d
         (i,l) = fromJust il
 filePathUnPrefix d                          = d
 
-filePathCoalesceSeparator :: String -> String
+-- | Remove consecutive occurrences of '/'
+filePathCoalesceSeparator :: FilePath -> FilePath
 filePathCoalesceSeparator ('/':d@('/':_)) = filePathCoalesceSeparator d
 filePathCoalesceSeparator (c:d) = c : filePathCoalesceSeparator d
 filePathCoalesceSeparator d     = d
@@ -73,11 +88,13 @@ filePathCoalesceSeparator d     = d
 -- Making into absolute path and inverse, where absolute means a heading '/'
 -------------------------------------------------------------------------------------------
 
-filePathMkAbsolute :: String -> String
+-- | Make a filepath an absolute filepath by prefixing with '/'
+filePathMkAbsolute :: FilePath -> FilePath
 filePathMkAbsolute d@('/':_ ) = d
 filePathMkAbsolute d          = "/" ++ d
 
-filePathUnAbsolute :: String -> String
+-- | Make a filepath an relative filepath by removing prefixed '/'-s
+filePathUnAbsolute :: FilePath -> FilePath
 filePathUnAbsolute d@('/':d') = filePathUnAbsolute d'
 filePathUnAbsolute d          = d
 
@@ -85,22 +102,26 @@ filePathUnAbsolute d          = d
 -- File path
 -------------------------------------------------------------------------------------------
 
+-- | File path representation making explicit (possible) directory, base and (possible) suffix
 data FPath
   = FPath
-      { fpathMbDir      :: !(Maybe  String)
+      { fpathMbDir      :: !(Maybe  FilePath)
       , fpathBase       ::         !String
       , fpathMbSuff     :: !(Maybe  String)
       }
     deriving (Show,Eq,Ord)
 
+-- | Empty FPath
 emptyFPath :: FPath
 emptyFPath
   = mkFPath ""
 
+-- | Is FPath empty?
 fpathIsEmpty :: FPath -> Bool
 fpathIsEmpty fp = null (fpathBase fp)
 
-fpathToStr :: FPath -> String
+-- | Conversion to FilePath
+fpathToStr :: FPath -> FilePath
 fpathToStr fpath
   = let adds f = maybe f (\s -> f ++ "."         ++ s) (fpathMbSuff fpath)
         addd f = maybe f (\d -> d ++ fpathDirSep ++ f) (fpathMbDir fpath)
@@ -121,45 +142,57 @@ fpathIsAbsolute fp
 -- Utilities, (de)construction
 -------------------------------------------------------------------------------------------
 
-fpathFromStr :: String -> FPath
+-- | Construct FPath from FilePath
+fpathFromStr :: FilePath -> FPath
 fpathFromStr fn
   = FPath d b' s
   where (d ,b) = maybe (Nothing,fn) (\(d,b) -> (Just d,b)) (splitOnLast fpathDirSepChar fn)
         (b',s) = maybe (b,Nothing)  (\(b,s) -> (b,Just s)) (splitOnLast '.'             b )
 
+-- | Construct FPath directory from FilePath
 fpathDirFromStr :: String -> FPath
 fpathDirFromStr d = emptyFPath {fpathMbDir = Just d}
+{-# INLINE fpathDirFromStr #-}
 
+-- | Get suffix, being empty equals the empty String
 fpathSuff :: FPath -> String
 fpathSuff = maybe "" id . fpathMbSuff
 
+-- | Set the base
 fpathSetBase :: String -> FPath -> FPath
 fpathSetBase s fp
   = fp {fpathBase = s}
+{-# INLINE fpathSetBase #-}
 
+-- | Modify the base
 fpathUpdBase :: (String -> String) -> FPath -> FPath
 fpathUpdBase u fp
   = fp {fpathBase = u (fpathBase fp)}
+{-# INLINE fpathUpdBase #-}
 
+-- | Set suffix, empty String removes it
 fpathSetSuff :: String -> FPath -> FPath
 fpathSetSuff "" fp
   = fpathRemoveSuff fp
 fpathSetSuff s fp
   = fp {fpathMbSuff = Just s}
 
+-- | Set suffix, empty String leaves old suffix
 fpathSetNonEmptySuff :: String -> FPath -> FPath
 fpathSetNonEmptySuff "" fp
   = fp
 fpathSetNonEmptySuff s fp
   = fp {fpathMbSuff = Just s}
 
-fpathSetDir :: String -> FPath -> FPath
+-- | Set directory, empty FilePath removes it
+fpathSetDir :: FilePath -> FPath -> FPath
 fpathSetDir "" fp
   = fpathRemoveDir fp
 fpathSetDir d fp
   = fp {fpathMbDir = Just d}
 
-fpathSplitDirBy :: String -> FPath -> Maybe (String,String)
+-- | Split FPath into given directory (prefix) and remainder, fails if not a prefix
+fpathSplitDirBy :: FilePath -> FPath -> Maybe (String,String)
 fpathSplitDirBy byDir fp
   = do { d      <- fpathMbDir fp
        ; dstrip <- stripPrefix byDir' d
@@ -167,26 +200,30 @@ fpathSplitDirBy byDir fp
        }
   where byDir' = filePathUnPrefix byDir
 
-fpathPrependDir :: String -> FPath -> FPath
+-- | Prepend directory
+fpathPrependDir :: FilePath -> FPath -> FPath
 fpathPrependDir "" fp
   = fp
 fpathPrependDir d fp
   = maybe (fpathSetDir d fp) (\fd -> fpathSetDir (d ++ fpathDirSep ++ fd) fp) (fpathMbDir fp)
 
-fpathUnPrependDir :: String -> FPath -> FPath
+-- | Remove directory (prefix), using 'fpathSplitDirBy'
+fpathUnPrependDir :: FilePath -> FPath -> FPath
 fpathUnPrependDir d fp
   = case fpathSplitDirBy d fp of
       Just (_,d) -> fpathSetDir d fp
       _          -> fp
 
-fpathAppendDir :: FPath -> String -> FPath
+-- | Append directory (to directory part)
+fpathAppendDir :: FPath -> FilePath -> FPath
 fpathAppendDir fp ""
   = fp
 fpathAppendDir fp d
   = maybe (fpathSetDir d fp) (\fd -> fpathSetDir (fd ++ fpathDirSep ++ d) fp) (fpathMbDir fp)
 
--- remove common trailing part of dir
-fpathUnAppendDir :: FPath -> String -> FPath
+-- | Remove common trailing part of dir.
+-- Note: does not check whether it really is a suffix.
+fpathUnAppendDir :: FPath -> FilePath -> FPath
 fpathUnAppendDir fp ""
   = fp
 fpathUnAppendDir fp d
@@ -195,22 +232,17 @@ fpathUnAppendDir fp d
              where (prefix,_) = splitAt (length p - length d) p
       _      -> fp
 
+-- | Remove suffix
 fpathRemoveSuff :: FPath -> FPath
 fpathRemoveSuff fp
   = fp {fpathMbSuff = Nothing}
+{-# INLINE fpathRemoveSuff #-}
 
+-- | Remove dir
 fpathRemoveDir :: FPath -> FPath
 fpathRemoveDir fp
   = fp {fpathMbDir = Nothing}
-
-splitOnLast :: Char -> String -> Maybe (String,String)
-splitOnLast splitch fn
-  = case fn of
-      ""     -> Nothing
-      (f:fs) -> let rem = splitOnLast splitch fs
-                 in if f == splitch
-                    then maybe (Just ("",fs)) (\(p,s)->Just (f:p,s)) rem
-                    else maybe Nothing (\(p,s)->Just (f:p,s)) rem
+{-# INLINE fpathRemoveDir #-}
 
 mkFPathFromDirsFile :: Show s => [s] -> s -> FPath
 mkFPathFromDirsFile dirs f
@@ -222,19 +254,35 @@ mkTopLevelFPath suff fn
      in maybe (fpathSetSuff suff fpNoSuff) (const fpNoSuff) . fpathMbSuff $ fpNoSuff
 
 -------------------------------------------------------------------------------------------
--- Config
+-- Utils
+-------------------------------------------------------------------------------------------
+
+splitOnLast :: Char -> String -> Maybe (String,String)
+splitOnLast splitch fn
+  = case fn of
+      ""     -> Nothing
+      (f:fs) -> let rem = splitOnLast splitch fs
+                 in if f == splitch
+                    then maybe (Just ("",fs)) (\(p,s)->Just (f:p,s)) rem
+                    else maybe Nothing (\(p,s)->Just (f:p,s)) rem
+
+-------------------------------------------------------------------------------------------
+-- Config, should be dealt with by FilePath utils
 -------------------------------------------------------------------------------------------
 
 fpathDirSep :: String
 fpathDirSep = "/"
+{-# INLINE fpathDirSep #-}
 
 fpathDirSepChar :: Char
 fpathDirSepChar = head fpathDirSep
+{-# INLINE fpathDirSepChar #-}
 
 -------------------------------------------------------------------------------------------
 -- Class 'can make FPath of ...'
 -------------------------------------------------------------------------------------------
 
+-- | Construct a FPath from some type
 class FPATH f where
   mkFPath :: f -> FPath
 
@@ -248,6 +296,7 @@ instance FPATH FPath where
 -- Class 'is error related to FPath'
 -------------------------------------------------------------------------------------------
 
+-- | Is error related to FPath
 class FPathError e
 
 instance FPathError String
@@ -302,9 +351,11 @@ searchPathFromFPaths fpL = nub [ d | (Just d) <- map fpathMbDir fpL ] ++ [""]
 
 searchPathFromFPath :: FPath -> SearchPath
 searchPathFromFPath fp = searchPathFromFPaths [fp]
+{-# INLINE searchPathFromFPath #-}
 
 mkInitSearchPath :: FPath -> SearchPath
 mkInitSearchPath = searchPathFromFPath
+{-# INLINE mkInitSearchPath #-}
 
 searchPathFromString :: String -> [String]
 searchPathFromString
