@@ -398,8 +398,9 @@ putSPutFile fn x
 getSGetFile :: FilePath -> SGet a -> IO a
 getSGetFile fn x
   = do { h <- openBinaryFile fn ReadMode
-       ; b <- liftM (Bn.runGet $ runSGet x) (L.hGetContents h)
-       -- ; hClose h
+       ; s <- L.hGetContents h
+       ; b <- L.length s `seq` (return $ Bn.runGet (runSGet x) s)
+       ; hClose h
        ; return b ;
        }
 
@@ -415,8 +416,9 @@ putSerializeFile fn x
 getSerializeFile :: Serialize a => FilePath -> IO a
 getSerializeFile fn
   = do { h <- openBinaryFile fn ReadMode
-       ; b <- liftM (Bn.runGet unserialize) (L.hGetContents h)
-       -- ; hClose h
+       ; s <- L.hGetContents h
+       ; b <- L.length s `seq` (return $ Bn.runGet unserialize s)
+       ; hClose h
        ; return b ;
        }
 

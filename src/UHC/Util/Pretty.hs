@@ -30,7 +30,9 @@ module UHC.Util.Pretty
   -- * Block, horizontal/vertical as required
   , ppBlock, ppBlockH
   , ppBlock'
-  , ppBlockWithStrings, ppBlockWithStrings'
+  , ppBlockWithStrings
+  , ppBlockWithStrings'
+  , ppBlockWithStringsH
   
   , ppParensCommasBlock
   , ppCurlysBlock
