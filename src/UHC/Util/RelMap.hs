@@ -1,18 +1,20 @@
-{-| Relation via Set of tuples
+{-| Relation via pair of maps for domain and range.
+    Incomplete w.r.t. corresponding UHC.Util.Rel
 -}
-module UHC.Util.Rel
+module UHC.Util.RelMap
   ( Rel
   , empty
   , toList, fromList
   , singleton
   , dom, rng
   , restrictDom, restrictRng
-  , mapDom, mapRng
-  , partitionDom, partitionRng
-  , intersection, difference, union, unions
+  -- , mapDom, mapRng
+  -- , partitionDom, partitionRng
+  -- , intersection, difference
+  , union, unions
   , apply
   , toDomMap, toRngMap
-  , mapDomRng
+  -- , mapDomRng
   )
   where
 
@@ -23,40 +25,53 @@ import qualified Data.Set as Set
 -- Relation
 -------------------------------------------------------------------------
 
-type Rel a b = Set.Set (a,b)
+-- | Map used in a relation
+type RelMap a b = Map.Map a (Set.Set b)
+
+-- | Relation, represented as 2 maps from domain to range and the inverse, thus allowing faster lookup at the expense of some set like operations more expensive.
+data Rel a b
+  = Rel
+     { relDomMp :: RelMap a b		-- ^ from domain to range
+     , relRngMp :: RelMap b a		-- ^ from range to domain
+     }
 
 -- | As assocation list
 toList :: Rel a b -> [(a,b)]
-toList = Set.toList
+toList (Rel m _) = [ (d,r) | (d,rs) <- Map.toList m, r <- Set.toList rs ]
 
 -- | From association list
 fromList :: (Ord a, Ord b) => [(a,b)] -> Rel a b
-fromList = Set.fromList
+fromList = unions . map (uncurry singleton)
 
 -- | Singleton relation
 singleton :: (Ord a, Ord b) => a -> b -> Rel a b
-singleton a b = fromList [(a,b)]
+singleton a b = Rel (relMapSingleton a b) (relMapSingleton b a)
 
 -- | Empty relation
 empty :: Rel a b
-empty = Set.empty
+empty = Rel Map.empty Map.empty
 
 -- | Domain of relation
 dom :: (Ord a, Ord b) => Rel a b -> Set.Set a
-dom = Set.map fst
+dom = Map.keysSet . relDomMp
 
 -- | Range of relation
 rng :: (Ord a, Ord b) => Rel a b -> Set.Set b
-rng = Set.map snd
+rng = Map.keysSet . relRngMp
 
 -- | Filter on domain
 restrictDom :: (Ord a, Ord b) => (a -> Bool) -> Rel a b -> Rel a b
-restrictDom p = Set.filter (p . fst)
+restrictDom p (Rel d r) = Rel d' r'
+  where d' = Map.filterWithKey (\d r -> p d) d
+        r' = relMapInverse d'
 
 -- | Filter on range
 restrictRng :: (Ord a, Ord b) => (b -> Bool) -> Rel a b -> Rel a b
-restrictRng p = Set.filter (p . snd)
+restrictRng p (Rel d r) = Rel d' r'
+  where r' = Map.filterWithKey (\r d -> p r) r
+        d' = relMapInverse r'
 
+{-
 -- | Map domain
 mapDom :: (Ord a, Ord b, Ord x) => (a -> x) -> Rel a b -> Rel x b
 mapDom f = Set.map (\(a,b) -> (f a,b))
@@ -80,28 +95,44 @@ intersection = Set.intersection
 -- | Difference jointly on domain and range
 difference :: (Ord a, Ord b) => Rel a b -> Rel a b -> Rel a b
 difference = Set.difference
+-}
 
 -- | Union
 union :: (Ord a, Ord b) => Rel a b -> Rel a b -> Rel a b
-union = Set.union
+union (Rel d1 r1) (Rel d2 r2) = Rel (Map.unionWith Set.union d1 d2) (Map.unionWith Set.union r1 r2)
 
 -- | Union of list of relations
 unions :: (Ord a, Ord b) => [Rel a b] -> Rel a b
-unions = Set.unions
+unions [ ] = empty
+unions [r] = r
+unions rs  = foldr union empty rs
 
 -- | Apply relation as a function
 apply :: (Ord a, Ord b) => Rel a b -> a -> [b]
-apply r a = Set.toList $ rng $ restrictDom (==a) $ r
+apply r a = maybe [] Set.toList $ Map.lookup a (relDomMp r)
 
 -- | As a Map keyed on domain
 toDomMap :: Ord a => Rel a b -> Map.Map a [b]
-toDomMap r = Map.unionsWith (++) [ Map.singleton a [b] | (a,b) <- toList r ]
+toDomMap = Map.map Set.toList . relDomMp
 
 -- | As a Map keyed on range
 toRngMap :: Ord b => Rel a b -> Map.Map b [a]
-toRngMap r = Map.unionsWith (++) [ Map.singleton b [a] | (a,b) <- toList r ]
+toRngMap = Map.map Set.toList . relRngMp
 
+{-
 -- | Map over domain and range
 mapDomRng :: (Ord a, Ord b, Ord a', Ord b') => ((a,b) -> (a',b')) -> Rel a b -> Rel a' b'
 mapDomRng = Set.map
+-}
 
+-------------------------------------------------------------------------
+-- Util
+-------------------------------------------------------------------------
+
+-- | Singleton
+relMapSingleton :: (Ord a, Ord b) => a -> b -> RelMap a b
+relMapSingleton d r = Map.singleton d (Set.singleton r)
+
+-- | Take the inverse of a map used in relation
+relMapInverse :: (Ord a, Ord b) => RelMap a b -> RelMap b a
+relMapInverse m = Map.unionsWith Set.union [ relMapSingleton r d | (d,rs) <- Map.toList m, r <- Set.toList rs ]

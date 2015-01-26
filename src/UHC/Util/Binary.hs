@@ -25,7 +25,7 @@ module UHC.Util.Binary
   where
 
 import qualified Data.ByteString.Lazy as L
-import Data.Typeable (Typeable,Typeable1)
+import Data.Typeable
 import Data.Generics (Data)
 import Data.Binary
 import Data.Binary.Put(runPut,putWord16be)
