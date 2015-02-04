@@ -86,18 +86,19 @@ module UHC.Util.Serialize
   where
 import qualified UHC.Util.Binary as Bn
 import qualified Data.ByteString.Lazy as L
-import System.IO
-import System.IO (openBinaryFile)
-import UHC.Util.Utils
-import Data.Typeable
+import           System.IO
+import           System.IO (openBinaryFile)
+import           UHC.Util.Utils
+import           Data.Typeable
 import qualified Data.Map as Map
 import qualified Data.Set as Set
-import Data.Maybe
-import Data.Word
-import Data.Array
-import Control.Monad
+import           Data.Maybe
+import           Data.Word
+import           Data.Int
+import           Data.Array
+import           Control.Monad
 import qualified Control.Monad.State as St
-import Control.Monad.Trans
+import           Control.Monad.Trans
 
 {- | Serialization with state.
 Shared values are stored in a per type map, to keep all type correct. To
@@ -329,6 +330,30 @@ instance Serialize Bool where
   sget = sgetPlain
 
 instance Serialize Integer where
+  sput = sputPlain
+  sget = sgetPlain
+
+instance Serialize Word64 where
+  sput = sputPlain
+  sget = sgetPlain
+
+instance Serialize Int64 where
+  sput = sputPlain
+  sget = sgetPlain
+
+instance Serialize Word32 where
+  sput = sputPlain
+  sget = sgetPlain
+
+instance Serialize Int32 where
+  sput = sputPlain
+  sget = sgetPlain
+
+instance Serialize Word16 where
+  sput = sputPlain
+  sget = sgetPlain
+
+instance Serialize Int16 where
   sput = sputPlain
   sget = sgetPlain
 
