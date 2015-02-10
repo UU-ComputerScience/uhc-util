@@ -92,6 +92,7 @@ import           UHC.Util.Utils
 import           Data.Typeable
 import qualified Data.Map as Map
 import qualified Data.Set as Set
+-- import qualified UHC.Utils.RelMap as RelMap
 import           Data.Maybe
 import           Data.Word
 import           Data.Int
