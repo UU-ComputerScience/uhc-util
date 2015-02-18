@@ -39,6 +39,7 @@ library
     UHC.Util.AssocL,
     UHC.Util.Binary,
     UHC.Util.CompileRun,
+    UHC.Util.CompileRun2,
     UHC.Util.Control.Monad,
     UHC.Util.Debug,
     UHC.Util.DependencyGraph,
