@@ -8,7 +8,7 @@ module UHC.Util.RelMap
   , singleton
   , dom, rng
   , restrictDom, restrictRng
-  -- , mapDom, mapRng
+  , mapDom, mapRng
   -- , partitionDom, partitionRng
   -- , intersection, difference
   , union, unions
@@ -31,6 +31,7 @@ import           Prelude hiding (lookup)
 import           Control.Monad
 import qualified Data.Map as Map
 import qualified Data.Set as Set
+import           UHC.Util.AssocL
 import           UHC.Util.Binary
 import           UHC.Util.Serialize
 
@@ -84,15 +85,15 @@ restrictRng p (Rel d r) = Rel d' r'
   where r' = Map.filterWithKey (\r d -> p r) r
         d' = relMapInverse r'
 
-{-
 -- | Map domain
-mapDom :: (Ord a, Ord b, Ord x) => (a -> x) -> Rel a b -> Rel x b
-mapDom f = Set.map (\(a,b) -> (f a,b))
+mapDom :: (Ord b, Ord x) => (a -> x) -> Rel a b -> Rel x b
+mapDom f = fromList . assocLMapKey f . toList
 
 -- | Map range
-mapRng :: (Ord a, Ord b, Ord x) => (b -> x) -> Rel a b -> Rel a x
-mapRng f = Set.map (\(a,b) -> (a,f b))
+mapRng :: (Ord a, Ord x) => (b -> x) -> Rel a b -> Rel a x
+mapRng f = fromList . assocLMapElt f . toList
 
+{-
 -- | Partition domain
 partitionDom :: (Ord a, Ord b) => (a -> Bool) -> Rel a b -> (Rel a b,Rel a b)
 partitionDom f = Set.partition (f . fst)

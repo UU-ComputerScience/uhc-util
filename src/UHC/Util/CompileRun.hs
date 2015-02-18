@@ -44,16 +44,17 @@ module UHC.Util.CompileRun
   )
   where
 
-import Data.Maybe
-import System.Exit
-import Control.Monad
-import Control.Monad.Error as ME
-import Control.Monad.State
-import System.IO
+import           Data.Maybe
+import           System.Exit
+import           Control.Monad
+import           Control.Applicative(Applicative(..))
+import           Control.Monad.Error as ME
+import           Control.Monad.State
+import           System.IO
 import qualified Data.Map as Map
-import UHC.Util.Pretty
-import UHC.Util.Utils
-import UHC.Util.FPath
+import           UHC.Util.Pretty
+import           UHC.Util.Utils
+import           UHC.Util.FPath
 
 
 -------------------------------------------------------------------------
@@ -79,15 +80,18 @@ data CompileParticipation
 -- Interfacing with actual state info
 -------------------------------------------------------------------------
 
+-- | Conversion from string to module name
 class CompileModName n where
   mkCMNm      	:: String -> n
 
+-- | State of a compile unit
 class CompileUnitState s where
   cusDefault  		:: s
   cusUnk      		:: s
   cusIsUnk      	:: s -> Bool
   cusIsImpKnown		:: s -> Bool
 
+-- | Per compile unit
 class CompileUnit u n l s | u -> n l s where
   cuDefault 		:: u
   cuFPath   		:: u -> FPath
@@ -104,6 +108,7 @@ class CompileUnit u n l s | u -> n l s where
   -- defaults
   cuParticipation _	=  []
 
+-- | Error reporting
 class FPathError e => CompileRunError e p | e -> p where
   crePPErrL         :: [e] -> PP_Doc
   creMkNotFoundErrL :: p -> String -> [String] -> [FileSuffix] -> [e]
@@ -116,6 +121,62 @@ class FPathError e => CompileRunError e p | e -> p where
 
 class CompileRunStateInfo i n p where
   crsiImportPosOfCUKey :: n -> i -> p
+
+-------------------------------------------------------------------------
+-- Class alias covering all requirements
+-------------------------------------------------------------------------
+
+-- | Class alias for compile functionality
+class
+  ( CompileModName nm
+  , CompileUnitState state
+  , CompileUnit unit nm loc state
+  , CompileRunError err pos
+  , CompileRunStateInfo info nm pos
+  , MonadState (CompilePhase_S_E_T_State nm unit info err) m
+  , MonadError (CompilePhase_S_E_T_Error nm unit info err) m
+  , MonadIO m
+  , Monad m
+  ) => CompileRunner state nm pos loc unit info err m
+  where
+    -- | Deal with error
+    cpHandleErr' :: m a -> m a
+    cpHandleErr' m = do
+        x <- m
+        cr <- get
+        let modf f = do {modify f ; return x}
+        case crState cr of
+          CRSFailErrL about es mbLim
+            -> do { let (showErrs,omitErrs) = maybe (es,[]) (flip splitAt es) mbLim
+                  ; liftIO (unless (null about) (hPutPPLn stderr (pp about)))
+                  ; liftIO $ unless (null showErrs) $ 
+                           do { hPutPPLn stderr (crePPErrL showErrs)
+                              ; unless (null omitErrs) $ hPutStrLn stderr "... and more errors"
+                              ; hFlush stderr
+                              }
+                  ; if creAreFatal es then liftIO exitFailure else modf crSetOk
+                  }
+          CRSErrInfoL about doPrint is
+            -> do { if null is
+                    then return x
+                    else liftIO (do { hFlush stdout
+                                    ; hPutPPLn stderr (about >#< "found errors" >-< e)
+                                    ; return x
+                                    })
+                  ; if not (null is) then liftIO exitFailure else return x
+                  }
+            where e = empty -- if doPrint then crePPErrL is else empty
+          CRSFailMsg msg
+            -> do { liftIO $ hPutStrLn stderr msg
+                  ; liftIO exitFailure
+                  }
+          CRSFail
+            -> do { liftIO exitFailure
+                  }
+          CRSStop
+            -> do { liftIO $ exitWith ExitSuccess
+                  }
+          _ -> return x
 
 -------------------------------------------------------------------------
 -- Instances
@@ -195,6 +256,7 @@ newtype CompilePhase_S_E_T n u i e m a
 type CompilePhase_S_E_IO n u i e a = CompilePhase_S_E_T n u i e IO a
   -- = CompilePhase_S_E_IO { runCompilePhase_S_E_IO :: StateT (CompilePhase_S_E_IO_State n u i e) (ErrorT (CompilePhase_S_E_IO_Error n u i e) IO) a }
 
+{-
 instance CompileRunError e p => Monad (CompilePhase_S_E_T n u i e IO) where
   return x = CompilePhase_S_E_T $ return x -- \cr -> return (x, cr)
   cp >>= f = CompilePhase_S_E_T $ do -- \cr1 -> do
@@ -250,17 +312,27 @@ instance CompileRunError e p => MonadState (CompilePhase_S_E_T_State n u i e) (C
   get = CompilePhase_S_E_T get
   put = CompilePhase_S_E_T . put
 
+-}
+
 -- | 'CompileRun' as state in specific StateT variant with non standard >>=
 -- newtype CompilePhaseT n u i e m a = CompilePhaseT {runCompilePhaseT :: CompileRun n u i e -> m (a, CompileRun n u i e)}
 newtype CompilePhaseT n u i e m a
   = CompilePhaseT {runCompilePhaseT :: m a}
 
-instance ( Monad m, MonadIO m, MonadError (CompileRunState e) m, MonadState (CompileRun n u i e) m
-         , CompileRunError e p
-         ) => Monad (CompilePhaseT n u i e m) where
+instance CompileRunner state n pos loc u i e m => Functor (CompilePhaseT n u i e m) where
+    fmap = liftM
+ 
+instance CompileRunner state n pos loc u i e m => Applicative (CompilePhaseT n u i e m) where
+    pure  = return
+    (<*>) = ap
+
+-- instance CompileRunner state n pos loc u i e m where
+
+instance CompileRunner state n pos loc u i e m => Monad (CompilePhaseT n u i e m) where
   return x = CompilePhaseT $ return x -- \cr -> return (x, cr)
   cp >>= f = CompilePhaseT $ do -- \cr1 -> do
-        x <- runCompilePhaseT cp -- (x,cr2) <- runCompilePhaseT cp cr1
+        x <- cpHandleErr' $ runCompilePhaseT cp -- (x,cr2) <- runCompilePhaseT cp cr1
+{-        
         let modf f = do {modify f ; return x}
         cr <- get
         case crState cr of
@@ -295,23 +367,28 @@ instance ( Monad m, MonadIO m, MonadError (CompileRunState e) m, MonadState (Com
             -> do { liftIO $ exitWith ExitSuccess
                   }
           _ -> return x
+-}
         cr <- get
         case crState cr of
           CRSOk         -> runCompilePhaseT (f x)
-          CRSStopSeq    -> do { modf crSetOk ; ME.throwError CRSStopSeq }
-          CRSStopAllSeq -> do { modf crSetStopAllSeq ; ME.throwError CRSStopAllSeq }
+          CRSStopSeq    -> do { modify crSetOk ; ME.throwError CRSStopSeq }
+          CRSStopAllSeq -> do { modify crSetStopAllSeq ; ME.throwError CRSStopAllSeq }
           crs           -> ME.throwError crs
 
+{-
 instance MonadTrans (CompilePhaseT n u i e) where
   lift = CompilePhaseT
+-}
 
 {-
 instance MonadError m => MonadError (CompilePhaseT n u i e m) where
   liftIO = CompilePhaseT . liftIO
 -}
 
+{-
 instance (Monad m, MonadIO m, Monad (CompilePhaseT n u i e m)) => MonadIO (CompilePhaseT n u i e m) where
   liftIO = lift . liftIO
+-}
 
 -------------------------------------------------------------------------
 -- Pretty printing
@@ -471,7 +548,7 @@ cpFindFileForFPath suffs sp mbModNm mbFp
 
 -- | recursively extract imported modules, providing a way to import + do the import
 cpImportGatherFromModsWithImp
-  :: (Show n, Ord n, CompileUnit u n l s, CompileRunError e p, CompileUnitState s)
+  :: (Show n, Ord n, {- CompileRunner s n p l u i e m, -} CompileUnit u n l s, CompileRunError e p, CompileUnitState s)
      => (u -> [n])														-- get imports
      -> (Maybe prev -> n -> CompilePhase n u i e (x,Maybe prev))		-- extract imports from 1 module
      -> [n]																-- to be imported modules
@@ -483,7 +560,7 @@ cpImportGatherFromModsWithImp getImports imp1Mod modNmL
                )
        }
   where one prev modNm
-          = do { (_,new) <- imp1Mod prev modNm
+          = do { (_,new) <- {- cpHandleErr' $ -} imp1Mod prev modNm
                ; cpHandleErr
                ; cr <- get
                ; if CompileParticipation_NoImport `elem` cuParticipation (crCU modNm cr)
@@ -629,6 +706,8 @@ cpEmpty = return ()
 cpSeq :: CompileRunError e p => [CompilePhase n u i e ()] -> CompilePhase n u i e ()
 {-
 cpSeq = sequence_
+-}
+{-
 -}
 cpSeq []     = return ()
 cpSeq (a:as) = do { a
