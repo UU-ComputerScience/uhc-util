@@ -1,4 +1,4 @@
-{-# LANGUAGE UndecidableInstances, FlexibleContexts, FlexibleInstances, TypeSynonymInstances, FunctionalDependencies, MultiParamTypeClasses, RankNTypes #-}
+{-# LANGUAGE UndecidableInstances, FlexibleContexts, FlexibleInstances, TypeSynonymInstances, FunctionalDependencies, MultiParamTypeClasses, RankNTypes, ScopedTypeVariables #-}
 
 -------------------------------------------------------------------------
 -- | Combinators for a compile run.
@@ -12,7 +12,7 @@ module UHC.Util.CompileRun2
   , CompileRun(..)
 
   , CompilePhase
-  , CompilePhaseT
+  , CompilePhaseT(runCompilePhaseT)
   
   , CompileUnit(..)
   , CompileUnitState(..)
@@ -53,6 +53,7 @@ import           Control.Monad
 import           Control.Applicative(Applicative(..))
 import           Control.Monad.Error as ME
 import           Control.Monad.State
+import qualified Control.Exception as CE
 import           Control.Monad.Identity
 import           System.IO
 import qualified Data.Map as Map
@@ -113,7 +114,7 @@ class CompileUnit u n l s | u -> n l s where
   cuParticipation _	=  []
 
 -- | Error reporting
-class FPathError e => CompileRunError e p | e -> p where
+class {- FPathError e => -} CompileRunError e p | e -> p where
   crePPErrL         :: [e] -> PP_Doc
   creMkNotFoundErrL :: p -> String -> [String] -> [FileSuffix] -> [e]
   creAreFatal       :: [e] -> Bool
@@ -138,12 +139,13 @@ class
   , CompileRunError err pos
   , CompileRunStateInfo info nm pos
   , MonadState (CompileRun nm unit info err) m
-  , MonadError (CompileRunState err) m
+  -- , MonadError (CompileRunState err) m
   , MonadIO m
   , Monad m
   ) => CompileRunner state nm pos loc unit info err m
   where
     -- | Deal with error
+    {-
     cpHandleErr' :: m a -> m a
     cpHandleErr' m = do
         x <- m
@@ -181,6 +183,7 @@ class
             -> do { liftIO $ exitWith ExitSuccess
                   }
           _ -> return x
+    -}
 
 -------------------------------------------------------------------------
 -- Instances
@@ -222,6 +225,8 @@ data CompileRun nm unit info err
 instance Error (CompileRunState err) where
   noMsg = CRSOk
   strMsg = CRSFailMsg
+  
+-- instance Monad m => MonadError (CompileRunState err) m 
   
 instance Show (CompileRunState err) where
   show CRSOk				= "CRSOk"
@@ -339,8 +344,7 @@ instance CompileRunner state n pos loc u i e m => Applicative (CompilePhaseT n u
 instance CompileRunner state n pos loc u i e m => Monad (CompilePhaseT n u i e m) where
   return x = CompilePhaseT $ return x -- \cr -> return (x, cr)
   cp >>= f = CompilePhaseT $ do -- \cr1 -> do
-        x <- cpHandleErr' $ runCompilePhaseT cp -- (x,cr2) <- runCompilePhaseT cp cr1
-{-        
+        x <- {- cpHandleErr' $ -} runCompilePhaseT cp -- (x,cr2) <- runCompilePhaseT cp cr1
         let modf f = do {modify f ; return x}
         cr <- get
         case crState cr of
@@ -375,13 +379,19 @@ instance CompileRunner state n pos loc u i e m => Monad (CompilePhaseT n u i e m
             -> do { liftIO $ exitWith ExitSuccess
                   }
           _ -> return x
--}
         cr <- get
         case crState cr of
           CRSOk         -> runCompilePhaseT (f x)
-          CRSStopSeq    -> do { modify crSetOk ; ME.throwError CRSStopSeq }
-          CRSStopAllSeq -> do { modify crSetStopAllSeq ; ME.throwError CRSStopAllSeq }
+          CRSStopSeq    -> do { modf crSetOk ; return $ panic "Monad.CompilePhaseT.CRSStopSeq" }
+          CRSStopAllSeq -> do { modf crSetStopAllSeq ; return $ panic "Monad.CompilePhaseT.CRSStopAllSeq" }
+          crs           -> return $ panic "Monad.CompilePhaseT._"
+{-        
+        case crState cr of
+          CRSOk         -> runCompilePhaseT (f x)
+          CRSStopSeq    -> do { modf crSetOk ; ME.throwError CRSStopSeq }
+          CRSStopAllSeq -> do { modf crSetStopAllSeq ; ME.throwError CRSStopAllSeq }
           crs           -> ME.throwError crs
+-}
 
 instance MonadTrans (CompilePhaseT n u i e) where
   lift = CompilePhaseT
@@ -393,10 +403,14 @@ instance (CompileRunner state n pos loc u i e m, MonadState s m) => MonadState s
 instance (CompileRunner state n pos loc u i e m, MonadIO m) => MonadIO (CompilePhaseT n u i e m) where
   liftIO = lift . liftIO
 
-{-
-instance (CompileRunner state n pos loc u i e m, MonadError e m) => MonadError e (CompilePhaseT n u i e m) where
+instance (CompileRunner state n pos loc u i e m, MonadError e' m) => MonadError e' (CompilePhaseT n u i e m) where
   throwError = lift . throwError
-  catchError m hdl = catchError (runCompilePhaseT m) (runCompilePhaseT . hdl)
+  catchError m hdl = lift $ catchError (runCompilePhaseT m) (runCompilePhaseT . hdl)
+
+{-
+instance (Show e, MonadIO m) => MonadError e m where
+  throwError e = CE.throwIO $ CE.ErrorCall $ show e
+  catchError m hdl = CE.catch m hdl
 -}
 
 {-

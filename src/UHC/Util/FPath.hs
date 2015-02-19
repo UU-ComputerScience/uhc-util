@@ -9,7 +9,7 @@ module UHC.Util.FPath
   -- * FPath datatype, FPATH class for overloaded construction
     FPath(..), fpathSuff
   , FPATH(..)
-  , FPathError -- (..)
+  , FPathError -- (..) -- can be removed...
   , emptyFPath
   
   -- * Construction, deconstruction, predicates
@@ -368,7 +368,7 @@ searchPathFromString
 searchFPathFromLoc :: FilePath -> FPath -> [(FilePath,FPath)]
 searchFPathFromLoc loc fp = [(loc,fpathPrependDir loc fp)]
 
-searchLocationsForReadableFiles :: FPathError e => (loc -> FPath -> [(loc,FPath,[e])]) -> Bool -> [loc] -> FileSuffixes -> FPath -> IO [(FPath,loc,[e])]
+searchLocationsForReadableFiles :: (loc -> FPath -> [(loc,FPath,[e])]) -> Bool -> [loc] -> FileSuffixes -> FPath -> IO [(FPath,loc,[e])]
 searchLocationsForReadableFiles getfp stopAtFirst locs suffs fp
   = let select stop f fps
           = foldM chk [] fps
