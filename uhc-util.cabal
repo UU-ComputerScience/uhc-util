@@ -1,5 +1,5 @@
 Name:				uhc-util
-Version:			0.1.5.0
+Version:			0.1.5.1
 cabal-version:      >= 1.6
 License:			BSD3
 Copyright:			Utrecht University, Department of Information and Computing Sciences, Software Technology group
@@ -33,6 +33,7 @@ library
     time-compat >= 0.1.0.1,
     time >= 1.2,
     ListLike >= 4.0.0,
+    fclabels >= 2.0.2,
     syb  >= 0.3.6
   Exposed-Modules:
     UHC.Util.AGraph,
@@ -45,6 +46,8 @@ library
     UHC.Util.DependencyGraph,
     UHC.Util.FastSeq,
     UHC.Util.FPath,
+    UHC.Util.Hashable,
+    UHC.Util.Lens,
     UHC.Util.Nm,
     UHC.Util.ParseErrPrettyPrint,
     UHC.Util.ParseUtils,
@@ -63,4 +66,4 @@ library
   Ghc-Options:		
   HS-Source-Dirs:     	src
   Build-Tools:		
-  Extensions: NoMagicHash		
+  Extensions: NoMagicHash, DeriveGeneric

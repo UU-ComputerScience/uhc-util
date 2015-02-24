@@ -59,6 +59,8 @@ import Control.Monad
 import System.IO
 import System.Directory
 
+import GHC.Generics
+
 import UHC.Util.Utils
 import UHC.Util.Time
 
@@ -109,7 +111,7 @@ data FPath
       , fpathBase       ::         !String
       , fpathMbSuff     :: !(Maybe  String)
       }
-    deriving (Show,Eq,Ord)
+    deriving (Show,Eq,Ord,Generic)
 
 -- | Empty FPath
 emptyFPath :: FPath
@@ -248,10 +250,14 @@ mkFPathFromDirsFile :: Show s => [s] -> s -> FPath
 mkFPathFromDirsFile dirs f
   = fpathSetDir (concat $ intersperse fpathDirSep $ map show $ dirs) (mkFPath (show f))
 
-mkTopLevelFPath :: String -> String -> FPath
+-- | Make FPath from FilePath, setting the suffix when absent
+mkTopLevelFPath
+  :: String		-- ^ suffix
+  -> FilePath	-- ^ file name
+  -> FPath
 mkTopLevelFPath suff fn
   = let fpNoSuff = mkFPath fn
-     in maybe (fpathSetSuff suff fpNoSuff) (const fpNoSuff) . fpathMbSuff $ fpNoSuff
+     in maybe (fpathSetSuff suff fpNoSuff) (const fpNoSuff) $ fpathMbSuff fpNoSuff
 
 -------------------------------------------------------------------------------------------
 -- Utils

@@ -1,4 +1,4 @@
-{-# LANGUAGE UndecidableInstances, FlexibleContexts, FlexibleInstances, TypeSynonymInstances, FunctionalDependencies, MultiParamTypeClasses, RankNTypes, ScopedTypeVariables #-}
+{-# LANGUAGE TemplateHaskell, UndecidableInstances, FlexibleContexts, FlexibleInstances, TypeSynonymInstances, FunctionalDependencies, MultiParamTypeClasses, RankNTypes, ScopedTypeVariables #-}
 
 -------------------------------------------------------------------------
 -- | Combinators for a compile run.
@@ -9,7 +9,9 @@ module UHC.Util.CompileRun2
   ( CompileRunner
 
   , CompileRunState(..)
+  
   , CompileRun(..)
+  , crCUCache, crCompileOrder, crTopModNm, crState, crStateInfo
 
   , CompilePhase
   , CompilePhaseT(runCompilePhaseT)
@@ -60,6 +62,7 @@ import qualified Data.Map as Map
 import           UHC.Util.Pretty
 import           UHC.Util.Utils
 import           UHC.Util.FPath
+import           UHC.Util.Lens
 
 
 -------------------------------------------------------------------------
@@ -151,7 +154,7 @@ class
         x <- m
         cr <- get
         let modf f = do {modify f ; return x}
-        case crState cr of
+        case _crState cr of
           CRSFailErrL about es mbLim
             -> do { let (showErrs,omitErrs) = maybe (es,[]) (flip splitAt es) mbLim
                   ; liftIO (unless (null about) (hPutPPLn stderr (pp about)))
@@ -215,12 +218,14 @@ data CompileRunState err
 
 data CompileRun nm unit info err
   = CompileRun
-      { crCUCache       :: Map.Map nm unit
-      , crCompileOrder  :: [[nm]]
-      , crTopModNm      :: nm
-      , crState         :: CompileRunState err
-      , crStateInfo     :: info
+      { _crCUCache       :: Map.Map nm unit
+      , _crCompileOrder  :: [[nm]]
+      , _crTopModNm      :: nm
+      , _crState         :: CompileRunState err
+      , _crStateInfo     :: info
       }
+
+mkLabel ''CompileRun
 
 instance Error (CompileRunState err) where
   noMsg = CRSOk
@@ -241,11 +246,11 @@ instance Show (CompileRunState err) where
 mkEmptyCompileRun :: n -> i -> CompileRun n u i e
 mkEmptyCompileRun nm info
   = CompileRun
-      { crCUCache		= Map.empty
-      , crCompileOrder	= []
-      , crTopModNm      = nm
-      , crState			= CRSOk
-      , crStateInfo		= info
+      { _crCUCache			= Map.empty
+      , _crCompileOrder		= []
+      , _crTopModNm      	= nm
+      , _crState			= CRSOk
+      , _crStateInfo		= info
       }
 
 -------------------------------------------------------------------------
@@ -274,7 +279,7 @@ instance CompileRunError e p => Monad (CompilePhase_S_E_T n u i e IO) where
         x <- runCompilePhase_S_E_T cp -- (x,cr2) <- runCompilePhase_S_E_T cp cr1
         let modf f = do {modify f ; return x}
         cr <- get
-        case crState cr of
+        case _crState cr of
           CRSFailErrL about es mbLim
             -> do { let (showErrs,omitErrs) = maybe (es,[]) (flip splitAt es) mbLim
                   ; liftIO (unless (null about) (hPutPPLn stderr (pp about)))
@@ -307,7 +312,7 @@ instance CompileRunError e p => Monad (CompilePhase_S_E_T n u i e IO) where
                   }
           _ -> return x
         cr <- get
-        case crState cr of
+        case _crState cr of
           CRSOk         -> runCompilePhase_S_E_T (f x)
           CRSStopSeq    -> do { modf crSetOk ; ME.throwError CRSStopSeq }
           CRSStopAllSeq -> do { modf crSetStopAllSeq ; ME.throwError CRSStopAllSeq }
@@ -347,7 +352,7 @@ instance CompileRunner state n pos loc u i e m => Monad (CompilePhaseT n u i e m
         x <- {- cpHandleErr' $ -} runCompilePhaseT cp -- (x,cr2) <- runCompilePhaseT cp cr1
         let modf f = do {modify f ; return x}
         cr <- get
-        case crState cr of
+        case _crState cr of
           CRSFailErrL about es mbLim
             -> do { let (showErrs,omitErrs) = maybe (es,[]) (flip splitAt es) mbLim
                   ; liftIO (unless (null about) (hPutPPLn stderr (pp about)))
@@ -380,13 +385,13 @@ instance CompileRunner state n pos loc u i e m => Monad (CompilePhaseT n u i e m
                   }
           _ -> return x
         cr <- get
-        case crState cr of
+        case _crState cr of
           CRSOk         -> runCompilePhaseT (f x)
           CRSStopSeq    -> do { modf crSetOk ; return $ panic "Monad.CompilePhaseT.CRSStopSeq" }
           CRSStopAllSeq -> do { modf crSetStopAllSeq ; return $ panic "Monad.CompilePhaseT.CRSStopAllSeq" }
           crs           -> return $ panic "Monad.CompilePhaseT._"
 {-        
-        case crState cr of
+        case _crState cr of
           CRSOk         -> runCompilePhaseT (f x)
           CRSStopSeq    -> do { modf crSetOk ; ME.throwError CRSStopSeq }
           CRSStopAllSeq -> do { modf crSetStopAllSeq ; ME.throwError CRSStopAllSeq }
@@ -432,9 +437,9 @@ instance (Monad m, MonadIO m, Monad (CompilePhaseT n u i e m)) => MonadIO (Compi
 
 ppCR :: (PP n,PP u) => CompileRun n u i e -> PP_Doc
 ppCR cr
-  = "CR" >#< show (crState cr) >|< ":" >#<
-      (   (ppBracketsCommasBlock $ map (\(n,u) -> pp n >#< "->" >#< pp u) $ Map.toList $ crCUCache $ cr)
-      >-< ppBracketsCommas (map ppBracketsCommas $ crCompileOrder $ cr)
+  = "CR" >#< show (_crState cr) >|< ":" >#<
+      (   (ppBracketsCommasBlock $ map (\(n,u) -> pp n >#< "->" >#< pp u) $ Map.toList $ _crCUCache cr)
+      >-< ppBracketsCommas (map ppBracketsCommas $ _crCompileOrder $ cr)
       )
 
 crPP :: (PP n,PP u) => String -> CompileRun n u i e -> IO (CompileRun n u i e)
@@ -465,7 +470,7 @@ cpPPMsg m
 -------------------------------------------------------------------------
 
 crMbCU :: Ord n => n -> CompileRun n u i e -> Maybe u
-crMbCU modNm cr = Map.lookup modNm (crCUCache cr)
+crMbCU modNm cr = Map.lookup modNm (_crCUCache cr)
 
 crCU :: (Show n,Ord n) => n -> CompileRun n u i e -> u
 crCU modNm = panicJust ("crCU: " ++ show modNm) . crMbCU modNm
@@ -475,31 +480,31 @@ crCU modNm = panicJust ("crCU: " ++ show modNm) . crMbCU modNm
 -------------------------------------------------------------------------
 
 crSetOk :: CompileRun n u i e -> CompileRun n u i e
-crSetOk cr = cr {crState = CRSOk}
+crSetOk = crState ^= CRSOk -- cr {_crState = CRSOk}
 
 crSetFail :: CompileRun n u i e -> CompileRun n u i e
-crSetFail cr = cr {crState = CRSFail}
+crSetFail = crState ^= CRSFail -- cr {_crState = CRSFail}
 
 crSetStop :: CompileRun n u i e -> CompileRun n u i e
-crSetStop cr = cr {crState = CRSStop}
+crSetStop = crState ^= CRSStop -- cr {_crState = CRSStop}
 
 crSetStopSeq :: CompileRun n u i e -> CompileRun n u i e
-crSetStopSeq cr = cr {crState = CRSStopSeq}
+crSetStopSeq = crState ^= CRSStopSeq -- cr {_crState = CRSStopSeq}
 
 crSetStopAllSeq :: CompileRun n u i e -> CompileRun n u i e
-crSetStopAllSeq cr = cr {crState = CRSStopAllSeq}
+crSetStopAllSeq = crState ^= CRSStopAllSeq -- cr {_crState = CRSStopAllSeq}
 
 crSetErrs' :: Maybe Int -> String -> [e] -> CompileRun n u i e -> CompileRun n u i e
 crSetErrs' limit about es cr
   = case es of
       [] -> cr
-      _  -> cr {crState = CRSFailErrL about es limit}
+      _  -> cr {_crState = CRSFailErrL about es limit}
 
 crSetInfos' :: String -> Bool -> [e] -> CompileRun n u i e -> CompileRun n u i e
 crSetInfos' msg dp is cr
   = case is of
       [] -> cr
-      _  -> cr {crState = CRSErrInfoL msg dp is}
+      _  -> cr {_crState = CRSErrInfoL msg dp is}
 
 -------------------------------------------------------------------------
 -- Compile unit observations
@@ -539,7 +544,7 @@ cpFindFilesForFPathInLocations getfp putres stopAtFirst suffs locs mbModNm mbFp
                                        )
                   ; case fpsFound of
                       []
-                        -> do { cpSetErrs (creMkNotFoundErrL (crsiImportPosOfCUKey modNm (crStateInfo cr)) (fpathToStr fp) (map show locs) suffs')
+                        -> do { cpSetErrs (creMkNotFoundErrL (crsiImportPosOfCUKey modNm (_crStateInfo cr)) (fpathToStr fp) (map show locs) suffs')
                               ; return []
                               }
                       ((_,_,e@(_:_)):_)
@@ -630,10 +635,10 @@ cpImportGather imp1Mod modNm
       [modNm]
 
 crImportDepL :: (CompileUnit u n l s) => CompileRun n u i e -> [(n,[n])]
-crImportDepL = map (\cu -> (cuKey cu,cuImports cu)) . Map.elems . crCUCache
+crImportDepL = map (\cu -> (cuKey cu,cuImports cu)) . Map.elems . _crCUCache
 
 cpImportScc :: (Ord n, CompileRunner s n p l u i e m) => CompilePhaseT n u i e m ()
-cpImportScc = modify (\cr -> (cr {crCompileOrder = scc (crImportDepL cr)}))
+cpImportScc = modify (\cr -> (cr {_crCompileOrder = scc (crImportDepL cr)}))
 
 
 -------------------------------------------------------------------------
@@ -641,10 +646,12 @@ cpImportScc = modify (\cr -> (cr {crCompileOrder = scc (crImportDepL cr)}))
 -------------------------------------------------------------------------
 
 cpUpdStateInfo, cpUpdSI :: CompileRunner s n p l u i e m => (i -> i) -> CompilePhaseT n u i e m ()
-cpUpdStateInfo upd
+cpUpdStateInfo upd = crStateInfo =$: upd
+{-
   = do { cr <- get
-       ; put (cr {crStateInfo = upd (crStateInfo cr)})
+       ; put (cr {_crStateInfo = upd (_crStateInfo cr)})
        }
+-}
 
 cpUpdSI = cpUpdStateInfo
 
@@ -656,7 +663,7 @@ cpUpdCUM :: (Ord n, CompileRunner s n p l u i e m) => n -> (u -> IO u) -> Compil
 cpUpdCUM modNm upd
   = do { cr <- get
        ; cu <- liftIO (maybe (upd cuDefault) upd (crMbCU modNm cr))
-       ; put (cr {crCUCache = Map.insert modNm cu (crCUCache cr)})
+       ; crCUCache =$: Map.insert modNm cu
        }
 
 
@@ -664,7 +671,7 @@ cpUpdCUWithKey :: (Ord n, CompileRunner s n p l u i e m) => n -> (n -> u -> (n,u
 cpUpdCUWithKey modNm upd
   = do { cr <- get
        ; let (modNm',cu) = (maybe (upd modNm cuDefault) (upd modNm) (crMbCU modNm cr))
-       ; put (cr {crCUCache = Map.insert modNm' cu $ Map.delete modNm $ crCUCache cr})
+       ; crCUCache =$: Map.insert modNm' cu . Map.delete modNm
        ; return modNm'
        }
 
@@ -676,19 +683,7 @@ cpUpdCU modNm upd
 
 -- | delete unit
 cpDelCU :: (Ord n,CompileRunner s n p l u i e m) => n -> CompilePhaseT n u i e m ()
-cpDelCU modNm
-  = do { modify (\cr -> cr {crCUCache = Map.delete modNm $ crCUCache cr})
-       }
-{-
-  = do { cr <- get
-       ; let cu = (maybe (upd cuDefault) upd (crMbCU modNm cr))
-       ; put (cr {crCUCache = Map.insert modNm cu (crCUCache cr)})
-       }
--}
-{-
-cpUpdCU modNm upd
- = cpUpdCUM modNm (return . upd)
--}
+cpDelCU modNm = crCUCache =$: Map.delete modNm
 
 -------------------------------------------------------------------------
 -- State manipulation, sequencing (Monadic)
@@ -719,12 +714,12 @@ cpSetStopAllSeq
  = modify crSetStopAllSeq
 
 cpSetOk :: CompileRunner s n p l u i e m => CompilePhaseT n u i e m ()
-cpSetOk
- = modify (\cr -> (cr {crState = CRSOk}))
+cpSetOk = crState =: CRSOk
+ -- = modify (\cr -> (cr {_crState = CRSOk}))
 
 cpSetCompileOrder :: CompileRunner s n p l u i e m => [[n]] -> CompilePhaseT n u i e m ()
-cpSetCompileOrder nameLL
- = modify (\cr -> (cr {crCompileOrder = nameLL}))
+cpSetCompileOrder nameLL = crCompileOrder =: nameLL
+ -- = modify (\cr -> (cr {_crCompileOrder = nameLL}))
 
 cpSetLimitErrs, cpSetLimitErrsWhen :: CompileRunner s n p l u i e m => Int -> String -> [e] -> CompilePhaseT n u i e m ()
 cpSetLimitErrs l a e
@@ -748,7 +743,7 @@ cpSeq []     = return ()
 cpSeq (a:as) = do { a
                   ; cpHandleErr
                   ; cr <- get
-                  ; case crState cr of
+                  ; case _crState cr of
                       CRSOk         -> cpSeq as
                       CRSStopSeq    -> cpSetOk
                       CRSStopAllSeq -> cpSetStopAllSeq
@@ -766,7 +761,7 @@ cpSeqWhen _    _  = return ()
 cpHandleErr :: CompileRunError e p => CompilePhase n u i e ()
 cpHandleErr
   = do { cr <- get
-       ; case crState cr of
+       ; case _crState cr of
            CRSFailErrL about es (Just lim)
              -> do { let (showErrs,omitErrs) = splitAt lim es
                    ; liftIO (unless (null about) (hPutPPLn stderr (pp about)))
