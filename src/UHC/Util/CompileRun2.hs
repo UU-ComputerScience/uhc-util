@@ -30,10 +30,12 @@ module UHC.Util.CompileRun2
 
   , crCU, crMbCU
   , ppCR
-
+  
   , cpUpdStateInfo, cpUpdSI
 
   , cpUpdCU, cpUpdCUWithKey
+  , cpMbCU
+  
   , cpSetFail, cpSetStop, cpSetStopSeq, cpSetStopAllSeq
   , cpSetOk, cpSetErrs, cpSetLimitErrs, cpSetLimitErrsWhen, cpSetInfos, cpSetCompileOrder
 
@@ -147,46 +149,6 @@ class
   , Monad m
   ) => CompileRunner state nm pos loc unit info err m
   where
-    -- | Deal with error
-    {-
-    cpHandleErr' :: m a -> m a
-    cpHandleErr' m = do
-        x <- m
-        cr <- get
-        let modf f = do {modify f ; return x}
-        case _crState cr of
-          CRSFailErrL about es mbLim
-            -> do { let (showErrs,omitErrs) = maybe (es,[]) (flip splitAt es) mbLim
-                  ; liftIO (unless (null about) (hPutPPLn stderr (pp about)))
-                  ; liftIO $ unless (null showErrs) $ 
-                           do { hPutPPLn stderr (crePPErrL showErrs)
-                              ; unless (null omitErrs) $ hPutStrLn stderr "... and more errors"
-                              ; hFlush stderr
-                              }
-                  ; if creAreFatal es then liftIO exitFailure else modf crSetOk
-                  }
-          CRSErrInfoL about doPrint is
-            -> do { if null is
-                    then return x
-                    else liftIO (do { hFlush stdout
-                                    ; hPutPPLn stderr (about >#< "found errors" >-< e)
-                                    ; return x
-                                    })
-                  ; if not (null is) then liftIO exitFailure else return x
-                  }
-            where e = empty -- if doPrint then crePPErrL is else empty
-          CRSFailMsg msg
-            -> do { liftIO $ hPutStrLn stderr msg
-                  ; liftIO exitFailure
-                  }
-          CRSFail
-            -> do { liftIO exitFailure
-                  }
-          CRSStop
-            -> do { liftIO $ exitWith ExitSuccess
-                  }
-          _ -> return x
-    -}
 
 -------------------------------------------------------------------------
 -- Instances
@@ -256,79 +218,6 @@ mkEmptyCompileRun nm info
 -------------------------------------------------------------------------
 -- Monad impl (20140804 AD, not (yet?) put into action, too much code still breaks)
 -------------------------------------------------------------------------
-
--- type CompilePhase n u i e a = CompilePhaseT n u i e (StateT (CompileRun n u i e) (ErrorT (CompileRunState e) IO)) a
--- type CompilePhase n u i e a = CompilePhase_S_E_IO n u i e a
--- type CompilePhase n u i e a = StateT (CompileRun n u i e) IO a
-
-{-
-type CompilePhase_S_E_T_State n u i e = CompileRun n u i e
-type CompilePhase_S_E_T_Error n u i e = CompileRunState e
-
-newtype CompilePhase_S_E_T n u i e m a
-  = CompilePhase_S_E_T { runCompilePhase_S_E_T :: StateT (CompilePhase_S_E_T_State n u i e) (ErrorT (CompilePhase_S_E_T_Error n u i e) m) a }
-
-type CompilePhase_S_E_IO n u i e a = CompilePhase_S_E_T n u i e IO a
-  -- = CompilePhase_S_E_IO { runCompilePhase_S_E_IO :: StateT (CompilePhase_S_E_IO_State n u i e) (ErrorT (CompilePhase_S_E_IO_Error n u i e) IO) a }
--}
-
-{-
-instance CompileRunError e p => Monad (CompilePhase_S_E_T n u i e IO) where
-  return x = CompilePhase_S_E_T $ return x -- \cr -> return (x, cr)
-  cp >>= f = CompilePhase_S_E_T $ do -- \cr1 -> do
-        x <- runCompilePhase_S_E_T cp -- (x,cr2) <- runCompilePhase_S_E_T cp cr1
-        let modf f = do {modify f ; return x}
-        cr <- get
-        case _crState cr of
-          CRSFailErrL about es mbLim
-            -> do { let (showErrs,omitErrs) = maybe (es,[]) (flip splitAt es) mbLim
-                  ; liftIO (unless (null about) (hPutPPLn stderr (pp about)))
-                  ; liftIO $ unless (null showErrs) $ 
-                           do { hPutPPLn stderr (crePPErrL showErrs)
-                              ; unless (null omitErrs) $ hPutStrLn stderr "... and more errors"
-                              ; hFlush stderr
-                              }
-                  ; if creAreFatal es then liftIO exitFailure else modf crSetOk
-                  }
-          CRSErrInfoL about doPrint is
-            -> do { if null is
-                    then return x
-                    else liftIO (do { hFlush stdout
-                                    ; hPutPPLn stderr (about >#< "found errors" >-< e)
-                                    ; return x
-                                    })
-                  ; if not (null is) then liftIO exitFailure else return x
-                  }
-            where e = empty -- if doPrint then crePPErrL is else empty
-          CRSFailMsg msg
-            -> do { liftIO $ hPutStrLn stderr msg
-                  ; liftIO exitFailure
-                  }
-          CRSFail
-            -> do { liftIO exitFailure
-                  }
-          CRSStop
-            -> do { liftIO $ exitWith ExitSuccess
-                  }
-          _ -> return x
-        cr <- get
-        case _crState cr of
-          CRSOk         -> runCompilePhase_S_E_T (f x)
-          CRSStopSeq    -> do { modf crSetOk ; ME.throwError CRSStopSeq }
-          CRSStopAllSeq -> do { modf crSetStopAllSeq ; ME.throwError CRSStopAllSeq }
-          crs           -> ME.throwError crs
-
-instance CompileRunError e p => MonadIO (CompilePhase_S_E_T n u i e IO) where
-  liftIO = CompilePhase_S_E_T . liftIO
-
-instance MonadTrans (CompilePhase_S_E_T n u i e) where
-  lift = CompilePhase_S_E_T . lift . lift
-
-instance CompileRunError e p => MonadState (CompilePhase_S_E_T_State n u i e) (CompilePhase_S_E_T n u i e IO) where
-  get = CompilePhase_S_E_T get
-  put = CompilePhase_S_E_T . put
-
--}
 
 -- | 'CompileRun' as state in specific StateT variant with non standard >>=
 -- newtype CompilePhaseT n u i e m a = CompilePhaseT {runCompilePhaseT :: CompileRun n u i e -> m (a, CompileRun n u i e)}
@@ -662,7 +551,7 @@ cpUpdSI = cpUpdStateInfo
 cpUpdCUM :: (Ord n, CompileRunner s n p l u i e m) => n -> (u -> IO u) -> CompilePhaseT n u i e m ()
 cpUpdCUM modNm upd
   = do { cr <- get
-       ; cu <- liftIO (maybe (upd cuDefault) upd (crMbCU modNm cr))
+       ; cu <- liftIO $ maybe (upd cuDefault) upd (crMbCU modNm cr)
        ; crCUCache =$: Map.insert modNm cu
        }
 
@@ -680,6 +569,10 @@ cpUpdCU modNm upd
   = do { cpUpdCUWithKey modNm (\k u -> (k, upd u))
        ; return ()
        }
+
+-- | lookup unit
+cpMbCU :: (Ord n,CompileRunner s n p l u i e m) => n -> CompilePhaseT n u i e m (Maybe u)
+cpMbCU modNm = liftM (crMbCU modNm) get
 
 -- | delete unit
 cpDelCU :: (Ord n,CompileRunner s n p l u i e m) => n -> CompilePhaseT n u i e m ()

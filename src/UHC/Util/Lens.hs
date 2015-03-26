@@ -5,8 +5,12 @@
 {-# LANGUAGE TypeOperators #-}
 
 module UHC.Util.Lens
-  ( 
-    (^*)
+  ( (:->)
+  , Lens
+
+  -- * Access
+  
+  , (^*)
 
   , (^.)
   , (^=)
@@ -15,10 +19,19 @@ module UHC.Util.Lens
   , (=.)
   , (=:)
   , (=$:)
+  , getl
+  
+  -- * Misc
   
   , focus
   
   , mkLabel
+  
+  -- * Wrappers
+  
+  , isoMb
+  , isoMbWithDefault
+
   )
   where
 
@@ -27,9 +40,15 @@ import qualified Control.Monad.State as MS
 import           Control.Monad.Trans
 import           Control.Category
 
-import           Data.Label
+import           Data.Label hiding (Lens)
 import           Data.Label.Monadic((=:), (=.))
-import qualified Data.Label.Monadic as M(modify)
+import qualified Data.Label.Monadic as M
+import qualified Data.Label.Partial as P
+
+import           UHC.Util.Utils
+
+-- * Textual alias for (:->)
+type Lens a b = a :-> b
 
 -- * Operator interface for composition
 
@@ -79,3 +98,17 @@ focus f m = do
  (Lens f) (StateT g) = StateT $ \a -> case f a of
   StoreT (Identity h) b -> liftM (second h) (g b)
 -}
+
+-- | Alias for 'gets' avoiding conflict with MonadState
+getl :: MS.MonadState f m => (f :-> o) -> m o
+getl = M.gets
+
+-- * Wrappers
+
+-- | Wrapper around a Maybe with a default in case of Nothing
+isoMbWithDefault :: o -> (f :-> Maybe o) -> (f :-> o)
+isoMbWithDefault dflt f = iso (Iso (maybe dflt id) (Just)) . f
+
+-- | Wrapper around a Maybe with an embedded panic in case of Nothing, with a panic message
+isoMb :: String -> (f :-> Maybe o) -> (f :-> o)
+isoMb msg f = iso (Iso (panicJust msg) (Just)) . f
