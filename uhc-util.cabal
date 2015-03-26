@@ -7,15 +7,15 @@ Build-Type:			Simple
 license-file:		LICENSE 
 Author:				Atze Dijkstra
 Maintainer:         atze@uu.nl
-Homepage:           https://github.com/UU-ComputerScience/uhc-utils
-Bug-Reports:        https://github.com/UU-ComputerScience/uhc-utils/issues
+Homepage:           https://github.com/UU-ComputerScience/uhc-util
+Bug-Reports:        https://github.com/UU-ComputerScience/uhc-util/issues
 Category:			Development
 Description:		General purpose utilities for UHC and related tools
 Synopsis:			UHC utilities
 
 source-repository head
   type:     git
-  location: git://github.com/UU-ComputerScience/uhc-utils.git
+  location: git://github.com/UU-ComputerScience/uhc-util.git
 
 library
   Build-Depends:
