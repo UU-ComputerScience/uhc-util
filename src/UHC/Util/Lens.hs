@@ -53,7 +53,7 @@ type Lens a b = a :-> b
 -- * Operator interface for composition
 
 infixl 9 ^*
--- | functional getter, which acts like a field accessor
+-- | composition
 (^*) :: (a :-> b) -> (b :-> c) -> (a :-> c)
 f1 ^* f2 = f2 . f1
 {-# INLINE (^*) #-}

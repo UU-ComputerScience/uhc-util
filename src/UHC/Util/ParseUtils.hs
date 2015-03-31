@@ -1,4 +1,4 @@
-{-# LANGUAGE RankNTypes, FlexibleContexts #-}
+{-# LANGUAGE RankNTypes, FlexibleContexts, CPP #-}
 
 module UHC.Util.ParseUtils
   ( -- * Specific parser types
@@ -26,6 +26,11 @@ module UHC.Util.ParseUtils
   , fromMessage
   )
   where
+
+#if __GLASGOW_HASKELL__ >= 710
+import Prelude hiding ( (<*>), (<*), (*>), (<$>), (<$) )
+#else
+#endif
 
 import qualified Data.Map as Map
 import Data.Maybe

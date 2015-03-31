@@ -2,7 +2,11 @@
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE CPP #-}
+#if __GLASGOW_HASKELL__ >= 710
+#else
 {-# LANGUAGE OverlappingInstances #-}
+#endif
 
 module UHC.Util.VarLookup
 	( VarLookup (..)
@@ -79,11 +83,21 @@ infixr 7 |+>
 class VarLookupCmb m1 m2 where
   (|+>) :: m1 -> m2 -> m2
 
-instance VarLookupCmb m1 m2 => VarLookupCmb m1 [m2] where
-  m1 |+> (m2:m2s) = (m1 |+> m2) : m2s
+#if __GLASGOW_HASKELL__ >= 710
+instance {-# OVERLAPPING #-}
+#else
+instance
+#endif
+  VarLookupCmb m1 m2 => VarLookupCmb m1 [m2] where
+    m1 |+> (m2:m2s) = (m1 |+> m2) : m2s
 
-instance (VarLookupCmb m1 m1, VarLookupCmb m1 m2) => VarLookupCmb [m1] [m2] where
-  m1 |+> (m2:m2s) = (foldr1 (|+>) m1 |+> m2) : m2s
+#if __GLASGOW_HASKELL__ >= 710
+instance {-# OVERLAPPING #-}
+#else
+instance
+#endif
+  (VarLookupCmb m1 m1, VarLookupCmb m1 m2) => VarLookupCmb [m1] [m2] where
+    m1 |+> (m2:m2s) = (foldr1 (|+>) m1 |+> m2) : m2s
 
 class VarLookupBase m k v | m -> k v where
   varlookupEmpty :: m
