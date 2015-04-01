@@ -40,6 +40,7 @@ module UHC.Util.Utils
   , sortOn
   , sortByOn
   , groupOn
+  , groupByOn
   , groupSortOn
   , groupSortByOn
   , nubOn
