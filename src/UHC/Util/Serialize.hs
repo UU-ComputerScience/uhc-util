@@ -67,6 +67,7 @@ instance Serialize Foo where
 
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE FlexibleContexts #-}
 
 module UHC.Util.Serialize
 	( SPut

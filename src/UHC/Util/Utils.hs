@@ -1,4 +1,69 @@
-module UHC.Util.Utils where
+{-# LANGUAGE CPP #-}
+
+module UHC.Util.Utils
+  ( -- * Set
+    unionMapSet
+
+    -- * Map
+  , inverseMap
+  , showStringMapKeys
+  
+  , mapLookup2', mapLookup2
+  
+    -- * List
+  , hdAndTl', hdAndTl
+  , maybeNull, maybeHd
+  , wordsBy
+  , initlast, initlast2
+  , last'
+  , firstNotEmpty
+  , listSaturate, listSaturateWith
+  , spanOnRest
+  
+    -- * Tuple
+  , tup123to1, tup123to2
+  , tup123to12, tup123to23
+  , tup12to123
+
+    -- * String
+  , strWhite
+  , strPad
+  , strCapitalize
+  , strToInt
+  
+  , splitForQualified
+  
+    -- * Misc
+  , panic
+  
+  , isSortedByOn
+  , sortOn
+  , sortByOn
+  , groupOn
+  , groupSortOn
+  , groupSortByOn
+  , nubOn
+  
+  , consecutiveBy
+  
+  , partitionAndRebuild
+  
+  , orderingLexic
+  
+    -- * Maybe
+  , panicJust
+  , ($?)
+  , orMb
+  , maybeAnd
+  , maybeOr
+  
+    -- * Graph
+  , scc
+  
+    -- * MOnad
+  , firstMaybeM
+  )
+  where
 
 -- import UHC.Util.Pretty
 import Data.Char
@@ -11,6 +76,7 @@ import qualified Data.Graph as Graph
 -- Set
 -------------------------------------------------------------------------
 
+-- | Union a set where each element itself is mapped to a set
 unionMapSet :: Ord b => (a -> Set.Set b) -> (Set.Set a -> Set.Set b)
 unionMapSet f = Set.unions . map f . Set.toList
 
@@ -18,9 +84,11 @@ unionMapSet f = Set.unions . map f . Set.toList
 -- Map
 -------------------------------------------------------------------------
 
+-- | Inverse of a map
 inverseMap :: (Ord k, Ord v') => (k -> v -> (v',k')) -> Map.Map k v -> Map.Map v' k'
 inverseMap mk = Map.fromList . map (uncurry mk) . Map.toList
 
+-- | Show keys of map using a separator
 showStringMapKeys :: Map.Map String x -> String -> String
 showStringMapKeys m sep = concat $ intersperse sep $ Map.keys m
 
@@ -28,10 +96,12 @@ showStringMapKeys m sep = concat $ intersperse sep $ Map.keys m
 -- List
 -------------------------------------------------------------------------
 
+-- | Get head and tail, with default if empty list
 hdAndTl' :: a -> [a] -> (a,[a])
 hdAndTl' _ (a:as) = (a,as)
 hdAndTl' n []     = (n,[])
 
+-- | Get head and tail, with panic/error if empty list
 hdAndTl :: [a] -> (a,[a])
 hdAndTl = hdAndTl' (panic "hdAndTl")
 {-# INLINE hdAndTl  #-}
@@ -44,6 +114,7 @@ maybeHd :: r -> (a -> r) -> [a] -> r
 maybeHd n f = maybeNull n (f . head)
 {-# INLINE maybeHd  #-}
 
+-- | Split up in words by predicate
 wordsBy :: (a -> Bool) -> [a] -> [[a]]
 wordsBy p l
   = w l
@@ -53,6 +124,7 @@ wordsBy p l
                                     (_:[])   -> [[]]
                                     (_:ls'') -> w ls''
 
+-- | Possibly last element and init
 initlast :: [a] -> Maybe ([a],a)
 initlast as
   = il [] as
@@ -64,6 +136,7 @@ initlast as
 last' :: a -> [a] -> a
 last' e = maybe e snd . initlast
 
+-- | Possibly last and preceding element and init
 initlast2 :: [a] -> Maybe ([a],a,a)
 initlast2 as
   = il [] as
@@ -71,24 +144,23 @@ initlast2 as
         il acc (a:as) = il (a:acc) as
         il _   _      = Nothing
 
+-- | First non empty list of list of lists
 firstNotEmpty :: [[x]] -> [x]
 firstNotEmpty = maybeHd [] id . filter (not . null)
 
--- saturate a list, that is:
+-- | Saturate a list, that is:
 -- for all indices i between min and max,
 -- if there is no listelement x for which  get x  returns i,
 -- add an element  mk i  to the list
-
 listSaturate :: (Enum a,Ord a) => a -> a -> (x -> a) -> (a -> x) -> [x] -> [x]
 listSaturate min max get mk xs
   = [ Map.findWithDefault (mk i) i mp | i <- [min..max] ]
   where mp = Map.fromList [ (get x,x) | x <- xs ]
 
--- saturate a list with values from assoc list, that is:
+-- | Saturate a list with values from assoc list, that is:
 -- for all indices i between min and max,
 -- if there is no listelement x for which  get x  returns i,
 -- add a candidate from the associationlist (which must be present) to the list
-
 listSaturateWith :: (Enum a,Ord a) => a -> a -> (x -> a) -> [(a,x)] -> [x] -> [x]
 listSaturateWith min max get missing l
   = listSaturate min max get mk l
@@ -123,19 +195,23 @@ tup12to123 c (a,b) = (a,b,c)
 -- String
 -------------------------------------------------------------------------
 
+-- | Blanks
 strWhite :: Int -> String
 strWhite sz = replicate sz ' '
 {-# INLINE strWhite #-}
 
+-- | Pad upto size with blanks
 strPad :: String -> Int -> String
 strPad s sz = s ++ strWhite (sz - length s)
 
+-- | Capitalize first letter
 strCapitalize :: String -> String
 strCapitalize s
   = case s of
       (c:cs) -> toUpper c : cs
       _      -> s
 
+-- | Convert string to Int
 strToInt :: String -> Int
 strToInt = foldl (\i c -> i * 10 + ord c - ord '0') 0
 
@@ -143,6 +219,7 @@ strToInt = foldl (\i c -> i * 10 + ord c - ord '0') 0
 -- Split for qualified name
 -------------------------------------------------------------------------
 
+-- | Split into fragments based on '.' convention for qualified Haskell names
 splitForQualified :: String -> [String]
 splitForQualified s
     = ws''
@@ -158,6 +235,7 @@ splitForQualified s
 -- Misc
 -------------------------------------------------------------------------
 
+-- | Error, with message
 panic m = error ("panic: " ++ m)
 
 -------------------------------------------------------------------------
@@ -170,9 +248,12 @@ isSortedByOn cmp sel l
   where isSrt (x1:tl@(x2:_)) = cmp (sel x1) (sel x2) /= GT && isSrt tl
         isSrt _              = True
 
+#if __GLASGOW_HASKELL__ >= 710
+#else
 sortOn :: Ord b => (a -> b) -> [a] -> [a]
 sortOn = sortByOn compare
 {-# INLINE sortOn #-}
+#endif
 
 sortByOn :: (b -> b -> Ordering) -> (a -> b) -> [a] -> [a]
 sortByOn cmp sel = sortBy (\e1 e2 -> sel e1 `cmp` sel e2)
@@ -217,6 +298,7 @@ partitionAndRebuild _ [] = ([], [], \_ _ -> [])
 -- Ordering
 -------------------------------------------------------------------------
 
+-- | Reduce compare results lexicographically to one compare result
 orderingLexic :: [Ordering] -> Ordering
 orderingLexic = foldr1 (\o1 o2 -> if o1 == EQ then o2 else o1)
 
