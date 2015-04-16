@@ -1,5 +1,5 @@
 Name:				uhc-util
-Version:			0.1.5.4
+Version:			0.1.5.5
 cabal-version:      >= 1.6
 License:			BSD3
 Copyright:			Utrecht University, Department of Information and Computing Sciences, Software Technology group
@@ -13,6 +13,8 @@ Category:			Development
 Description:		General purpose utilities for UHC and related tools
 Synopsis:			UHC utilities
 
+extra-source-files: changelog.md
+                    
 source-repository head
   type:     git
   location: git://github.com/UU-ComputerScience/uhc-util.git
