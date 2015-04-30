@@ -45,8 +45,8 @@ type RelMap a b = Map.Map a (Set.Set b)
 -- | Relation, represented as 2 maps from domain to range and the inverse, thus allowing faster lookup at the expense of some set like operations more expensive.
 data Rel a b
   = Rel
-     { relDomMp :: RelMap a b		-- ^ from domain to range
-     , relRngMp :: RelMap b a		-- ^ from range to domain
+     { relDomMp :: RelMap a b       -- ^ from domain to range
+     , relRngMp :: RelMap b a       -- ^ from range to domain
      }
 
 -- | As assocation list

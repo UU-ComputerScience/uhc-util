@@ -46,9 +46,9 @@ module UHC.Util.ScopeMapGam
     , sgamToAssocDupL, sgamFromAssocDupL
     , sgamNoDups
 
-	-- * Re-exports
-	, MetaLev
-	, metaLevVal
+    -- * Re-exports
+    , MetaLev
+    , metaLevVal
     )
   where
 
@@ -68,12 +68,12 @@ import Control.Monad
 
 -- Scope Gam, a Gam with entries having a level in a scope, and the Gam a scope
 
-type Scp = [Int]									-- ^ a stack of scope idents defines what's in scope
+type Scp = [Int]                                    -- ^ a stack of scope idents defines what's in scope
 
 data SGamElt v
   = SGamElt
-      { sgeScpId	:: !Int							-- ^ scope ident
-      , sgeVal		:: v							-- ^ the value
+      { sgeScpId    :: !Int                         -- ^ scope ident
+      , sgeVal      :: v                            -- ^ the value
       }
   deriving (Typeable, Data)
 
@@ -84,9 +84,9 @@ emptySMap = emptyVarMp
 
 data SGam k v
   = SGam
-      { sgScpId		:: !Int							-- ^ current scope, increment with each change in scope
-      , sgScp		:: !Scp							-- ^ scope stack
-      , sgMap		:: SMap k v						-- ^ map holding the values
+      { sgScpId     :: !Int                         -- ^ current scope, increment with each change in scope
+      , sgScp       :: !Scp                         -- ^ scope stack
+      , sgMap       :: SMap k v                     -- ^ map holding the values
       }
   deriving (Typeable, Data)
 

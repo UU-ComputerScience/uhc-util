@@ -1,8 +1,12 @@
 # Changelog
 
+## 0.1.5.6
+
+- [??]
+
 ## 0.1.5.5
 
-- 
+- [compatibility] GHC 7.10 compatibility: sortOn has become more strict, addition of a sortOnLazy
 
 ## 0.1.5.4 - 20150416
 

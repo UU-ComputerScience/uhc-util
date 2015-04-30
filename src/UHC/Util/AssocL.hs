@@ -1,12 +1,12 @@
 module UHC.Util.AssocL
-	( Assoc, AssocL
-	, assocLMapElt, assocLMapKey
-	, assocLElts, assocLKeys
-	, assocLGroupSort
-	, assocLMapUnzip
-	, ppAssocL, ppAssocL', ppAssocLV
-	, ppCurlysAssocL
-	)
+    ( Assoc, AssocL
+    , assocLMapElt, assocLMapKey
+    , assocLElts, assocLKeys
+    , assocLGroupSort
+    , assocLMapUnzip
+    , ppAssocL, ppAssocL', ppAssocLV
+    , ppCurlysAssocL
+    )
   where
 import UHC.Util.Pretty
 import UHC.Util.Utils

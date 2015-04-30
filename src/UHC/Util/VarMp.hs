@@ -21,65 +21,65 @@ A multiple level VarMp knows its own absolute metalevel, which is the default to
 {-# LANGUAGE OverlappingInstances #-}
 
 module UHC.Util.VarMp
-	( VarMp'(..)
-	-- , VarMp
-	, ppVarMpV
-	-- , vmiMbTy
-	-- , tyAsVarMp', tyAsVarMp
-	-- , varmpFilterTy
-	, varmpFilter
-	, varmpDel, (|\>)
-	, varmpAlter
-	, varmpUnion, varmpUnions
-	--, varmpTyLookupCyc
-	--, varmpTyLookupCyc2
-	, module UHC.Util.VarLookup
-	-- , VarMpInfo (..)
-	, mkVarMp
-	, emptyVarMp, varmpIsEmpty
-	, varmpShiftMetaLev, varmpIncMetaLev, varmpDecMetaLev
-	, varmpSelectMetaLev
-	, varmpKeys, varmpKeysSet
-	, varmpMetaLevSingleton, varmpSingleton
-	, assocMetaLevLToVarMp, assocLToVarMp
-	-- , assocMetaLevTyLToVarMp, assocTyLToVarMp, varmpToAssocTyL
-	, varmpToAssocL
-	, varmpPlus
-	, varmpUnionWith
-	-- , instToL1VarMp
-	-- , varmpMetaLevTyUnit, varmpTyUnit
-	-- , tyRestrictKiVarMp
-	, varmpLookup
-	-- , varmpTyLookup
-	, ppVarMp
-	, varmpAsMap
-	, varmpMapMaybe, varmpMap
-	, varmpInsertWith
-	, VarMpStk'
-	, emptyVarMpStk, varmpstkUnit
-	, varmpstkPushEmpty, varmpstkPop
-	, varmpstkToAssocL, varmpstkKeysSet
-	, varmpstkUnions
-	, varmpSize
-	-- , vmiMbImpls, vmiMbScope, vmiMbPred, vmiMbAssNm
-	-- , varmpTailAddOcc
-	-- , varmpMapThr
-	-- , varmpMapThrTy
-	-- , varmpImplsUnit, assocImplsLToVarMp, varmpScopeUnit, varmpPredUnit, varmpAssNmUnit
-	-- , varmpImplsLookup, varmpScopeLookup, varmpPredLookup
-	-- , varmpImplsLookupImplsCyc, varmpImplsLookupCyc, varmpScopeLookupScopeCyc, varmpAssNmLookupAssNmCyc
-	-- , varmpPredLookup2, varmpScopeLookup2, varmpAssNmLookup2, varmpImplsLookupCyc2
-	-- , vmiMbLabel, vmiMbOffset
-	-- , varmpLabelUnit, varmpOffsetUnit
-	-- , varmpLabelLookup, varmpOffsetLookup
-	-- , varmpLabelLookupCyc, varmpLabelLookupLabelCyc
-	-- , vmiMbPredSeq
-	-- , varmpPredSeqUnit
-	-- , varmpPredSeqLookup
-	, varmpToMap
-	-- , varmpinfoMkVar
-	-- , ppVarMpInfoCfgTy, ppVarMpInfoDt
-	)
+    ( VarMp'(..)
+    -- , VarMp
+    , ppVarMpV
+    -- , vmiMbTy
+    -- , tyAsVarMp', tyAsVarMp
+    -- , varmpFilterTy
+    , varmpFilter
+    , varmpDel, (|\>)
+    , varmpAlter
+    , varmpUnion, varmpUnions
+    --, varmpTyLookupCyc
+    --, varmpTyLookupCyc2
+    , module UHC.Util.VarLookup
+    -- , VarMpInfo (..)
+    , mkVarMp
+    , emptyVarMp, varmpIsEmpty
+    , varmpShiftMetaLev, varmpIncMetaLev, varmpDecMetaLev
+    , varmpSelectMetaLev
+    , varmpKeys, varmpKeysSet
+    , varmpMetaLevSingleton, varmpSingleton
+    , assocMetaLevLToVarMp, assocLToVarMp
+    -- , assocMetaLevTyLToVarMp, assocTyLToVarMp, varmpToAssocTyL
+    , varmpToAssocL
+    , varmpPlus
+    , varmpUnionWith
+    -- , instToL1VarMp
+    -- , varmpMetaLevTyUnit, varmpTyUnit
+    -- , tyRestrictKiVarMp
+    , varmpLookup
+    -- , varmpTyLookup
+    , ppVarMp
+    , varmpAsMap
+    , varmpMapMaybe, varmpMap
+    , varmpInsertWith
+    , VarMpStk'
+    , emptyVarMpStk, varmpstkUnit
+    , varmpstkPushEmpty, varmpstkPop
+    , varmpstkToAssocL, varmpstkKeysSet
+    , varmpstkUnions
+    , varmpSize
+    -- , vmiMbImpls, vmiMbScope, vmiMbPred, vmiMbAssNm
+    -- , varmpTailAddOcc
+    -- , varmpMapThr
+    -- , varmpMapThrTy
+    -- , varmpImplsUnit, assocImplsLToVarMp, varmpScopeUnit, varmpPredUnit, varmpAssNmUnit
+    -- , varmpImplsLookup, varmpScopeLookup, varmpPredLookup
+    -- , varmpImplsLookupImplsCyc, varmpImplsLookupCyc, varmpScopeLookupScopeCyc, varmpAssNmLookupAssNmCyc
+    -- , varmpPredLookup2, varmpScopeLookup2, varmpAssNmLookup2, varmpImplsLookupCyc2
+    -- , vmiMbLabel, vmiMbOffset
+    -- , varmpLabelUnit, varmpOffsetUnit
+    -- , varmpLabelLookup, varmpOffsetLookup
+    -- , varmpLabelLookupCyc, varmpLabelLookupLabelCyc
+    -- , vmiMbPredSeq
+    -- , varmpPredSeqUnit
+    -- , varmpPredSeqLookup
+    , varmpToMap
+    -- , varmpinfoMkVar
+    -- , ppVarMpInfoCfgTy, ppVarMpInfoDt
+    )
   where
 
 import Data.List
@@ -108,8 +108,8 @@ import UHC.Util.Serialize
 
 data VarMp' k v
   = VarMp
-      { varmpMetaLev 	:: !MetaLev				-- ^ the base meta level
-      , varmpMpL 		:: [Map.Map k v]		-- ^ for each level a map, starting at the base meta level
+      { varmpMetaLev    :: !MetaLev             -- ^ the base meta level
+      , varmpMpL        :: [Map.Map k v]        -- ^ for each level a map, starting at the base meta level
       }
   deriving ( Eq, Ord
            , Typeable, Data
@@ -351,7 +351,7 @@ varmpinfoMkVar v i
   = case i of
       VMITy       t -> mkTyVar v
       VMIImpls    i -> mkImplsVar v
-      _             -> mkTyVar v					-- rest incomplete
+      _             -> mkTyVar v                    -- rest incomplete
 
 varmpMetaLevTyUnit :: Ord k => MetaLev -> k -> Ty -> VarMp' k VarMpInfo
 varmpMetaLevTyUnit mlev v t = varmpMetaLevSingleton mlev v (VMITy t)
@@ -530,7 +530,7 @@ ppVarMpInfoCfgTy c i
   = case i of
       VMITy       t -> ppTyWithCfg    c t
       VMIImpls    i -> ppImplsWithCfg c i
-      VMIScope    s -> pp s						-- rest incomplete
+      VMIScope    s -> pp s                     -- rest incomplete
       VMIPred     p -> pp p
       VMILabel    x -> pp x
       VMIOffset   x -> pp x

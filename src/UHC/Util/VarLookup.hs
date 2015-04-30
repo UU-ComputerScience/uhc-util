@@ -9,16 +9,16 @@
 #endif
 
 module UHC.Util.VarLookup
-	( VarLookup (..)
-	, varlookupMap
-	, VarLookupFix, varlookupFix
-	, varlookupFixDel
-	, VarLookupCmb (..)
-	, VarLookupBase (..)
-	, VarLookupCmbFix, varlookupcmbFix
-	
-	, MetaLev
-	, metaLevVal
+    ( VarLookup (..)
+    , varlookupMap
+    , VarLookupFix, varlookupFix
+    , varlookupFixDel
+    , VarLookupCmb (..)
+    , VarLookupBase (..)
+    , VarLookupCmbFix, varlookupcmbFix
+    
+    , MetaLev
+    , metaLevVal
     )
   where
 

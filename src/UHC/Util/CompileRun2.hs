@@ -92,31 +92,31 @@ data CompileParticipation
 
 -- | Conversion from string to module name
 class CompileModName n where
-  mkCMNm      	:: String -> n
+  mkCMNm        :: String -> n
 
 -- | State of a compile unit
 class CompileUnitState s where
-  cusDefault  		:: s
-  cusUnk      		:: s
-  cusIsUnk      	:: s -> Bool
-  cusIsImpKnown		:: s -> Bool
+  cusDefault        :: s
+  cusUnk            :: s
+  cusIsUnk          :: s -> Bool
+  cusIsImpKnown     :: s -> Bool
 
 -- | Per compile unit
 class CompileUnit u n l s | u -> n l s where
-  cuDefault 		:: u
-  cuFPath   		:: u -> FPath
-  cuUpdFPath    	:: FPath -> u -> u
-  cuLocation		:: u -> l
-  cuUpdLocation 	:: l -> u -> u
-  cuKey     		:: u -> n
-  cuUpdKey      	:: n -> u -> u
-  cuState   		:: u -> s
-  cuUpdState    	:: s -> u -> u
-  cuImports     	:: u -> [n]
-  cuParticipation 	:: u -> [CompileParticipation]
+  cuDefault         :: u
+  cuFPath           :: u -> FPath
+  cuUpdFPath        :: FPath -> u -> u
+  cuLocation        :: u -> l
+  cuUpdLocation     :: l -> u -> u
+  cuKey             :: u -> n
+  cuUpdKey          :: n -> u -> u
+  cuState           :: u -> s
+  cuUpdState        :: s -> u -> u
+  cuImports         :: u -> [n]
+  cuParticipation   :: u -> [CompileParticipation]
 
   -- defaults
-  cuParticipation _	=  []
+  cuParticipation _ =  []
 
 -- | Error reporting
 class {- FPathError e => -} CompileRunError e p | e -> p where
@@ -160,7 +160,7 @@ instance CompileRunError String ()
 -- Locatable
 -------------------------------------------------------------------------
 
-class FileLocatable x loc | loc -> x where		-- funcdep has unlogical direction, but well...
+class FileLocatable x loc | loc -> x where      -- funcdep has unlogical direction, but well...
   fileLocation   :: x -> loc
   noFileLocation :: loc
 
@@ -169,14 +169,14 @@ class FileLocatable x loc | loc -> x where		-- funcdep has unlogical direction, 
 -------------------------------------------------------------------------
 
 data CompileRunState err
-  = CRSOk									-- continue
-  | CRSFail									-- fail and stop
-  | CRSFailMsg String						-- fail with a message and stop
-  | CRSStopSeq								-- stop current cpSeq
-  | CRSStopAllSeq							-- stop current cpSeq, but also the surrounding ones
-  | CRSStop									-- stop completely
-  | CRSFailErrL String [err] (Maybe Int)	-- fail with errors and stop
-  | CRSErrInfoL String Bool [err]			-- just errors, continue
+  = CRSOk                                   -- continue
+  | CRSFail                                 -- fail and stop
+  | CRSFailMsg String                       -- fail with a message and stop
+  | CRSStopSeq                              -- stop current cpSeq
+  | CRSStopAllSeq                           -- stop current cpSeq, but also the surrounding ones
+  | CRSStop                                 -- stop completely
+  | CRSFailErrL String [err] (Maybe Int)    -- fail with errors and stop
+  | CRSErrInfoL String Bool [err]           -- just errors, continue
 
 data CompileRun nm unit info err
   = CompileRun
@@ -196,23 +196,23 @@ instance Error (CompileRunState err) where
 -- instance Monad m => MonadError (CompileRunState err) m 
   
 instance Show (CompileRunState err) where
-  show CRSOk				= "CRSOk"
-  show CRSFail				= "CRSFail"
-  show (CRSFailMsg s)		= "CRSFail: " ++ s
-  show CRSStopSeq			= "CRSStopSeq"
-  show CRSStopAllSeq		= "CRSStopAllSeq"
-  show CRSStop				= "CRSStop"
-  show (CRSFailErrL _ _ _)	= "CRSFailErrL"
-  show (CRSErrInfoL _ _ _)	= "CRSErrInfoL"
+  show CRSOk                = "CRSOk"
+  show CRSFail              = "CRSFail"
+  show (CRSFailMsg s)       = "CRSFail: " ++ s
+  show CRSStopSeq           = "CRSStopSeq"
+  show CRSStopAllSeq        = "CRSStopAllSeq"
+  show CRSStop              = "CRSStop"
+  show (CRSFailErrL _ _ _)  = "CRSFailErrL"
+  show (CRSErrInfoL _ _ _)  = "CRSErrInfoL"
 
 mkEmptyCompileRun :: n -> i -> CompileRun n u i e
 mkEmptyCompileRun nm info
   = CompileRun
-      { _crCUCache			= Map.empty
-      , _crCompileOrder		= []
-      , _crTopModNm      	= nm
-      , _crState			= CRSOk
-      , _crStateInfo		= info
+      { _crCUCache          = Map.empty
+      , _crCompileOrder     = []
+      , _crTopModNm         = nm
+      , _crState            = CRSOk
+      , _crStateInfo        = info
       }
 
 -------------------------------------------------------------------------
@@ -479,9 +479,9 @@ cpFindFileForFPath suffs sp mbModNm mbFp
 -- | recursively extract imported modules, providing a way to import + do the import
 cpImportGatherFromModsWithImp
   :: (Show n, Ord n, CompileRunner s n p l u i e m)
-     => (u -> [n])														-- get imports
-     -> (Maybe prev -> n -> CompilePhaseT n u i e m (x,Maybe prev))		-- extract imports from 1 module
-     -> [n]																-- to be imported modules
+     => (u -> [n])                                                      -- get imports
+     -> (Maybe prev -> n -> CompilePhaseT n u i e m (x,Maybe prev))     -- extract imports from 1 module
+     -> [n]                                                             -- to be imported modules
      -> CompilePhaseT n u i e m ()
 cpImportGatherFromModsWithImp getImports imp1Mod modNmL
   = do { cr <- get
@@ -506,8 +506,8 @@ cpImportGatherFromModsWithImp getImports imp1Mod modNmL
 -- | recursively extract imported modules
 cpImportGatherFromMods
   :: (Show n, Ord n, CompileRunner s n p l u i e m)
-     => (Maybe prev -> n -> CompilePhaseT n u i e m (x,Maybe prev))		-- extract imports from 1 module
-     -> [n]																-- to be imported modules
+     => (Maybe prev -> n -> CompilePhaseT n u i e m (x,Maybe prev))     -- extract imports from 1 module
+     -> [n]                                                             -- to be imported modules
      -> CompilePhaseT n u i e m ()
 cpImportGatherFromMods = cpImportGatherFromModsWithImp cuImports
 

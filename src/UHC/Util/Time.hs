@@ -2,12 +2,12 @@
 
 module UHC.Util.Time
   ( module Data.Time.Compat,
-	module Data.Time,
-	module Data.Time.Clock,
-	ClockTime,
-	diffClockTimes,
-	noTimeDiff,
-	getClockTime
+    module Data.Time,
+    module Data.Time.Clock,
+    ClockTime,
+    diffClockTimes,
+    noTimeDiff,
+    getClockTime
   )
   where
 

@@ -35,17 +35,17 @@ import System.IO
 
 -- | Cached info about combi of sub Docs
 data Cached = Cached
-    { cchEmp :: !Bool		-- ^ is it empty
-    , cchSng :: !Bool		-- ^ is it a single line
+    { cchEmp :: !Bool       -- ^ is it empty
+    , cchSng :: !Bool       -- ^ is it a single line
     }
 
 -- | Doc structure
 data Doc
   = Emp
-  | Str			!String					-- basic string
-  | Hor			!Cached !Doc  !Doc		-- horizontal positioning
-  | Ver			!Cached !Doc  !Doc		-- vertical positioning
-  | Ind			!Int !Doc				-- indent
+  | Str         !String                 -- basic string
+  | Hor         !Cached !Doc  !Doc      -- horizontal positioning
+  | Ver         !Cached !Doc  !Doc      -- vertical positioning
+  | Ind         !Int !Doc               -- indent
 
 type PP_Doc = Doc
 
@@ -70,7 +70,7 @@ l >|< r = cached mkcch Hor l r -- pp l `Hor` pp r
 
 -- | PP vertically above
 (>-<) :: (PP a, PP b) => a -> b -> PP_Doc
-l >-< r = cached mkcch Ver l r -- pp l `Ver` pp r	-- pp l <$$> pp r
+l >-< r = cached mkcch Ver l r -- pp l `Ver` pp r   -- pp l <$$> pp r
   where mkcch l r = Cached (empl && empr) sng
           where empl = isEmpty l
                 empr = isEmpty r

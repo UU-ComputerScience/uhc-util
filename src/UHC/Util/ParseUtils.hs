@@ -45,14 +45,16 @@ import UU.Scanner.GenToken
 -------------------------------------------------------------------------
 
 type LayoutParser tok ep
-  = (IsParser (OffsideParser i o tok p) tok,InputState i tok p, OutputState o, Position p)
+  = forall i o p .
+    (IsParser (OffsideParser i o tok p) tok,InputState i tok p, OutputState o, Position p)
        => OffsideParser i o tok p ep
 
 type LayoutParser2 tok ep
-  = (IsParser (OffsideParser i o tok p) tok,InputState i tok p, OutputState o, Position p)
+  = forall i o p .
+    (IsParser (OffsideParser i o tok p) tok,InputState i tok p, OutputState o, Position p)
        => OffsideParser i o tok p ep -> OffsideParser i o tok p ep
 
-type PlainParser tok gp = IsParser p tok => p gp
+type PlainParser tok gp = forall p . IsParser p tok => p gp
 
 -------------------------------------------------------------------------
 -- Parsing utils

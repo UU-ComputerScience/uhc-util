@@ -70,20 +70,20 @@ instance Serialize Foo where
 {-# LANGUAGE FlexibleContexts #-}
 
 module UHC.Util.Serialize
-	( SPut
-	, SGet
-	, Serialize (..)
-	, sputPlain, sgetPlain
-	, sputUnshared, sputShared
-	, sgetShared
-	, sputWord8, sgetWord8
-	, sputWord16, sgetWord16
-	, sputEnum8, sgetEnum8
-	, runSPut, runSGet
-	, serialize, unserialize
-	, putSPutFile, getSGetFile
-	, putSerializeFile, getSerializeFile
-	)
+    ( SPut
+    , SGet
+    , Serialize (..)
+    , sputPlain, sgetPlain
+    , sputUnshared, sputShared
+    , sgetShared
+    , sputWord8, sgetWord8
+    , sputWord16, sgetWord16
+    , sputEnum8, sgetEnum8
+    , runSPut, runSGet
+    , serialize, unserialize
+    , putSPutFile, getSGetFile
+    , putSerializeFile, getSerializeFile
+    )
   where
 import qualified UHC.Util.Binary as Bn
 import qualified Data.ByteString.Lazy as L
@@ -110,7 +110,7 @@ reference to it.
 -}
 data SCmd
   = SCmd_Unshared
-  | SCmd_ShareDef   | SCmd_ShareRef			--
+  | SCmd_ShareDef   | SCmd_ShareRef         --
   | SCmd_ShareDef16 | SCmd_ShareRef16
   | SCmd_ShareDef8  | SCmd_ShareRef8
   deriving (Enum)

@@ -38,6 +38,7 @@ module UHC.Util.Utils
   
   , isSortedByOn
   , sortOnLazy
+  , sortOn
   , sortByOn
   , groupOn
   , groupByOn
@@ -172,16 +173,16 @@ listSaturateWith min max get missing l
 spanOnRest :: ([a] -> Bool) -> [a] -> ([a],[a])
 spanOnRest p []       = ([],[])
 spanOnRest p xs@(x:xs')
-	 | p xs      = (x:ys, zs)
-	 | otherwise = ([],xs)
-					   where (ys,zs) = spanOnRest p xs'
+     | p xs      = (x:ys, zs)
+     | otherwise = ([],xs)
+                       where (ys,zs) = spanOnRest p xs'
 
 -------------------------------------------------------------------------
 -- Tupling, untupling
 -------------------------------------------------------------------------
 
-tup123to1  (a,_,_) = a			-- aka fst3
-tup123to2  (_,a,_) = a			-- aka snd3
+tup123to1  (a,_,_) = a          -- aka fst3
+tup123to2  (_,a,_) = a          -- aka snd3
 tup123to12 (a,b,_) = (a,b)
 tup123to23 (_,a,b) = (a,b)
 tup12to123 c (a,b) = (a,b,c)
@@ -254,6 +255,15 @@ isSortedByOn cmp sel l
 sortOnLazy :: Ord b => (a -> b) -> [a] -> [a]
 sortOnLazy = sortByOn compare
 {-# INLINE sortOnLazy #-}
+
+#if __GLASGOW_HASKELL__ >= 710
+#else
+-- | The original Data.List.sortOn.
+-- See also https://github.com/UU-ComputerScience/uhc-util/issues/5 .
+sortOn :: Ord b => (a -> b) -> [a] -> [a]
+sortOn = sortOnLazy
+{-# INLINE sortOn #-}
+#endif
 
 sortByOn :: (b -> b -> Ordering) -> (a -> b) -> [a] -> [a]
 sortByOn cmp sel = sortBy (\e1 e2 -> sel e1 `cmp` sel e2)
