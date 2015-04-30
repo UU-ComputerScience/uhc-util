@@ -37,7 +37,7 @@ module UHC.Util.Utils
   , panic
   
   , isSortedByOn
-  , sortOn
+  , sortOnLazy
   , sortByOn
   , groupOn
   , groupByOn
@@ -249,12 +249,11 @@ isSortedByOn cmp sel l
   where isSrt (x1:tl@(x2:_)) = cmp (sel x1) (sel x2) /= GT && isSrt tl
         isSrt _              = True
 
-#if __GLASGOW_HASKELL__ >= 710
-#else
-sortOn :: Ord b => (a -> b) -> [a] -> [a]
-sortOn = sortByOn compare
-{-# INLINE sortOn #-}
-#endif
+-- | A slightly more lazy version of Data.List.sortOn.
+-- See also https://github.com/UU-ComputerScience/uhc-util/issues/5 .
+sortOnLazy :: Ord b => (a -> b) -> [a] -> [a]
+sortOnLazy = sortByOn compare
+{-# INLINE sortOnLazy #-}
 
 sortByOn :: (b -> b -> Ordering) -> (a -> b) -> [a] -> [a]
 sortByOn cmp sel = sortBy (\e1 e2 -> sel e1 `cmp` sel e2)
