@@ -4,6 +4,7 @@
 module UHC.Util.RelMap
   ( Rel
   , empty
+  , toDomList, toRngList
   , toList, fromList
   , singleton
   , dom, rng
@@ -49,9 +50,17 @@ data Rel a b
      , relRngMp :: RelMap b a       -- ^ from range to domain
      }
 
+-- | As assocation list where each domain value only occurs once and the range as list
+toDomList :: Rel a b -> [(a,[b])]
+toDomList (Rel m _) = [ (d, Set.toList rs) | (d,rs) <- Map.toList m ]
+
+-- | As assocation list where each range value only occurs once and the domain as list
+toRngList :: Rel a b -> [([a],b)]
+toRngList (Rel _ m) = [ (Set.toList ds, r) | (r,ds) <- Map.toList m ]
+
 -- | As assocation list
 toList :: Rel a b -> [(a,b)]
-toList (Rel m _) = [ (d,r) | (d,rs) <- Map.toList m, r <- Set.toList rs ]
+toList rel = [ (d,r) | (d,rs) <- toDomList rel, r <- rs ]
 
 -- | From association list
 fromList :: (Ord a, Ord b) => [(a,b)] -> Rel a b

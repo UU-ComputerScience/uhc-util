@@ -252,8 +252,8 @@ mkFPathFromDirsFile dirs f
 
 -- | Make FPath from FilePath, setting the suffix when absent
 mkTopLevelFPath
-  :: String		-- ^ suffix
-  -> FilePath	-- ^ file name
+  :: String     -- ^ suffix
+  -> FilePath   -- ^ file name
   -> FPath
 mkTopLevelFPath suff fn
   = let fpNoSuff = mkFPath fn
