@@ -14,6 +14,8 @@ module UHC.Util.RelMap
   -- , intersection, difference
   , union, unions
   , insert
+  , deleteDom, delete
+  , deleteRng
   
   , applyDomMbSet, applyRngMbSet
   , applyDomSet, applyRngSet
@@ -37,11 +39,22 @@ import           UHC.Util.Binary
 import           UHC.Util.Serialize
 
 -------------------------------------------------------------------------
--- Relation
+-- Relation map
 -------------------------------------------------------------------------
 
 -- | Map used in a relation
 type RelMap a b = Map.Map a (Set.Set b)
+
+-- | Delete key in range of RelMap
+relmapDeleteRng :: Ord b => b -> RelMap a b -> RelMap a b
+relmapDeleteRng x r = snd $ Map.mapEither (eith x) r
+  where eith x ds = if Set.null ds' then Left ds else Right ds'
+          where (ds1,ds2) = Set.split x ds
+                ds' = Set.union ds1 ds2
+
+-------------------------------------------------------------------------
+-- Relation
+-------------------------------------------------------------------------
 
 -- | Relation, represented as 2 maps from domain to range and the inverse, thus allowing faster lookup at the expense of some set like operations more expensive.
 data Rel a b
@@ -133,6 +146,16 @@ unions rs  = foldr union empty rs
 -- | Insert
 insert :: (Ord a, Ord b) => a -> b -> Rel a b -> Rel a b
 insert x y r = singleton x y `union` r
+
+-- | Delete at domain
+deleteDom, delete :: (Ord a, Ord b) => a -> Rel a b -> Rel a b
+deleteDom x (Rel d r) = Rel (Map.delete x d) (relmapDeleteRng x r)
+delete = deleteDom
+{-# INLINE delete #-}
+
+-- | Delete at range
+deleteRng :: (Ord a, Ord b) => b -> Rel a b -> Rel a b
+deleteRng x (Rel d r) = Rel (relmapDeleteRng x d) (Map.delete x r)
 
 -- | Apply relation as a function, possible yielding a non empty set
 applyDomMbSet :: (Ord a) => Rel a b -> a -> Maybe (Set.Set b)
