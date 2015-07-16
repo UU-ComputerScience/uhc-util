@@ -69,6 +69,12 @@ instance Serialize Foo where
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE FlexibleContexts #-}
 
+-- for generics
+{-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE DefaultSignatures #-}
+{-# LANGUAGE TypeSynonymInstances #-}
+{-# LANGUAGE FlexibleInstances #-}
+
 module UHC.Util.Serialize
     ( SPut
     , SGet
@@ -83,6 +89,7 @@ module UHC.Util.Serialize
     , serialize, unserialize
     , putSPutFile, getSGetFile
     , putSerializeFile, getSerializeFile
+    , Generic
     )
   where
 import qualified UHC.Util.Binary as Bn
@@ -101,6 +108,10 @@ import           Data.Array
 import           Control.Monad
 import qualified Control.Monad.State as St
 import           Control.Monad.Trans
+
+-- for generics
+import           GHC.Generics
+import           Control.Applicative
 
 {- | Serialization with state.
 Shared values are stored in a per type map, to keep all type correct. To
@@ -168,7 +179,12 @@ type SGet x = St.StateT SGetS Bn.Get x
 
 class Serialize x where
   sput :: x -> SPut
+  default sput :: (Generic x, GSerialize (Rep x)) => x -> SPut
+  sput = gsput . from
+
   sget :: SGet x
+  default sget :: (Generic x, GSerialize (Rep x)) => SGet x
+  sget = to <$> gsget
 
   sputNested :: x -> SPut
   sgetNested :: SGet x
@@ -368,12 +384,12 @@ instance Serialize String where
 -}
 
 instance (Serialize a, Serialize b) => Serialize (a,b) where
-    sput (a,b)           = sput a >> sput b
-    sget                 = liftM2 (,) sget sget
+    -- sput (a,b)           = sput a >> sput b
+    -- sget                 = liftM2 (,) sget sget
 
 instance (Serialize a, Serialize b, Serialize c) => Serialize (a,b,c) where
-    sput (a,b,c)         = sput a >> sput b >> sput c
-    sget                 = liftM3 (,,) sget sget sget
+    -- sput (a,b,c)         = sput a >> sput b >> sput c
+    -- sget                 = liftM3 (,,) sget sget sget
 
 instance Serialize a => Serialize [a] where
     sput l  = sput (length l) >> mapM_ sput l
@@ -381,13 +397,13 @@ instance Serialize a => Serialize [a] where
                  replicateM n sget
 
 instance (Serialize a) => Serialize (Maybe a) where
-    sput Nothing  = sputWord8 0
-    sput (Just x) = sputWord8 1 >> sput x
-    sget = do
-        w <- sgetWord8
-        case w of
-            0 -> return Nothing
-            _ -> liftM Just sget
+    -- sput Nothing  = sputWord8 0
+    -- sput (Just x) = sputWord8 1 >> sput x
+    -- sget = do
+    --     w <- sgetWord8
+    --     case w of
+    --         0 -> return Nothing
+    --         _ -> liftM Just sget
 
 instance (Ord a, Serialize a) => Serialize (Set.Set a) where
     sput = sput . Set.toAscList
@@ -449,3 +465,73 @@ getSerializeFile fn
        ; return b ;
        }
 
+-- generic serialize
+
+class GSerialize x where
+  gsget :: SGet (x y)
+  gsput :: x y -> SPut
+
+instance (Datatype d, SerializeSum x) => GSerialize (D1 d x) where
+  --
+  gsget = M1 <$> sumGetTagged
+  --
+  gsput (M1 x) = sumPutTagged x
+
+class SerializeSum x where
+  sumGetTagged :: SGet (x y)
+  sumPutTagged :: x y -> SPut
+
+instance (SerializeProduct x, Constructor c) => SerializeSum (C1 c x) where
+  --
+  sumGetTagged = M1 <$> productGetMVec
+  {-# INLINE sumGetTagged #-}
+  --
+  sumPutTagged (M1 x) = productPutMVec x
+  {-# INLINE sumPutTagged #-}
+
+instance (SerializeSum a, SerializeSum b) => SerializeSum (a :+: b) where
+  sumGetTagged = do
+    x <- sgetWord8
+    case x of
+      0 -> L1 <$> sumGetTagged
+      1 -> R1 <$> sumGetTagged
+  {-# INLINE sumGetTagged #-}
+
+  sumPutTagged (L1 x) = sputWord8 0 >> sumPutTagged x
+  sumPutTagged (R1 x) = sputWord8 1 >> sumPutTagged x
+  {-# INLINE sumPutTagged #-}
+
+class SerializeProduct x where
+  productGetMVec :: SGet (x y)
+  productPutMVec :: x y -> SPut
+
+instance (SerializeProduct a, SerializeProduct b) => SerializeProduct (a :*: b) where
+  productGetMVec =
+      (:*:) <$> productGetMVec
+            <*> productGetMVec
+  {-# INLINE productGetMVec #-}
+
+  productPutMVec (a :*: b) = do
+      productPutMVec a
+      productPutMVec b
+  {-# INLINE productPutMVec #-}
+
+instance SerializeProduct x => SerializeProduct (S1 s x) where
+  productGetMVec = M1 <$> productGetMVec
+  {-# INLINE productGetMVec #-}
+
+  productPutMVec (M1 x) = productPutMVec x
+  {-# INLINE productPutMVec #-}
+
+instance Serialize x => SerializeProduct (K1 i x) where
+  productGetMVec = K1 <$> sget
+  {-# INLINE productGetMVec #-}
+
+  productPutMVec (K1 x) = sput x
+  {-# INLINE productPutMVec #-}
+
+instance SerializeProduct U1 where
+  productGetMVec = return U1
+  {-# INLINE productGetMVec #-}
+  productPutMVec _ = return ()
+  {-# INLINE productPutMVec #-}
