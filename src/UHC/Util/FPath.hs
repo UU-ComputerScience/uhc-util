@@ -54,6 +54,7 @@ module UHC.Util.FPath
 where
 
 import Data.Maybe
+import Data.Typeable
 import Data.List
 import Control.Monad
 import System.IO
@@ -111,7 +112,7 @@ data FPath
       , fpathBase       ::         !String
       , fpathMbSuff     :: !(Maybe  String)
       }
-    deriving (Show,Eq,Ord,Generic)
+    deriving (Show,Eq,Ord,Typeable,Generic)
 
 -- | Empty FPath
 emptyFPath :: FPath
