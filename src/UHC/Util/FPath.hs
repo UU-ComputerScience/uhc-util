@@ -375,7 +375,14 @@ searchPathFromString
 searchFPathFromLoc :: FilePath -> FPath -> [(FilePath,FPath)]
 searchFPathFromLoc loc fp = [(loc,fpathPrependDir loc fp)]
 
-searchLocationsForReadableFiles :: (loc -> FPath -> [(loc,FPath,[e])]) -> Bool -> [loc] -> FileSuffixes -> FPath -> IO [(FPath,loc,[e])]
+-- | Search for file in locations, with possible suffices
+searchLocationsForReadableFiles
+  ::    (loc -> FPath -> [(loc,FPath,[e])])				-- ^ get the locations for a name, possibly with errors
+     -> Bool											-- ^ stop when first is found
+     -> [loc]											-- ^ locations to search
+     -> FileSuffixes									-- ^ suffixes to try
+     -> FPath											-- ^ search for a path
+     -> IO [(FPath,loc,[e])]
 searchLocationsForReadableFiles getfp stopAtFirst locs suffs fp
   = let select stop f fps
           = foldM chk [] fps

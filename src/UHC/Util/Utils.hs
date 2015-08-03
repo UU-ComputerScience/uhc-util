@@ -29,9 +29,13 @@ module UHC.Util.Utils
   , strWhite
   , strPad
   , strCapitalize
+  , strToLower
   , strToInt
   
   , splitForQualified
+  
+    -- * Show
+  , showUnprefixedWithTypeable
   
     -- * Misc
   , panic
@@ -62,7 +66,7 @@ module UHC.Util.Utils
     -- * Graph
   , scc
   
-    -- * MOnad
+    -- * Monad
   , firstMaybeM
   )
   where
@@ -70,6 +74,7 @@ module UHC.Util.Utils
 -- import UHC.Util.Pretty
 import Data.Char
 import Data.List
+import Data.Typeable
 import qualified Data.Set as Set
 import qualified Data.Map as Map
 import qualified Data.Graph as Graph
@@ -213,9 +218,23 @@ strCapitalize s
       (c:cs) -> toUpper c : cs
       _      -> s
 
+-- | Lower case
+strToLower :: String -> String
+strToLower = map toLower
+{-# INLINE strToLower #-}
+
 -- | Convert string to Int
 strToInt :: String -> Int
 strToInt = foldl (\i c -> i * 10 + ord c - ord '0') 0
+
+-------------------------------------------------------------------------
+-- Split for qualified name
+-------------------------------------------------------------------------
+
+-- | Show, additionally removing type name prefix, assuming constructor names are prefixed with type name, possibly with additional underscore (or something like that)
+showUnprefixedWithTypeable :: (Show x, Typeable x) => Int -> x -> String
+showUnprefixedWithTypeable extralen x = drop prelen $ show x
+  where prelen = (length $ show $ typeOf x) + extralen
 
 -------------------------------------------------------------------------
 -- Split for qualified name

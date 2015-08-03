@@ -54,6 +54,7 @@ module UHC.Util.CompileRun2
 import           Data.Maybe
 import           System.Exit
 import           Control.Monad
+import           Control.Monad.Fix
 import           Control.Applicative(Applicative(..))
 import           Control.Monad.Error as ME
 import           Control.Monad.State
@@ -301,6 +302,15 @@ instance (CompileRunner state n pos loc u i e m, MonadError e' m) => MonadError 
   throwError = lift . throwError
   catchError m hdl = lift $ catchError (runCompilePhaseT m) (runCompilePhaseT . hdl)
 
+instance (CompileRunner state n pos loc u i e m, MonadFix m) => MonadFix (CompilePhaseT n u i e m) where
+  mfix f = CompilePhaseT $ mfix $ \ ~a -> runCompilePhaseT (f a)
+
+{-
+instance (MonadFix m) => MonadFix (StateT s m) where
+    mfix f = StateT $ \ s -> mfix $ \ ~(a, _) -> runStateT (f a) s
+
+-}
+
 {-
 instance (Show e, MonadIO m) => MonadError e m where
   throwError e = CE.throwIO $ CE.ErrorCall $ show e
@@ -419,8 +429,14 @@ cpFindFilesForFPathInLocations
   :: ( Ord n
      , FPATH n, FileLocatable u loc, Show loc
      , CompileRunner s n p loc u i e m
-     ) => (loc -> n -> FPath -> [(loc,FPath,[e])]) -> ((FPath,loc,[e]) -> res)
-          -> Bool -> [(FileSuffix,s)] -> [loc] -> Maybe n -> Maybe FPath -> CompilePhaseT n u i e m [res]
+     ) => (loc -> n -> FPath -> [(loc,FPath,[e])])		-- ^ get the locations for a name, possibly with errors
+       -> ((FPath,loc,[e]) -> res)						-- ^ construct a result given a found location
+       -> Bool											-- ^ stop when first is found
+       -> [(FileSuffix,s)]								-- ^ suffix info
+       -> [loc]											-- ^ locations to search
+       -> Maybe n										-- ^ possibly a module name
+       -> Maybe FPath									-- ^ possibly a file path
+       -> CompilePhaseT n u i e m [res]
 cpFindFilesForFPathInLocations getfp putres stopAtFirst suffs locs mbModNm mbFp
   = do { cr <- get
        ; let cus = maybe cusUnk (flip crCUState cr) mbModNm
