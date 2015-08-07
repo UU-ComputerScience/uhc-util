@@ -43,6 +43,7 @@ library
     UHC.Util.Binary,
     UHC.Util.CompileRun,
     UHC.Util.CompileRun2,
+    UHC.Util.CompileRun3,
     UHC.Util.Control.Monad,
     UHC.Util.Debug,
     UHC.Util.DependencyGraph,
