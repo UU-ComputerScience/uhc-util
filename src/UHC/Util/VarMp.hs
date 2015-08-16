@@ -19,6 +19,7 @@ A multiple level VarMp knows its own absolute metalevel, which is the default to
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE OverlappingInstances #-}
+{-# LANGUAGE DeriveGeneric #-}
 
 module UHC.Util.VarMp
     ( VarMp'(..)
@@ -112,7 +113,7 @@ data VarMp' k v
       , varmpMpL        :: [Map.Map k v]        -- ^ for each level a map, starting at the base meta level
       }
   deriving ( Eq, Ord
-           , Typeable, Data
+           , Typeable, Data, Generic
            )
 
 -- get the base meta level map, ignore the others
@@ -571,6 +572,6 @@ instance Serialize VarMpInfo where
 -}
 
 instance (Ord k, Serialize k, Serialize v) => Serialize (VarMp' k v) where
-  sput (VarMp a b) = sput a >> sput b
-  sget = liftM2 VarMp sget sget
+  -- sput (VarMp a b) = sput a >> sput b
+  -- sget = liftM2 VarMp sget sget
 

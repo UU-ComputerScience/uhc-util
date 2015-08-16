@@ -75,7 +75,7 @@ data SGamElt v
       { sgeScpId    :: !Int                         -- ^ scope ident
       , sgeVal      :: v                            -- ^ the value
       }
-  deriving (Typeable, Data)
+  deriving (Typeable, Data, Generic)
 
 type SMap k v = VarMp' k [SGamElt v]
 
@@ -88,7 +88,7 @@ data SGam k v
       , sgScp       :: !Scp                         -- ^ scope stack
       , sgMap       :: SMap k v                     -- ^ map holding the values
       }
-  deriving (Typeable, Data)
+  deriving (Typeable, Data, Generic)
 
 mkSGam :: SMap k v -> SGam k v
 mkSGam = SGam 0 [0]
@@ -286,12 +286,12 @@ sgamNoDups g@(SGam {sgScp = scp, sgMap = m})
   = g {sgMap = mapFilterInScp' scp (\(e:_) -> [e]) m}
 
 instance (Serialize v) => Serialize (SGamElt v) where
-  sput (SGamElt a b) = sput a >> sput b
-  sget = liftM2 SGamElt sget sget
+  -- sput (SGamElt a b) = sput a >> sput b
+  -- sget = liftM2 SGamElt sget sget
 
 instance (Ord k, Serialize k, Serialize v) => Serialize (SGam k v) where
-  sput (SGam a b c) = sput a >> sput b >> sput c
-  sget = liftM3 SGam sget sget sget
+  -- sput (SGam a b c) = sput a >> sput b >> sput c
+  -- sget = liftM3 SGam sget sget sget
 
 -- instance (Binary v) => Serialize (SGamElt v)
 -- instance (Ord k, Binary k, Binary v) => Serialize (SGam k v)
