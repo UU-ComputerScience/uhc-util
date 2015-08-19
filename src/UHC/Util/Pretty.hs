@@ -1,4 +1,4 @@
-{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE RankNTypes, TypeSynonymInstances #-}
 
 -------------------------------------------------------------------------
 -- Wrapper module around pretty printing
@@ -86,6 +86,7 @@ module UHC.Util.Pretty
 import UHC.Util.PrettySimple
 import UHC.Util.Utils
 import UHC.Util.FPath
+import UHC.Util.Time
 import System.IO
 import Data.List
 
@@ -411,6 +412,12 @@ instance PP a => PP (Maybe a) where
 
 instance PP Bool where
   pp = pp . show
+
+instance PP ClockTime where
+  pp = pp . show
+
+instance PP FPath where
+  pp = pp . fpathToStr
 
 instance (PP a, PP b) => PP (a,b) where
   pp (a,b) = "(" >|< a >-|-< "," >|< b >-|-< ")"
