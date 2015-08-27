@@ -1,4 +1,5 @@
 {-# LANGUAGE CPP #-}
+{-# LANGUAGE TypeOperators, TypeSynonymInstances, FlexibleInstances, DefaultSignatures, FlexibleContexts, UndecidableInstances #-}
 
 module UHC.Util.Utils
   ( -- * Set
@@ -34,8 +35,10 @@ module UHC.Util.Utils
   
   , splitForQualified
   
-    -- * Show
-  , showUnprefixedWithTypeable
+    -- * Show utils
+  , showUnprefixedWithShowTypeable
+  , DataAndConName(..)
+  , showUnprefixed
   
     -- * Misc
   , panic
@@ -75,6 +78,7 @@ module UHC.Util.Utils
 import Data.Char
 import Data.List
 import Data.Typeable
+import GHC.Generics
 import qualified Data.Set as Set
 import qualified Data.Map as Map
 import qualified Data.Graph as Graph
@@ -232,9 +236,36 @@ strToInt = foldl (\i c -> i * 10 + ord c - ord '0') 0
 -------------------------------------------------------------------------
 
 -- | Show, additionally removing type name prefix, assuming constructor names are prefixed with type name, possibly with additional underscore (or something like that)
-showUnprefixedWithTypeable :: (Show x, Typeable x) => Int -> x -> String
-showUnprefixedWithTypeable extralen x = drop prelen $ show x
+showUnprefixedWithShowTypeable :: (Show x, Typeable x) => Int -> x -> String
+showUnprefixedWithShowTypeable extralen x = drop prelen $ show x
   where prelen = (length $ show $ typeOf x) + extralen
+
+-- | Generic constructor name, to be used by show variations
+class GDataAndConName f where
+  gDataAndConName :: f x -> (String,String)
+
+class DataAndConName x where
+  -- | Get datatype and constructor name for a datatype
+  dataAndConName :: x -> (String,String)
+  
+  default dataAndConName :: (Generic x, GDataAndConName (Rep x)) => x -> (String,String)
+  dataAndConName = gDataAndConName . from
+
+instance (Datatype d, GDataAndConName x) => GDataAndConName (D1 d x) where
+  gDataAndConName d@(M1 x) = let (_,c) = gDataAndConName x in (datatypeName d, c)
+
+instance (GDataAndConName a, GDataAndConName b) => GDataAndConName (a :+: b) where
+  gDataAndConName (L1 x) = gDataAndConName x
+  gDataAndConName (R1 x) = gDataAndConName x
+
+instance (Constructor c) => GDataAndConName (C1 c x) where
+  gDataAndConName c = ("", conName c)
+
+-- | Show, additionally removing type name prefix, assuming constructor names are prefixed with type name, possibly with additional underscore (or something like that)
+showUnprefixed :: (DataAndConName x) => Int -> x -> String
+showUnprefixed extralen x = drop prelen $ c
+  where (d,c) = dataAndConName x
+        prelen = (length d) + extralen
 
 -------------------------------------------------------------------------
 -- Split for qualified name
