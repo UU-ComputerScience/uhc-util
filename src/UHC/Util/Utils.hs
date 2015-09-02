@@ -71,6 +71,7 @@ module UHC.Util.Utils
   
     -- * Monad
   , firstMaybeM
+  , breakM
   )
   where
 
@@ -427,3 +428,9 @@ firstMaybeM :: Monad m => a -> [a -> m (Maybe a)] -> m a
 firstMaybeM x []     = return x
 firstMaybeM x (s:ss) = do mx <- s x
                           maybe (firstMaybeM x ss) return mx
+
+-- | Monadic equivalent of break: evaluate monads until a predicate is True, returning what is yes/no evaluated and the split point
+breakM :: Monad m => (a -> Bool) -> [m a] -> m ([a], Maybe (a,[m a]))
+breakM p l = br [] l >>= \(acc,res) -> return (reverse acc, res)
+  where br acc []     = return (acc, Nothing)
+        br acc (m:ms) = m >>= \x -> if p x then return (acc, Just (x, ms)) else br (x:acc) ms
