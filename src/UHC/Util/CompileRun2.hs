@@ -430,9 +430,9 @@ cpFindFilesForFPathInLocations
      , FPATH n, FileLocatable u loc, Show loc
      , CompileRunner s n p loc u i e m
      ) => (loc -> n -> FPath -> [(loc,FPath,[e])])		-- ^ get the locations for a name, possibly with errors
-       -> ((FPath,loc,[e]) -> res)						-- ^ construct a result given a found location
+       -> ((FPath,loc,s,[e]) -> res)						-- ^ construct a result given a found location
        -> Bool											-- ^ stop when first is found
-       -> [(FileSuffix,s)]								-- ^ suffix info
+       -> [(FileSuffixWith s)]							-- ^ suffix info
        -> [loc]											-- ^ locations to search
        -> Maybe n										-- ^ possibly a module name
        -> Maybe FPath									-- ^ possibly a file path
@@ -444,19 +444,17 @@ cpFindFilesForFPathInLocations getfp putres stopAtFirst suffs locs mbModNm mbFp
           then do { let fp = maybe (mkFPath $ panicJust ("cpFindFileForFPath") $ mbModNm) id mbFp
                         modNm = maybe (mkCMNm $ fpathBase $ fp) id mbModNm
                         suffs' = map fst suffs
-                  ; fpsFound <- liftIO (searchLocationsForReadableFiles (\l f -> getfp l modNm f)
-                                                                        stopAtFirst locs suffs' fp
-                                       )
+                  ; fpsFound <- liftIO $ searchLocationsForReadableFilesWith (\l f -> getfp l modNm f) stopAtFirst locs suffs fp
                   ; case fpsFound of
                       []
                         -> do { cpSetErrs (creMkNotFoundErrL (crsiImportPosOfCUKey modNm (_crStateInfo cr)) (fpathToStr fp) (map show locs) suffs')
                               ; return []
                               }
-                      ((_,_,e@(_:_)):_)
+                      ((_,_,_,e@(_:_)):_)
                         -> do { cpSetErrs e
                               ; return []
                               }
-                      ffs@((ff,loc,_):_)
+                      ffs@((ff,loc,s,_):_)
                         -> do { cpUpdCU modNm (cuUpdLocation loc . cuUpdFPath ff . cuUpdState cus . cuUpdKey modNm)
                               ; return (map putres ffs)
                               }
@@ -466,7 +464,7 @@ cpFindFilesForFPathInLocations getfp putres stopAtFirst suffs locs mbModNm mbFp
                                                    Just c  -> c
                                                    Nothing -> cusUnk
                   }
-          else return (maybe [] (\nm -> [putres (crCUFPath nm cr,crCULocation nm cr,[])]) mbModNm)
+          else return (maybe [] (\nm -> [putres (crCUFPath nm cr, crCULocation nm cr, crCUState nm cr, [])]) mbModNm)
        }
 
 cpFindFilesForFPath
@@ -474,9 +472,9 @@ cpFindFilesForFPath
      ( Ord n
      , FPATH n, FileLocatable u String
      , CompileRunner s n p String u i e m
-     ) => Bool -> [(FileSuffix,s)] -> [String] -> Maybe n -> Maybe FPath -> CompilePhaseT n u i e m [FPath]
+     ) => Bool -> [FileSuffixWith s] -> [String] -> Maybe n -> Maybe FPath -> CompilePhaseT n u i e m [FPath]
 cpFindFilesForFPath
-  = cpFindFilesForFPathInLocations (\l n f -> map (tup12to123 ([]::[e])) $ cpFindFileForNameOrFPath l n f) tup123to1
+  = cpFindFilesForFPathInLocations (\l n f -> map (tup12to123 ([]::[e])) $ cpFindFileForNameOrFPath l n f) tup1234to1
 
 cpFindFileForFPath
   :: ( Ord n

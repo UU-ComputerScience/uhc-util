@@ -30,11 +30,15 @@ module UHC.Util.FPath
 
   -- * SearchPath
   , SearchPath
-  , FileSuffixes, FileSuffix
+  , FileSuffixes, FileSuffixesWith
+  , FileSuffix, FileSuffixWith
   , mkInitSearchPath, searchPathFromFPath, searchPathFromFPaths
   , searchPathFromString
   , searchFPathFromLoc
-  , searchLocationsForReadableFiles, searchPathForReadableFiles, searchPathForReadableFile
+  , searchLocationsForReadableFilesWith
+  , searchLocationsForReadableFiles
+  , searchPathForReadableFiles
+  , searchPathForReadableFile
 
   , fpathEnsureExists
 
@@ -351,7 +355,11 @@ fpathEnsureExists fp
 
 type SearchPath = [String]
 type FileSuffix   =  Maybe String
+-- | FileSuffix with extra payload
+type FileSuffixWith x =  (Maybe String, x)
 type FileSuffixes = [FileSuffix]
+-- | FileSuffix with extra payload
+type FileSuffixesWith x = [FileSuffixWith x]
 
 searchPathFromFPaths :: [FPath] -> SearchPath
 searchPathFromFPaths fpL = nub [ d | (Just d) <- map fpathMbDir fpL ] ++ [""]
@@ -376,6 +384,41 @@ searchFPathFromLoc :: FilePath -> FPath -> [(FilePath,FPath)]
 searchFPathFromLoc loc fp = [(loc,fpathPrependDir loc fp)]
 
 -- | Search for file in locations, with possible suffices
+searchLocationsForReadableFilesWith
+  ::    (loc -> FPath -> [(loc,FPath,[e])])				-- ^ get the locations for a name, possibly with errors
+     -> Bool											-- ^ stop when first is found
+     -> [loc]											-- ^ locations to search
+     -> FileSuffixesWith s								-- ^ suffixes to try, with associated info
+     -> FPath											-- ^ search for a path
+     -> IO [(FPath,loc,s,[e])]
+searchLocationsForReadableFilesWith getfp stopAtFirst locs suffs fp
+  = let select stop f fps
+          = foldM chk [] fps
+          where chk r fp
+                  = case r of
+                      (_:_) | stop -> return r
+                      _            -> do r' <- f fp
+                                         return (r ++ r')
+        tryToOpen loc (mbSuff,suffinfo) fp
+          = do { let fp' = maybe fp (\suff -> fpathSetNonEmptySuff suff fp) mbSuff
+               ; fExists <- doesFileExist (fpathToStr fp')
+               -- ; hPutStrLn stderr (show fp ++ " - " ++ show fp')
+               ; if fExists
+                 then return [(fp',loc,suffinfo)]
+                 else return []
+               }
+        tryToOpenWithSuffs suffs (loc,fp,x)
+          = fmap (map (tup123to1234 x)) $
+            case suffs of
+              [] -> tryToOpen loc (Nothing,panic "searchLocationsForReadableFilesWith.tryToOpenWithSuffs.tryToOpen") fp
+              _  -> select stopAtFirst
+                      (\(ms,f) -> tryToOpen loc ms f)
+                      ({- (Nothing,fp) : -} zip suffs (repeat fp))
+        tryToOpenInDir loc
+          = select True (tryToOpenWithSuffs suffs) (getfp loc fp)
+     in select True tryToOpenInDir locs
+
+-- | Search for file in locations, with possible suffices
 searchLocationsForReadableFiles
   ::    (loc -> FPath -> [(loc,FPath,[e])])				-- ^ get the locations for a name, possibly with errors
      -> Bool											-- ^ stop when first is found
@@ -384,6 +427,8 @@ searchLocationsForReadableFiles
      -> FPath											-- ^ search for a path
      -> IO [(FPath,loc,[e])]
 searchLocationsForReadableFiles getfp stopAtFirst locs suffs fp
+  = fmap (map tup1234to124) $ searchLocationsForReadableFilesWith getfp stopAtFirst locs (map (flip (,) ()) suffs) fp
+{-
   = let select stop f fps
           = foldM chk [] fps
           where chk r fp
@@ -409,6 +454,7 @@ searchLocationsForReadableFiles getfp stopAtFirst locs suffs fp
         tryToOpenInDir loc
           = select True (tryToOpenWithSuffs suffs) (getfp loc fp)
      in select True tryToOpenInDir locs
+-}
 
 searchPathForReadableFiles :: Bool -> SearchPath -> FileSuffixes -> FPath -> IO [FPath]
 searchPathForReadableFiles stopAtFirst locs suffs fp

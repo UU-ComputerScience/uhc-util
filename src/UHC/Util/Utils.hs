@@ -25,7 +25,38 @@ module UHC.Util.Utils
   , tup123to1, tup123to2
   , tup123to12, tup123to23
   , tup12to123
+  
+  , fst3
+  , snd3
+  , thd3
+  , thd 
+  
+  , tup1234to1  
+  , tup1234to2  
+  , tup1234to3  
+  , tup1234to4  
+  
+  , tup1234to12
+  , tup1234to13
+  , tup1234to14
+  , tup1234to23
+  , tup1234to24
+  , tup1234to34
+  
+  , tup1234to123
+  , tup1234to234
+  
+  , tup1234to124
+  , tup1234to134
+  
+  , tup123to1234
 
+  , fst4
+  , snd4
+  , thd4
+  , fth4
+  , fth 
+  
     -- * String
   , strWhite
   , strPad
@@ -191,17 +222,75 @@ spanOnRest p xs@(x:xs')
 -- Tupling, untupling
 -------------------------------------------------------------------------
 
-tup123to1  (a,_,_) = a          -- aka fst3
-tup123to2  (_,a,_) = a          -- aka snd3
-tup123to12 (a,b,_) = (a,b)
-tup123to23 (_,a,b) = (a,b)
-tup12to123 c (a,b) = (a,b,c)
-
+tup123to1  (a,_,_) = a
+tup123to2  (_,a,_) = a
+tup123to3  (_,_,a) = a
 {-# INLINE tup123to1  #-}
 {-# INLINE tup123to2  #-}
+{-# INLINE tup123to3  #-}
+
+tup123to12 (a,b,_) = (a,b)
+tup123to23 (_,a,b) = (a,b)
 {-# INLINE tup123to12 #-}
 {-# INLINE tup123to23 #-}
+
+tup12to123 c (a,b) = (a,b,c)
 {-# INLINE tup12to123 #-}
+
+fst3 = tup123to1
+snd3 = tup123to2
+thd3 = tup123to3
+thd  = thd3
+{-# INLINE fst3 #-}
+{-# INLINE snd3 #-}
+{-# INLINE thd3 #-}
+{-# INLINE thd  #-}
+
+tup1234to1   (a,_,_,_) = a
+tup1234to2   (_,a,_,_) = a
+tup1234to3   (_,_,a,_) = a
+tup1234to4   (_,_,_,a) = a
+{-# INLINE tup1234to1   #-}
+{-# INLINE tup1234to2   #-}
+{-# INLINE tup1234to3   #-}
+{-# INLINE tup1234to4   #-}
+
+tup1234to12  (a,b,_,_) = (a,b)
+tup1234to13  (a,_,b,_) = (a,b)
+tup1234to14  (a,_,_,b) = (a,b)
+tup1234to23  (_,a,b,_) = (a,b)
+tup1234to24  (_,a,_,b) = (a,b)
+tup1234to34  (_,_,a,b) = (a,b)
+{-# INLINE tup1234to12 #-}
+{-# INLINE tup1234to13 #-}
+{-# INLINE tup1234to14 #-}
+{-# INLINE tup1234to23 #-}
+{-# INLINE tup1234to24 #-}
+{-# INLINE tup1234to34 #-}
+
+tup1234to123 (a,b,c,_) = (a,b,c)
+tup1234to234 (_,a,b,c) = (a,b,c)
+{-# INLINE tup1234to123 #-}
+{-# INLINE tup1234to234 #-}
+
+tup1234to124 (a,b,_,c) = (a,b,c)
+tup1234to134 (a,_,b,c) = (a,b,c)
+{-# INLINE tup1234to124 #-}
+{-# INLINE tup1234to134 #-}
+
+tup123to1234 d (a,b,c) = (a,b,c,d)
+{-# INLINE tup123to1234 #-}
+
+fst4 = tup1234to1
+snd4 = tup1234to2
+thd4 = tup1234to3
+fth4 = tup1234to4
+fth  = fth4
+{-# INLINE fst4 #-}
+{-# INLINE snd4 #-}
+{-# INLINE thd4 #-}
+{-# INLINE fth4 #-}
+{-# INLINE fth  #-}
 
 -------------------------------------------------------------------------
 -- String
