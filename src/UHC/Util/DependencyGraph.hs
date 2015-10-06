@@ -33,7 +33,7 @@ data DpdGr n
   = DpdGr
       { dgGr    :: Graph
       , dgGrT   :: Graph
-      , dgEdges	:: [(n, n, [n])]
+      , dgEdges :: [(n, n, [n])]
       , dgV2N   :: Vertex -> (n, [n])
       , dgK2V   :: n -> Maybe Vertex
       }

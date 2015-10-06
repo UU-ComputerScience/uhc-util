@@ -59,7 +59,8 @@ import           Control.Applicative ((<|>))
 import           Control.Monad
 import           Control.Monad.Fix
 import           Control.Applicative(Applicative(..))
-import           Control.Monad.Error as ME
+import           UHC.Util.Error as ME
+-- import           Control.Monad.Error as ME
 import           Control.Monad.State
 import qualified Control.Exception as CE
 import           Control.Monad.Identity
@@ -184,8 +185,8 @@ data CompileRunState err
 
 data CompileRun nm unit info err
   = CompileRun
-      { _crCUCache       :: Map.Map nm unit		-- cached compile units
-      , _crNmForward     :: Map.Map nm nm		-- Forwarding mechanism for name changes
+      { _crCUCache       :: Map.Map nm unit     -- cached compile units
+      , _crNmForward     :: Map.Map nm nm       -- Forwarding mechanism for name changes
       , _crCompileOrder  :: [[nm]]
       , _crTopModNm      :: nm
       , _crState         :: CompileRunState err
@@ -474,13 +475,13 @@ cpFindFilesForFPathInLocations
   :: ( Ord n, Show n
      , FPATH n, FileLocatable u loc, Show loc
      , CompileRunner s n p loc u i e m
-     ) => (loc -> n -> FPath -> [(loc,FPath,[e])])		-- ^ get the locations for a name, possibly with errors
-       -> ((FPath,loc,[e]) -> res)						-- ^ construct a result given a found location
-       -> Bool											-- ^ stop when first is found
-       -> [(FileSuffix,s)]								-- ^ suffix info
-       -> [loc]											-- ^ locations to search
-       -> Maybe n										-- ^ possibly a module name
-       -> Maybe FPath									-- ^ possibly a file path
+     ) => (loc -> n -> FPath -> [(loc,FPath,[e])])      -- ^ get the locations for a name, possibly with errors
+       -> ((FPath,loc,[e]) -> res)                      -- ^ construct a result given a found location
+       -> Bool                                          -- ^ stop when first is found
+       -> [(FileSuffix,s)]                              -- ^ suffix info
+       -> [loc]                                         -- ^ locations to search
+       -> Maybe n                                       -- ^ possibly a module name
+       -> Maybe FPath                                   -- ^ possibly a file path
        -> CompilePhaseT n u i e m [res]
 cpFindFilesForFPathInLocations getfp putres stopAtFirst suffs locs mbModNm mbFp
   = do { cr <- get

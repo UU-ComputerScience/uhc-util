@@ -18,7 +18,7 @@ A multiple level VarMp knows its own absolute metalevel, which is the default to
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE DeriveDataTypeable #-}
-{-# LANGUAGE OverlappingInstances #-}
+-- {-# LANGUAGE OverlappingInstances #-}
 {-# LANGUAGE DeriveGeneric #-}
 
 module UHC.Util.VarMp

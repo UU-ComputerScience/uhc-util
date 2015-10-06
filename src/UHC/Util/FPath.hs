@@ -385,11 +385,11 @@ searchFPathFromLoc loc fp = [(loc,fpathPrependDir loc fp)]
 
 -- | Search for file in locations, with possible suffices
 searchLocationsForReadableFilesWith
-  ::    (loc -> FPath -> [(loc,FPath,[e])])				-- ^ get the locations for a name, possibly with errors
-     -> Bool											-- ^ stop when first is found
-     -> [loc]											-- ^ locations to search
-     -> FileSuffixesWith s								-- ^ suffixes to try, with associated info
-     -> FPath											-- ^ search for a path
+  ::    (loc -> FPath -> [(loc,FPath,[e])])             -- ^ get the locations for a name, possibly with errors
+     -> Bool                                            -- ^ stop when first is found
+     -> [loc]                                           -- ^ locations to search
+     -> FileSuffixesWith s                              -- ^ suffixes to try, with associated info
+     -> FPath                                           -- ^ search for a path
      -> IO [(FPath,loc,s,[e])]
 searchLocationsForReadableFilesWith getfp stopAtFirst locs suffs fp
   = let select stop f fps
@@ -420,11 +420,11 @@ searchLocationsForReadableFilesWith getfp stopAtFirst locs suffs fp
 
 -- | Search for file in locations, with possible suffices
 searchLocationsForReadableFiles
-  ::    (loc -> FPath -> [(loc,FPath,[e])])				-- ^ get the locations for a name, possibly with errors
-     -> Bool											-- ^ stop when first is found
-     -> [loc]											-- ^ locations to search
-     -> FileSuffixes									-- ^ suffixes to try
-     -> FPath											-- ^ search for a path
+  ::    (loc -> FPath -> [(loc,FPath,[e])])             -- ^ get the locations for a name, possibly with errors
+     -> Bool                                            -- ^ stop when first is found
+     -> [loc]                                           -- ^ locations to search
+     -> FileSuffixes                                    -- ^ suffixes to try
+     -> FPath                                           -- ^ search for a path
      -> IO [(FPath,loc,[e])]
 searchLocationsForReadableFiles getfp stopAtFirst locs suffs fp
   = fmap (map tup1234to124) $ searchLocationsForReadableFilesWith getfp stopAtFirst locs (map (flip (,) ()) suffs) fp

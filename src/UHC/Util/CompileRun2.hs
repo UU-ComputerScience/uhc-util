@@ -56,7 +56,8 @@ import           System.Exit
 import           Control.Monad
 import           Control.Monad.Fix
 import           Control.Applicative(Applicative(..))
-import           Control.Monad.Error as ME
+import           UHC.Util.Error as ME
+-- import           Control.Monad.Error as ME
 import           Control.Monad.State
 import qualified Control.Exception as CE
 import           Control.Monad.Identity
@@ -429,13 +430,13 @@ cpFindFilesForFPathInLocations
   :: ( Ord n
      , FPATH n, FileLocatable u loc, Show loc
      , CompileRunner s n p loc u i e m
-     ) => (loc -> n -> FPath -> [(loc,FPath,[e])])		-- ^ get the locations for a name, possibly with errors
-       -> ((FPath,loc,s,[e]) -> res)						-- ^ construct a result given a found location
-       -> Bool											-- ^ stop when first is found
-       -> [(FileSuffixWith s)]							-- ^ suffix info
-       -> [loc]											-- ^ locations to search
-       -> Maybe n										-- ^ possibly a module name
-       -> Maybe FPath									-- ^ possibly a file path
+     ) => (loc -> n -> FPath -> [(loc,FPath,[e])])      -- ^ get the locations for a name, possibly with errors
+       -> ((FPath,loc,s,[e]) -> res)                        -- ^ construct a result given a found location
+       -> Bool                                          -- ^ stop when first is found
+       -> [(FileSuffixWith s)]                          -- ^ suffix info
+       -> [loc]                                         -- ^ locations to search
+       -> Maybe n                                       -- ^ possibly a module name
+       -> Maybe FPath                                   -- ^ possibly a file path
        -> CompilePhaseT n u i e m [res]
 cpFindFilesForFPathInLocations getfp putres stopAtFirst suffs locs mbModNm mbFp
   = do { cr <- get
