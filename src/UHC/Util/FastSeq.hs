@@ -14,7 +14,7 @@ module UHC.Util.FastSeq
 
 import           Prelude hiding (null,map)
 import           Data.Monoid
-import qualified Data.ListLike as LL
+-- import qualified Data.ListLike as LL
 import qualified Data.List as L
 import qualified UHC.Util.Utils as U
 

@@ -34,7 +34,6 @@ library
     uulib >= 0.9.19,
     time-compat >= 0.1.0.1,
     time >= 1.2,
-    ListLike >= 4.0.0,
     fclabels >= 2.0.2,
     syb  >= 0.3.6
   Exposed-Modules:
