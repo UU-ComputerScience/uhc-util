@@ -59,6 +59,7 @@ library
     UHC.Util.PrettyUtils,
     UHC.Util.Rel,
     UHC.Util.RelMap,
+    UHC.Util.RLList,
     UHC.Util.ScanUtils,
     UHC.Util.ScopeMapGam,
     UHC.Util.Serialize,
