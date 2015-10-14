@@ -63,6 +63,7 @@ library
     UHC.Util.ScopeMapGam,
     UHC.Util.Serialize,
     UHC.Util.Time,
+    UHC.Util.TreeTrie,
     UHC.Util.Utils,
     UHC.Util.VarLookup,
     UHC.Util.VarMp

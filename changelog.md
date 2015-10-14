@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.6.3
+
+- [api] move of TreeTrie from uhc to lib
+
 ## 0.1.6.2
 
 - [uhc] as released with uhc 1.1.9.1
