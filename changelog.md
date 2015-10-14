@@ -2,7 +2,7 @@
 
 ## 0.1.6.3
 
-- [api] move of RLList, TreeTrie from uhc to lib
+- [api] move of RLList, TreeTrie, CHR, Substitutable (partial) from uhc to lib
 
 ## 0.1.6.2
 
