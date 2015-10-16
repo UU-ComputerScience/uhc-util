@@ -98,7 +98,8 @@ class CHREmptySubstitution subst where
 -------------------------------------------------------------------------------------------
 
 -- | A Matchable participates in the reduction process as a reducable constraint.
-class (TTKeyable x, TTKey x ~ skey) => CHRMatchable env x subst skey | subst -> skey where --- | x -> subst env where
+class (TTKeyable x, TTKey x ~ CHRMatchableKey subst) => CHRMatchable env x subst where -- skey | subst -> skey where --- | x -> subst env where
+  type CHRMatchableKey subst :: *
   chrMatchTo      :: env -> subst -> x -> x -> Maybe subst
 
 -------------------------------------------------------------------------------------------
