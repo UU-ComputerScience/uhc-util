@@ -80,8 +80,8 @@ instance (VarExtractable c v,VarExtractable g v) => VarExtractable (CHR c g s) v
     = Set.unions $ concat [map varFreeSet h, map varFreeSet g, map varFreeSet b]
 
 instance (VarUpdatable c s, VarUpdatable g s) => VarUpdatable (CHR c g s) s where
-  type VarUpdKey s = VarUpdKey s
-  type VarUpdVal s = VarUpdVal s
+  -- type VarUpdKey s = VarUpdKey s
+  -- type VarUpdVal s = VarUpdVal s
   varUpd s r@(CHR {chrHead=h, chrGuard=g, chrBody=b})
     = r {chrHead = map (varUpd s) h, chrGuard = map (varUpd s) g, chrBody = map (varUpd s) b}
 
