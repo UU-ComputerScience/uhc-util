@@ -75,4 +75,4 @@ library
   Ghc-Options:		
   HS-Source-Dirs:     	src
   Build-Tools:		
-  Extensions: NoMagicHash, DeriveGeneric, DeriveDataTypeable
+  Extensions: NoMagicHash, DeriveGeneric, DeriveDataTypeable, TypeFamilies, FlexibleContexts

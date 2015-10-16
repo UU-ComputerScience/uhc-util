@@ -1,4 +1,4 @@
-{-# LANGUAGE TypeFamilies, MultiParamTypeClasses, FlexibleContexts, FunctionalDependencies #-}
+{-# LANGUAGE MultiParamTypeClasses, FunctionalDependencies #-}
 
 module UHC.Util.Substitutable
   (

@@ -1,4 +1,4 @@
-{-# LANGUAGE MultiParamTypeClasses, TypeFamilies, FlexibleInstances, FunctionalDependencies, UndecidableInstances #-}
+{-# LANGUAGE MultiParamTypeClasses, FlexibleInstances, FunctionalDependencies, UndecidableInstances #-}
 
 -------------------------------------------------------------------------------------------
 --- Constraint Handling Rules
@@ -67,8 +67,8 @@ instance (PP c,PP g) => PP (CHR c g s) where
           ppL xs  = ppBracketsCommasBlock xs -- ppParensCommasBlock xs
           ppChr l = vlist l -- ppCurlysBlock
 
-instance TTKeyable cnstr key => TTKeyable (CHR cnstr guard subst) key where
-  -- type TTKey (CHR cnstr guard subst) = TTKey cnstr
+instance TTKeyable cnstr => TTKeyable (CHR cnstr guard subst) where
+  type TTKey (CHR cnstr guard subst) = TTKey cnstr
   toTTKey' o chr = toTTKey' o $ head $ chrHead chr
 
 -------------------------------------------------------------------------------------------
@@ -98,7 +98,7 @@ class CHREmptySubstitution subst where
 -------------------------------------------------------------------------------------------
 
 -- | A Matchable participates in the reduction process as a reducable constraint.
-class (TTKeyable x skey) => CHRMatchable env x subst skey | subst -> skey where --- | x -> subst env where
+class (TTKeyable x, TTKey x ~ skey) => CHRMatchable env x subst skey | subst -> skey where --- | x -> subst env where
   chrMatchTo      :: env -> subst -> x -> x -> Maybe subst
 
 -------------------------------------------------------------------------------------------

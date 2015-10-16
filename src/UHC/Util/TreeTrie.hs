@@ -221,8 +221,9 @@ matchTreeTrieMpKeyTo l r
 -------------------------------------------------------------------------------------------
 
 -- | Keyable values, i.e. capable of yielding a TreeTrieKey for retrieval from a trie
-class TreeTrieKeyable x k where
-  toTreeTrieKey :: x -> TreeTrieKey k
+class TreeTrieKeyable x where
+  type TrTrKey x :: *
+  toTreeTrieKey :: x -> TreeTrieKey (TrTrKey x)
 
 -------------------------------------------------------------------------------------------
 --- TreeTrie structure
@@ -419,7 +420,7 @@ singleton keys val
   where s []       = TreeTrie (Just val) Map.empty
         s (k : ks) = TreeTrie Nothing (Map.singleton k $ singleton ks val) 
 
-singletonKeyable :: (Ord k,TreeTrieKeyable v k) => v -> TreeTrie k v
+singletonKeyable :: (Ord (TrTrKey v),TreeTrieKeyable v) => v -> TreeTrie (TrTrKey v) v
 singletonKeyable val = singleton (toTreeTrieKey val) val
 
 -------------------------------------------------------------------------------------------
@@ -455,7 +456,7 @@ insertByKey = insertByKeyWith const
 insert :: Ord k => TreeTrieKey k -> v -> TreeTrie k v -> TreeTrie k v
 insert = insertByKey
 
-insertKeyable :: (Ord k,TreeTrieKeyable v k) => v -> TreeTrie k v -> TreeTrie k v
+insertKeyable :: (Ord (TrTrKey v),TreeTrieKeyable v) => v -> TreeTrie (TrTrKey v) v -> TreeTrie (TrTrKey v) v
 insertKeyable val = insertByKey (toTreeTrieKey val) val
 
 -------------------------------------------------------------------------------------------
