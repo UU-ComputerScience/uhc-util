@@ -17,11 +17,11 @@ import           UHC.Util.VarMp
 infixr 6 `varUpd`
 infixr 6 `varUpdCyc`
 
-class VarUpdatable vv subst skey sval | subst -> skey sval where
-  -- type VarUpdKey subst :: *
-  -- type VarUpdVal subst :: *
+class VarUpdatable vv subst where -- skey sval | subst -> skey sval where
+  type VarUpdKey subst :: *
+  type VarUpdVal subst :: *
   varUpd            ::  subst -> vv -> vv
-  varUpdCyc         ::  subst -> vv -> (vv, VarMp' skey sval)
+  varUpdCyc         ::  subst -> vv -> (vv, VarMp' (VarUpdKey subst) (VarUpdVal subst))
   s `varUpdCyc` x = (s `varUpd` x,emptyVarMp)
 
 class Ord k => VarExtractable vv k | vv -> k where
