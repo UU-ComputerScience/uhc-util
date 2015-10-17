@@ -6,6 +6,7 @@ module UHC.Util.CHR.Key
   , defaultTTKeyableOpts
   
   , TTKeyable(..)
+  , TTKey
   , toTTKey
   )
   where
@@ -23,9 +24,10 @@ data TTKeyableOpts
 
 defaultTTKeyableOpts = TTKeyableOpts True
 
+type family TTKey x :: *
+
 -- | TreeTrie key construction
 class TTKeyable x where -- key | x -> key where
-  type TTKey x :: *
   toTTKey'                  :: TTKeyableOpts -> x ->  TreeTrieKey  (TTKey x)                          -- option parameterized constuction
   toTTKeyParentChildren'    :: TTKeyableOpts -> x -> (TreeTrie1Key (TTKey x), [TreeTrieMpKey  (TTKey x)])   -- building block: parent of children + children
   

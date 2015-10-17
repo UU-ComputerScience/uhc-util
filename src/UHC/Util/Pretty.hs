@@ -73,6 +73,9 @@ module UHC.Util.Pretty
   -- * Misc
   , ppDots, ppMb, ppUnless, ppWhen
 
+  -- * Render
+  , showPP
+  
   -- * IO
   , hPutWidthPPLn, putWidthPPLn
   , hPutPPLn, putPPLn
@@ -447,6 +450,13 @@ instance (PP a, PP b, PP c, PP d, PP e, PP f, PP g, PP h, PP i) => PP (a,b,c,d,e
 instance (PP a, PP b, PP c, PP d, PP e, PP f, PP g, PP h, PP i, PP j) => PP (a,b,c,d,e,f,g,h,i,j) where
   pp (a,b,c,d,e,f,g,h,i,j) = ppParensCommasBlock [a,b,c,d,e,f,g,h,i,j]
 -}
+
+-------------------------------------------------------------------------
+-- Render
+-------------------------------------------------------------------------
+
+showPP :: PP a => a -> String
+showPP x = disp (pp x) 1000 ""
 
 -------------------------------------------------------------------------
 -- PP printing to file

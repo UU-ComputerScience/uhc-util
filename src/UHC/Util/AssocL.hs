@@ -1,16 +1,25 @@
 module UHC.Util.AssocL
-    ( Assoc, AssocL
+    ( -- * Assoc list
+      Assoc, AssocL
     , assocLMapElt, assocLMapKey
     , assocLElts, assocLKeys
     , assocLGroupSort
     , assocLMapUnzip
     , ppAssocL, ppAssocL', ppAssocLV
     , ppCurlysAssocL
+    
+      -- * Utils
+    , combineToDistinguishedElts
     )
   where
 import UHC.Util.Pretty
 import UHC.Util.Utils
 import Data.List
+import Data.Maybe
+
+-------------------------------------------------------------------------------------------
+--- AssocL
+-------------------------------------------------------------------------------------------
 
 type Assoc k v = (k,v)
 type AssocL k v = [Assoc k v]
@@ -53,4 +62,22 @@ assocLElts = map snd
 
 assocLGroupSort :: Ord k => AssocL k v -> AssocL k [v]
 assocLGroupSort = map (foldr (\(k,v) (_,vs) -> (k,v:vs)) (panic "UHC.Util.AssocL.assocLGroupSort" ,[])) . groupSortOn fst
+
+-------------------------------------------------------------------------------------------
+--- Utils: Combinations
+-------------------------------------------------------------------------------------------
+
+-- | Combine [[x1..xn],..,[y1..ym]] to [[x1..y1],[x2..y1],..,[xn..ym]].
+--   Each element [xi..yi] is distinct based on the the key k in xi==(k,_)
+combineToDistinguishedElts :: Eq k => [AssocL k v] -> [AssocL k v]
+combineToDistinguishedElts []     = []
+combineToDistinguishedElts [[]]   = []
+combineToDistinguishedElts [x]    = map (:[]) x
+combineToDistinguishedElts (l:ls)
+  = combine l $ combineToDistinguishedElts ls
+  where combine l ls
+          = concatMap (\e@(k,_)
+                         -> mapMaybe (\ll -> maybe (Just (e:ll)) (const Nothing) $ lookup k ll)
+                                     ls
+                      ) l
 

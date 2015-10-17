@@ -13,7 +13,7 @@ module UHC.Util.CHR.Base
   (
     CHR(..)
   , CHREmptySubstitution(..)
-  , CHRMatchable(..)
+  , CHRMatchable(..), CHRMatchableKey
   , CHRCheckable(..)
   
   , (<==>), (==>), (|>)
@@ -67,8 +67,10 @@ instance (PP c,PP g) => PP (CHR c g s) where
           ppL xs  = ppBracketsCommasBlock xs -- ppParensCommasBlock xs
           ppChr l = vlist l -- ppCurlysBlock
 
-instance TTKeyable cnstr => TTKeyable (CHR cnstr guard subst) where
-  type TTKey (CHR cnstr guard subst) = TTKey cnstr
+type instance TTKey (CHR cnstr guard subst) = TTKey cnstr
+
+instance (TTKeyable cnstr {-, TTKey (CHR cnstr guard subst) ~ TTKey cnstr -}) => TTKeyable (CHR cnstr guard subst) where
+  -- type TTKey (CHR cnstr guard subst) = TTKey cnstr
   toTTKey' o chr = toTTKey' o $ head $ chrHead chr
 
 -------------------------------------------------------------------------------------------
@@ -97,9 +99,10 @@ class CHREmptySubstitution subst where
 --- CHRMatchable
 -------------------------------------------------------------------------------------------
 
+type family CHRMatchableKey subst :: *
+
 -- | A Matchable participates in the reduction process as a reducable constraint.
 class (TTKeyable x, TTKey x ~ CHRMatchableKey subst) => CHRMatchable env x subst where -- skey | subst -> skey where --- | x -> subst env where
-  type CHRMatchableKey subst :: *
   chrMatchTo      :: env -> subst -> x -> x -> Maybe subst
 
 -------------------------------------------------------------------------------------------
