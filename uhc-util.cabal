@@ -44,7 +44,6 @@ library
     UHC.Util.CHR.Key,
     UHC.Util.CHR.Base,
     UHC.Util.CHR.Solve,
-    UHC.Util.CHR.Constraint.UHC,
     UHC.Util.CompileRun,
     UHC.Util.CompileRun2,
     UHC.Util.CompileRun3,
