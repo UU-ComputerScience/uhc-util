@@ -1,4 +1,4 @@
-{-# LANGUAGE CPP, ScopedTypeVariables, StandaloneDeriving, MultiParamTypeClasses #-}
+{-# LANGUAGE CPP, ScopedTypeVariables, StandaloneDeriving, TypeFamilies, MultiParamTypeClasses #-}
 
 -------------------------------------------------------------------------------------------
 --- TreeTrie, variation which allows matching on subtrees marked as a variable (kind of unification)
@@ -29,6 +29,8 @@ module UHC.Util.TreeTrie
   , TreeTrieMp1Key(..)
   , TreeTrieMpKey
   , TreeTrieKey
+  
+  , TrTrKey
   
   , ppTreeTrieKey
   
@@ -220,9 +222,10 @@ matchTreeTrieMpKeyTo l r
 --- Keyable
 -------------------------------------------------------------------------------------------
 
+type family TrTrKey x :: *
+
 -- | Keyable values, i.e. capable of yielding a TreeTrieKey for retrieval from a trie
 class TreeTrieKeyable x where
-  type TrTrKey x :: *
   toTreeTrieKey :: x -> TreeTrieKey (TrTrKey x)
 
 -------------------------------------------------------------------------------------------

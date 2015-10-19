@@ -26,6 +26,8 @@ defaultTTKeyableOpts = TTKeyableOpts True
 
 type family TTKey x :: *
 
+type instance TTKey [x] = TTKey x
+
 -- | TreeTrie key construction
 class TTKeyable x where -- key | x -> key where
   toTTKey'                  :: TTKeyableOpts -> x ->  TreeTrieKey  (TTKey x)                          -- option parameterized constuction
@@ -35,7 +37,7 @@ class TTKeyable x where -- key | x -> key where
   toTTKey' o                    = uncurry ttkAdd' . toTTKeyParentChildren' o
   toTTKeyParentChildren' o      = ttkParentChildren . toTTKey' o
 
-toTTKey :: TTKeyable x => x -> TreeTrieKey (TTKey x)
+toTTKey :: (TTKeyable x, TTKey x ~ TrTrKey x) => x -> TreeTrieKey (TTKey x)
 toTTKey = toTTKey' defaultTTKeyableOpts
 
 
