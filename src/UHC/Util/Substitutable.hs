@@ -5,8 +5,9 @@ module UHC.Util.Substitutable
     VarUpdatable(..)
   , VarExtractable(..)
   
-  , VarUpdKey
-  , VarUpdVal
+  , SubstVarKey
+  , SubstVarVal
+  , ExtrValVarKey
   )
   where
 
@@ -20,19 +21,21 @@ import           UHC.Util.VarMp
 infixr 6 `varUpd`
 infixr 6 `varUpdCyc`
 
-type family VarUpdKey subst :: *
-type family VarUpdVal subst :: *
+-- | Invariant: SubstVarKey subst = ExtrValVarKey (SubstVarVal subst)
+type family SubstVarKey subst :: *
+type family SubstVarVal subst :: *
+type family ExtrValVarKey vv :: *
+
+type instance ExtrValVarKey [vv] = ExtrValVarKey vv
 
 class VarUpdatable vv subst where -- skey sval | subst -> skey sval where
-  -- type VarUpdKey subst :: *
-  -- type VarUpdVal subst :: *
   varUpd            ::  subst -> vv -> vv
-  varUpdCyc         ::  subst -> vv -> (vv, VarMp' (VarUpdKey subst) (VarUpdVal subst))
+  varUpdCyc         ::  subst -> vv -> (vv, VarMp' (SubstVarKey subst) (SubstVarVal subst))
   s `varUpdCyc` x = (s `varUpd` x,emptyVarMp)
 
-class Ord k => VarExtractable vv k | vv -> k where
-  varFree           ::  vv -> [k]
-  varFreeSet        ::  vv -> Set.Set k
+class Ord (ExtrValVarKey vv) => VarExtractable vv where -- k | vv -> k where
+  varFree           ::  vv -> [ExtrValVarKey vv]
+  varFreeSet        ::  vv -> Set.Set (ExtrValVarKey vv)
   
   -- default
   varFree           =   Set.toList . varFreeSet

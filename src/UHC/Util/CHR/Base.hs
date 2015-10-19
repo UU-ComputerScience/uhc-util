@@ -10,8 +10,9 @@ to avoid explosion of search space during resolution.
 -}
 
 module UHC.Util.CHR.Base
-  (
-    CHR(..)
+  ( IsConstraint(..)
+  
+  , CHR(..)
   , CHREmptySubstitution(..)
   , CHRMatchable(..), CHRMatchableKey
   , CHRCheckable(..)
@@ -76,7 +77,9 @@ instance (TTKeyable cnstr) => TTKeyable (CHR cnstr guard subst) where
 --- Var instances
 -------------------------------------------------------------------------------------------
 
-instance (VarExtractable c v,VarExtractable g v) => VarExtractable (CHR c g s) v where
+type instance ExtrValVarKey (CHR c g s) = ExtrValVarKey c
+
+instance (VarExtractable c, VarExtractable g, ExtrValVarKey c ~ ExtrValVarKey g) => VarExtractable (CHR c g s) where
   varFreeSet          (CHR {chrHead=h, chrGuard=g, chrBody=b})
     = Set.unions $ concat [map varFreeSet h, map varFreeSet g, map varFreeSet b]
 
@@ -109,6 +112,15 @@ class (TTKeyable x, TTKey x ~ CHRMatchableKey subst) => CHRMatchable env x subst
 -- | A Checkable participates in the reduction process as a guard, to be checked.
 class CHRCheckable env x subst where
   chrCheck      :: env -> subst -> x -> Maybe subst
+
+-------------------------------------------------------------------------------------------
+--- What a constraint must be capable of
+-------------------------------------------------------------------------------------------
+
+-- | The things a constraints needs to be capable of in order to participate in solving
+class IsConstraint c where
+  -- | Requires solving? Or is just a residue...
+  cnstrRequiresSolve :: c -> Bool
 
 -------------------------------------------------------------------------------------------
 --- Construction

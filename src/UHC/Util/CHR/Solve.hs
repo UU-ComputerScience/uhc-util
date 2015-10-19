@@ -13,9 +13,7 @@ Assumptions (to be documented further)
 -}
 
 module UHC.Util.CHR.Solve
-  ( IsConstraint(..)
-  
-  , CHRStore
+  ( CHRStore
   , emptyCHRStore
   
   , chrStoreFromElems
@@ -63,15 +61,6 @@ import           UHC.Util.Serialize
 import           Control.Monad
 import           Control.Monad.State.Strict
 import           UHC.Util.Utils
-
--------------------------------------------------------------------------------------------
---- Choice of Trie structure
--------------------------------------------------------------------------------------------
-
--- | The things a constraints needs to be capable of in order to participate in solving
-class IsConstraint c where
-  -- | Requires solving? Or is just a residue...
-  cnstrRequiresSolve :: c -> Bool
 
 -------------------------------------------------------------------------------------------
 --- Choice of Trie structure

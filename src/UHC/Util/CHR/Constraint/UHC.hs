@@ -22,13 +22,10 @@ module UHC.Util.CHR.Constraint.UHC
   , emptyCnstrMp
   , cnstrMpUnion
   , cnstrMpUnions
-  
-  , cnstrRequiresSolve
   )
   where
 
-import           UHC.Util.CHR.Base
-import           UHC.Util.CHR.Key
+import           UHC.Util.CHR
 import           UHC.Util.TreeTrie
 import           UHC.Util.Substitutable
 import           UHC.Util.Pretty as PP
@@ -53,15 +50,19 @@ data Constraint p info
                     { cnstrPred :: !p               -- the pred to which reduction was done
                     , cnstrInfo :: !info            -- additional reduction specific info w.r.t. codegeneration
                     , cnstrFromPreds :: ![p]        -- the preds from which reduction was done
-                    -- , cnstrVarMp :: VarMp' (VarUpdKey p) (VarUpdVal p)           -- additional bindings for type (etc.) variables, i.e. improving substitution
+                    -- , cnstrVarMp :: VarMp' (SubstVarKey p) (SubstVarVal p)           -- additional bindings for type (etc.) variables, i.e. improving substitution
                     }
   deriving (Eq, Ord, Show)
 
 type instance TTKey (Constraint p info) = TTKey p
 
+instance IsConstraint (Constraint p info) where
+  cnstrRequiresSolve (Reduction {}) = False
+  cnstrRequiresSolve _              = True
+
 {-
-deriving instance (Eq p, Eq info, Eq (VarUpdKey p), Eq (VarUpdVal p)) => Eq (Constraint p info)
-deriving instance (Ord p, Ord info, Ord (VarUpdKey p), Ord (VarUpdVal p)) => Ord (Constraint p info)
+deriving instance (Eq p, Eq info, Eq (SubstVarKey p), Eq (SubstVarVal p)) => Eq (Constraint p info)
+deriving instance (Ord p, Ord info, Ord (SubstVarKey p), Ord (SubstVarVal p)) => Ord (Constraint p info)
 -- deriving instance Ord (Constraint p info)
 
 instance Eq p => Eq (Constraint p info) where
@@ -115,7 +116,9 @@ instance (TTKeyable p, TTKey (Constraint p info) ~ TTKey p) => TTKeyable (Constr
         _            -> panic "TTKeyable (Constraint p info).toTTKey'" -- ttkEmpty
 -}
 
-instance (VarExtractable p v,VarExtractable info v) => VarExtractable (Constraint p info) v where
+type instance ExtrValVarKey (Constraint p info) = ExtrValVarKey p
+
+instance (VarExtractable p) => VarExtractable (Constraint p info) where
   varFreeSet c
     = case cnstrReducablePart c of
         Just (_,p,_) -> varFreeSet p
@@ -205,15 +208,6 @@ cnstrMpUnion = Map.unionWith (++)
 
 cnstrMpUnions :: (Ord p, Ord i) => [ConstraintMp' p i x] -> ConstraintMp' p i x
 cnstrMpUnions = Map.unionsWith (++)
-
--------------------------------------------------------------------------------------------
---- Observations
--------------------------------------------------------------------------------------------
-
--- | Predicate for whether solving is required
-cnstrRequiresSolve :: Constraint p info -> Bool
-cnstrRequiresSolve (Reduction {}) = False
-cnstrRequiresSolve _              = True
 
 -------------------------------------------------------------------------------------------
 --- Pretty printing
