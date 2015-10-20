@@ -215,15 +215,7 @@ class ( VarLookupCmb s s
       , CHRMatchableKey s ~ TrTrKey (CHRConstraint e s)
       , PP (CHRMatchableKey s)
       , Ord (CHRMatchableKey s)
-      , Ord (CHRConstraint e s) -- cannot be proven...
       ) => IsCHRSolvable e s
-
-{-
--}
-
-
-{-
--}
 
 -- | Solve
 chrSolve'

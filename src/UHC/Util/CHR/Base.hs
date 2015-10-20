@@ -93,11 +93,15 @@ instance PP (CHRConstraint env subst) where
 instance IsConstraint (CHRConstraint env subst) where
   cnstrRequiresSolve (CHRConstraint c) = cnstrRequiresSolve c
 
-{-
 instance Eq (CHRConstraint env subst) where
-  toTTKey' o c = case c of
-    CHRConstraint c' -> toTTKey' o c'
--}
+  CHRConstraint (c1 :: c1) == CHRConstraint c2 = case cast c2 of
+    Just (c2' :: c1) -> c1 == c2'
+    _                -> False
+
+instance Ord (CHRConstraint env subst) where
+  CHRConstraint (c1 :: c1) `compare` CHRConstraint (c2 :: c2) = case cast c2 of
+    Just (c2' :: c1) -> c1 `compare` c2'
+    _                -> typeOf (undefined :: c1) `compare` typeOf (undefined :: c2)
 
 instance (CHRMatchableKey subst ~ TTKey (CHRConstraint env subst)) => CHRMatchable env (CHRConstraint env subst) subst where
   chrMatchTo env subst c1 c2
