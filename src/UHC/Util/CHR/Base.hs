@@ -1,4 +1,4 @@
-{-# LANGUAGE MultiParamTypeClasses, FlexibleInstances, FunctionalDependencies, UndecidableInstances #-}
+{-# LANGUAGE MultiParamTypeClasses, FlexibleInstances, FunctionalDependencies, UndecidableInstances, ExistentialQuantification, ScopedTypeVariables, StandaloneDeriving #-}
 
 -------------------------------------------------------------------------------------------
 --- Constraint Handling Rules
@@ -11,6 +11,14 @@ to avoid explosion of search space during resolution.
 
 module UHC.Util.CHR.Base
   ( IsConstraint(..)
+
+  , IsCHRConstraint(..)
+  , CHRConstraint(..)
+  
+  , IsCHRGuard(..)
+  , CHRGuard(..)
+  
+  , CHRRule(..)
   
   , Rule(..)
   , CHREmptySubstitution(..)
@@ -25,6 +33,7 @@ import qualified UHC.Util.TreeTrie as TreeTrie
 -- {%{EH}Base.Common},{%{EH}Substitutable}
 import           UHC.Util.VarMp
 import           Data.Monoid
+import           Data.Typeable
 import qualified Data.Set as Set
 import           UHC.Util.Pretty
 import           UHC.Util.CHR.Key
@@ -34,16 +43,141 @@ import           UHC.Util.Serialize
 import           UHC.Util.Substitutable
 
 -------------------------------------------------------------------------------------------
+--- Constraint, Guard API
+-------------------------------------------------------------------------------------------
+
+-- | (Class alias) API for constraint requirements
+class ( CHRMatchable env c subst
+      , VarExtractable c
+      , VarUpdatable c subst
+      , Typeable c
+      , TTKeyable c
+      , IsConstraint c
+      , Ord c, Ord (TTKey c)
+      , PP c, PP (TTKey c)
+      ) => IsCHRConstraint env c subst
+
+-- | (Class alias) API for guard requirements
+class ( CHRCheckable env g subst
+      , VarExtractable g
+      , VarUpdatable g subst
+      , Typeable g
+      , PP g
+      ) => IsCHRGuard env g subst
+
+-------------------------------------------------------------------------------------------
+--- Existentially quantified Constraint representations to allow for mix of arbitrary universes
+-------------------------------------------------------------------------------------------
+
+data CHRConstraint env subst
+  = forall c . 
+    ( IsCHRConstraint env c subst
+    , TTKey (CHRConstraint env subst) ~ TTKey c
+    , ExtrValVarKey (CHRConstraint env subst) ~ ExtrValVarKey c
+    )
+    => CHRConstraint
+         { chrConstraint :: c
+         }
+
+deriving instance Typeable (CHRConstraint env subst)
+
+instance TTKeyable (CHRConstraint env subst) where
+  toTTKey' o (CHRConstraint c) = toTTKey' o c
+
+instance Show (CHRConstraint env subst) where
+  show _ = "CHRConstraint"
+
+instance PP (CHRConstraint env subst) where
+  pp (CHRConstraint c) = pp c
+
+instance IsConstraint (CHRConstraint env subst) where
+  cnstrRequiresSolve (CHRConstraint c) = cnstrRequiresSolve c
+
+{-
+instance Eq (CHRConstraint env subst) where
+  toTTKey' o c = case c of
+    CHRConstraint c' -> toTTKey' o c'
+-}
+
+instance (CHRMatchableKey subst ~ TTKey (CHRConstraint env subst)) => CHRMatchable env (CHRConstraint env subst) subst where
+  chrMatchTo env subst c1 c2
+    = case (c1, c2) of
+        (CHRConstraint (c1' :: c), CHRConstraint c2') -> case cast c2' of
+          Just (c2'' :: c) -> chrMatchTo env subst c1' c2''
+          _ -> Nothing
+
+instance (Ord (ExtrValVarKey (CHRConstraint env subst))) => VarExtractable (CHRConstraint env subst) where
+  varFreeSet (CHRConstraint c) = varFreeSet c
+
+instance VarUpdatable (CHRConstraint env subst) subst where
+  s `varUpd`    CHRConstraint c =  CHRConstraint c'
+    where c'        = s `varUpd`    c
+  s `varUpdCyc` CHRConstraint c = (CHRConstraint c', cyc)
+    where (c', cyc) = s `varUpdCyc` c
+
+-------------------------------------------------------------------------------------------
+--- Existentially quantified Guard representations to allow for mix of arbitrary universes
+-------------------------------------------------------------------------------------------
+
+data CHRGuard env subst
+  = forall g . 
+    ( IsCHRGuard env g subst
+    , ExtrValVarKey (CHRGuard env subst) ~ ExtrValVarKey g
+    )
+    => CHRGuard
+         { chrGuard :: g
+         }
+
+deriving instance Typeable (CHRGuard env subst)
+
+instance Show (CHRGuard env subst) where
+  show _ = "CHRGuard"
+
+instance PP (CHRGuard env subst) where
+  pp (CHRGuard c) = pp c
+
+instance (Ord (ExtrValVarKey (CHRGuard env subst))) => VarExtractable (CHRGuard env subst) where
+  varFreeSet (CHRGuard g) = varFreeSet g
+
+instance VarUpdatable (CHRGuard env subst) subst where
+  s `varUpd`    CHRGuard g =  CHRGuard g'
+    where g'        = s `varUpd`    g
+  s `varUpdCyc` CHRGuard g = (CHRGuard g', cyc)
+    where (g', cyc) = s `varUpdCyc` g
+
+instance CHRCheckable env (CHRGuard env subst) subst where
+  chrCheck env subst (CHRGuard g) = chrCheck env subst g
+
+-------------------------------------------------------------------------------------------
+--- Existentially quantified Rule representations to allow for mix of arbitrary universes
+-------------------------------------------------------------------------------------------
+
+data CHRRule env subst
+  = CHRRule
+      { chrRule :: Rule (CHRConstraint env subst) (CHRGuard env subst)
+      }
+
+type instance TTKey (CHRRule env subst) = TTKey (CHRConstraint env subst)
+
+deriving instance Typeable (CHRRule env subst)
+
+instance Show (CHRRule env subst) where
+  show _ = "CHRRule"
+
+instance PP (CHRRule env subst) where
+  pp (CHRRule r) = pp r
+
+-------------------------------------------------------------------------------------------
 --- CHR, derived structures
 -------------------------------------------------------------------------------------------
 
 -- | A CHR (rule) consist of head (simplification + propagation, boundary indicated by an Int), guard, and a body. All may be empty, but not all at the same time.
 data Rule cnstr guard
   = Rule
-      { chrHead         :: ![cnstr]
-      , chrSimpSz       :: !Int             -- length of the part of the head which is the simplification part
-      , chrGuard        :: ![guard]         -- subst -> Maybe subst
-      , chrBody         :: ![cnstr]
+      { ruleHead         :: ![cnstr]
+      , ruleSimpSz       :: !Int             -- length of the part of the head which is the simplification part
+      , ruleGuard        :: ![guard]         -- subst -> Maybe subst
+      , ruleBody         :: ![cnstr]
       }
   deriving (Typeable, Data)
 
@@ -71,7 +205,7 @@ instance (PP c,PP g) => PP (Rule c g) where
 type instance TTKey (Rule cnstr guard) = TTKey cnstr
 
 instance (TTKeyable cnstr) => TTKeyable (Rule cnstr guard) where
-  toTTKey' o chr = toTTKey' o $ head $ chrHead chr
+  toTTKey' o chr = toTTKey' o $ head $ ruleHead chr
 
 -------------------------------------------------------------------------------------------
 --- Var instances
@@ -80,12 +214,12 @@ instance (TTKeyable cnstr) => TTKeyable (Rule cnstr guard) where
 type instance ExtrValVarKey (Rule c g) = ExtrValVarKey c
 
 instance (VarExtractable c, VarExtractable g, ExtrValVarKey c ~ ExtrValVarKey g) => VarExtractable (Rule c g) where
-  varFreeSet          (Rule {chrHead=h, chrGuard=g, chrBody=b})
+  varFreeSet          (Rule {ruleHead=h, ruleGuard=g, ruleBody=b})
     = Set.unions $ concat [map varFreeSet h, map varFreeSet g, map varFreeSet b]
 
 instance (VarUpdatable c s, VarUpdatable g s) => VarUpdatable (Rule c g) s where
-  varUpd s r@(Rule {chrHead=h, chrGuard=g, chrBody=b})
-    = r {chrHead = map (varUpd s) h, chrGuard = map (varUpd s) g, chrBody = map (varUpd s) b}
+  varUpd s r@(Rule {ruleHead=h, ruleGuard=g, ruleBody=b})
+    = r {ruleHead = map (varUpd s) h, ruleGuard = map (varUpd s) g, ruleBody = map (varUpd s) b}
 
 -------------------------------------------------------------------------------------------
 --- CHREmptySubstitution
@@ -134,7 +268,7 @@ hs <==>  bs = Rule hs (length hs) emptyCHRGuard bs
 hs  ==>  bs = Rule hs 0 emptyCHRGuard bs
 
 (|>) :: Rule c g -> [g] -> Rule c g
-chr |> g = chr {chrGuard = chrGuard chr ++ g}
+chr |> g = chr {ruleGuard = ruleGuard chr ++ g}
 
 -------------------------------------------------------------------------------------------
 --- Instances: ForceEval, Binary, Serialize

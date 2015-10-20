@@ -1,4 +1,4 @@
-{-# LANGUAGE ScopedTypeVariables, StandaloneDeriving, UndecidableInstances, NoMonomorphismRestriction #-}
+{-# LANGUAGE ScopedTypeVariables, StandaloneDeriving, UndecidableInstances, NoMonomorphismRestriction, MultiParamTypeClasses #-}
 
 -------------------------------------------------------------------------------------------
 --- CHR solver
@@ -10,9 +10,11 @@ Derived from work by Gerrit vd Geest, but greatly adapted to use more efficient 
 Assumptions (to be documented further)
 - The key [Trie.TrieKey Key] used to lookup a constraint in a CHR should be distinguishing enough to be used for the prevention
   of the application of a propagation rule for a 2nd time.
+
+This is a monomorphic Solver, i.e. the solver is polymorph but therefore can only work on 1 type of constraints, rules, etc.
 -}
 
-module UHC.Util.CHR.Solve
+module UHC.Util.CHR.Solve.TreeTrie.Mono
   ( CHRStore
   , emptyCHRStore
   
@@ -26,7 +28,8 @@ module UHC.Util.CHR.Solve
   , ppCHRStore
   , ppCHRStore'
   
-  , SolveStep(..)
+  , SolveStep'(..)
+  , SolveStep
   , SolveTrace
   , ppSolveTrace
   
@@ -36,15 +39,16 @@ module UHC.Util.CHR.Solve
   , chrSolveStateDoneConstraints
   , chrSolveStateTrace
   
-  -- , chrSolve
+  , IsCHRSolvable(..)
   , chrSolve'
   , chrSolve''
+  , chrSolveM
   )
   where
 
 import           UHC.Util.CHR.Base
 import           UHC.Util.CHR.Key
--- import           UHC.Util.CHR.Constraint.UHC
+import           UHC.Util.CHR.Solve.TreeTrie.Internal
 import           UHC.Util.Substitutable
 import           UHC.Util.VarLookup
 import           UHC.Util.VarMp
@@ -63,77 +67,8 @@ import           Control.Monad.State.Strict
 import           UHC.Util.Utils
 
 -------------------------------------------------------------------------------------------
---- Choice of Trie structure
--------------------------------------------------------------------------------------------
-
--- type CHRTrie k v = TreeTrie.TreeTrie k v
-type CHRTrie v = TreeTrie.TreeTrie (TTKey v) v
--- type CHRTrieKey = TreeTrie.TreeTrieKey Key
-type CHRTrieKey v = TreeTrie.TreeTrieKey (TTKey v)
-type CHRLookupHow = TreeTrieLookup
-
-chrLookupHowExact      = TTL_Exact
-chrLookupHowWildAtTrie = TTL_WildInTrie
-chrLookupHowWildAtKey  = TTL_WildInKey
-
-emptyCHRTrie = TreeTrie.empty
-
-{-
-ppCHRTrieKey :: PP (TTKey v) => CHRTrieKey v -> PP_Doc
-ppCHRTrieKey = ppTreeTrieKey
--}
-
-chrTrieFromListByKeyWith :: (Ord (TTKey v)) => (v -> v -> v) -> [(CHRTrieKey v,v)] -> CHRTrie v
-chrTrieFromListByKeyWith = TreeTrie.fromListByKeyWith
-{-# INLINE chrTrieFromListByKeyWith #-}
-
-chrTrieToListByKey :: (Ord (TTKey v)) => CHRTrie v -> [(CHRTrieKey v,v)]
-chrTrieToListByKey = TreeTrie.toListByKey
-{-# INLINE chrTrieToListByKey #-}
-
-chrTrieUnionWith :: (Ord (TTKey v)) => (v -> v -> v) -> CHRTrie v -> CHRTrie v -> CHRTrie v
-chrTrieUnionWith = TreeTrie.unionWith
-{-# INLINE chrTrieUnionWith #-}
-
-chrTrieUnion :: (Ord (TTKey v)) => CHRTrie v -> CHRTrie v -> CHRTrie v
-chrTrieUnion = TreeTrie.union
-{-# INLINE chrTrieUnion #-}
-
-chrTrieElems :: CHRTrie v -> [v]
-chrTrieElems = TreeTrie.elems
-{-# INLINE chrTrieElems #-}
-
-chrTrieDeleteListByKey :: (Ord (TTKey v)) => [CHRTrieKey v] -> CHRTrie v -> CHRTrie v
-chrTrieDeleteListByKey = TreeTrie.deleteListByKey
-{-# INLINE chrTrieDeleteListByKey #-}
-
-chrTrieFromListPartialExactWith :: (Ord (TTKey v)) => (v -> v -> v) -> [(CHRTrieKey v,v)] -> CHRTrie v
-chrTrieFromListPartialExactWith = TreeTrie.fromListByKeyWith
-{-# INLINE chrTrieFromListPartialExactWith #-}
-
-chrTrieLookup' :: (Ord (TTKey v), PP (TTKey v)) => (CHRTrieKey v -> v -> v') -> CHRLookupHow -> CHRTrieKey v -> CHRTrie v -> ([v'],Maybe v')
-chrTrieLookup' = TreeTrie.lookupPartialByKey'
-{-# INLINE chrTrieLookup' #-}
-
-chrTrieLookup :: (Ord (TTKey v), PP (TTKey v)) => CHRLookupHow -> CHRTrieKey v -> CHRTrie v -> ([v],Maybe v)
-chrTrieLookup = TreeTrie.lookupPartialByKey
-{-# INLINE chrTrieLookup #-}
-
-chrToKey :: (TTKeyable x, TrTrKey x ~ TTKey x) => x -> CHRTrieKey x
-chrToKey = ttkFixate . toTTKey
-{-# INLINE chrToKey #-}
-
-chrToWorkKey :: (TTKeyable x) => x -> CHRTrieKey x
-chrToWorkKey = ttkFixate . toTTKey' (defaultTTKeyableOpts {ttkoptsVarsAsWild = False})
-{-# INLINE chrToWorkKey #-}
-
--------------------------------------------------------------------------------------------
 --- CHR store, with fast search
 -------------------------------------------------------------------------------------------
-
--- type CHRKey = CHRTrieKey
-type CHRKey v = CHRTrieKey v
-type UsedByKey v = (CHRKey v,Int)
 
 -- | A CHR as stored in a CHRStore, requiring additional info for efficiency
 data StoredCHR c g
@@ -154,7 +89,7 @@ instance (TTKeyable (Rule c g)) => TTKeyable (StoredCHR c g) where
 
 -- | The size of the simplification part of a CHR
 storedSimpSz :: StoredCHR c g -> Int
-storedSimpSz = chrSimpSz . storedChr
+storedSimpSz = ruleSimpSz . storedChr
 {-# INLINE storedSimpSz #-}
 
 -- | A CHR store is a trie structure
@@ -201,8 +136,8 @@ chrStoreFromElems chrs
     $ chrTrieFromListByKeyWith cmbStoredCHRs
         [ (k,[StoredCHR chr i ks' (concat ks,0)])
         | chr <- chrs
-        , let cs = chrHead chr
-              simpSz = chrSimpSz chr
+        , let cs = ruleHead chr
+              simpSz = ruleSimpSz chr
               ks = map chrToKey cs
         , (c,k,i) <- zip3 cs ks [0..]
         , let (ks1,(_:ks2)) = splitAt i ks
@@ -240,224 +175,43 @@ ppCHRStore' :: (PP c, PP g, Ord (TTKey c), PP (TTKey c)) => CHRStore c g -> PP_D
 ppCHRStore' = ppCurlysCommasBlock . map (\(k,v) -> ppTreeTrieKey k >-< indent 2 (":" >#< ppBracketsCommasBlock v)) . chrTrieToListByKey . chrstoreTrie
 
 -------------------------------------------------------------------------------------------
---- WorkTime, the time/history counter
--------------------------------------------------------------------------------------------
-
-type WorkTime = Int
-
-initWorkTime :: WorkTime
-initWorkTime = 0
-
--------------------------------------------------------------------------------------------
---- Solver worklist
--------------------------------------------------------------------------------------------
-
--- type WorkKey = CHRKey
-type WorkKey v = CHRKey v
--- type WorkUsedInMap = Map.Map (Set.Set CHRKey) (Set.Set UsedByKey)
-type WorkUsedInMap v = Map.Map (Set.Set (CHRKey v)) (Set.Set (UsedByKey v))
-type WorkTrie c = CHRTrie (Work c)
-
--- | A chunk of work to do when solving, a constraint + sequence nr
-data Work c
-  = Work
-      { workKey     :: WorkKey c
-      , workCnstr   :: !c            -- the constraint to be reduced
-      , workTime    :: WorkTime                     -- the history count at which the work was added
-      -- , workUsedIn  :: Set.Set (CHRKey c)              -- marked with the propagation rules already applied to it
-      }
-
-type instance TTKey (Work c) = TTKey c
-
--- | The work to be done (wlQueue), also represented as a trie (wlTrie) because efficient check on already worked on is needed.
---   A done set (wlDoneSet) remembers which CHRs (itself a list of constraints) have been solved.
---   To prevent duplicate propagation a mapping from CHRs to a map (wlUsedIn) to the CHRs it is used in is maintained.
-data WorkList c
-  = WorkList
-      { wlTrie      :: !(WorkTrie c)
-      , wlDoneSet   :: !(Set.Set (WorkKey c))                   -- accumulative store of all keys added, set semantics, thereby avoiding double entry
-      , wlQueue     :: !(AssocL (WorkKey c) (Work c))
-      , wlScanned   :: !(AssocL (WorkKey c) (Work c))         -- tried but could not solve, so retry when other succeeds
-      , wlUsedIn    :: !(WorkUsedInMap c)                       -- which work items are used in which propagation constraints
-      }
-
-emptyWorkList = WorkList emptyCHRTrie Set.empty [] [] Map.empty
-
--- wlUsedInUnion :: (Ord k, k ~ TTKey c) => WorkUsedInMap c -> WorkUsedInMap c -> WorkUsedInMap c
-wlUsedInUnion = Map.unionWith Set.union
-{-# INLINE wlUsedInUnion #-}
-
-instance Show (Work c) where
-  show _ = "SolveWork"
-
-instance (PP c) => PP (Work c) where
-  pp w = pp $ workCnstr w
-
--- ppUsedByKey :: UsedByKey v -> PP_Doc
-ppUsedByKey (k,i) = ppTreeTrieKey k >|< "/" >|< i
-
-{-
-mkWorkList :: (TTKeyable c, TrTrKey c ~ TTKey c) => WorkTime -> [c] -> WorkList c
-mkWorkList wtm = flip (wlInsert wtm) emptyWorkList
--}
-
-wlToList :: {- (PP p, PP i) => -} WorkList c -> [c]
-wlToList wl = map workCnstr $ chrTrieElems $ wlTrie wl
-
-wlCnstrToIns :: (TTKeyable c, TTKey c ~ TrTrKey c, Ord (TTKey c)) => WorkList c -> [c] -> AssocL (WorkKey c) c
-wlCnstrToIns wl@(WorkList {wlDoneSet = ds}) inscs
-  = [(chrToWorkKey c,c) | c <- inscs, let k = chrToKey c, not (k `Set.member` ds)]
-
-wlDeleteByKeyAndInsert' :: (Ord (TTKey c)) => WorkTime -> [WorkKey c] -> AssocL (WorkKey c) c -> WorkList c -> WorkList c
-wlDeleteByKeyAndInsert' wtm delkeys inskeycs wl@(WorkList {wlQueue = wlq, wlTrie = wlt, wlDoneSet = ds})
-  = wl { wlQueue   = Map.toList inswork ++ [ w | w@(k,_) <- wlq, not (k `elem` delkeys) ]
-       , wlTrie    = instrie `chrTrieUnion` chrTrieDeleteListByKey delkeys wlt
-       , wlDoneSet = Map.keysSet inswork `Set.union` ds
-       }
-  where inswork = Map.fromList [ (k,Work k c wtm) | (k,c) <- inskeycs ]
-        instrie = chrTrieFromListPartialExactWith const $ Map.toList inswork
-
-wlDeleteByKeyAndInsert :: (TTKeyable c, Ord (TTKey c), TTKey c ~ TrTrKey c) => WorkTime -> [WorkKey c] -> [c] -> WorkList c -> WorkList c
-wlDeleteByKeyAndInsert wtm delkeys inscs wl
-  = wlDeleteByKeyAndInsert' wtm delkeys (wlCnstrToIns wl inscs) wl
-
-wlInsert :: (TTKeyable c, Ord (TTKey c), TrTrKey c ~ TTKey c) => WorkTime -> [c] -> WorkList c -> WorkList c
-wlInsert wtm = wlDeleteByKeyAndInsert wtm []
-{-# INLINE wlInsert #-}
-
--------------------------------------------------------------------------------------------
 --- Solver trace
 -------------------------------------------------------------------------------------------
 
--- | A trace step
-data SolveStep c g s
-  = SolveStep
-      { stepChr         :: Rule c g
-      , stepSubst       :: s
-      , stepNewTodo     :: [c]
-      , stepNewDone     :: [c]
-      }
-  | SolveStats
-      { stepStats       :: Map.Map String PP_Doc
-      }
-  | SolveDbg
-      { stepPP          :: PP_Doc
-      }
-
-type SolveTrace c g s = [SolveStep c g s]
-
-instance Show (SolveStep c g s) where
-  show _ = "SolveStep"
-
-instance (PP c, PP g) => PP (SolveStep c g s) where
-  pp (SolveStep   step _ todo done) = "STEP" >#< (step >-< "new todo:" >#< ppBracketsCommas todo >-< "new done:" >#< ppBracketsCommas done)
-  pp (SolveStats  stats           ) = "STATS"  >#< (ppAssocLV (Map.toList stats))
-  pp (SolveDbg    p               ) = "DBG"  >#< p
-
-ppSolveTrace :: (PP s, PP c, PP g) => SolveTrace c g s -> PP_Doc
-ppSolveTrace tr = ppBracketsCommasBlock [ pp st | st <- tr ]
-
--------------------------------------------------------------------------------------------
---- Solver counting
--------------------------------------------------------------------------------------------
-
-type SolveCount a b = Map.Map a (Map.Map b Int)
-
-scntUnion :: (Ord a,Ord b) => SolveCount a b -> SolveCount a b -> SolveCount a b
-scntUnion = Map.unionWith (Map.unionWith (+))
-{-# INLINE scntUnion #-}
-
-scntInc :: (Ord a,Ord b) => a -> b -> SolveCount a b -> SolveCount a b
-scntInc a b c1 = Map.singleton a (Map.singleton b 1) `scntUnion` c1
-{-# INLINE scntInc #-}
+type SolveStep  c g s = SolveStep'  c (Rule c g) s
+type SolveTrace c g s = SolveTrace' c (Rule c g) s
 
 -------------------------------------------------------------------------------------------
 --- Cache for maintaining which WorkKey has already had a match
 -------------------------------------------------------------------------------------------
 
 -- type SolveMatchCache c g s = Map.Map (CHRKey c) [((StoredCHR c g,([WorkKey c],[Work c])),s)]
-type SolveMatchCache c g s = Map.Map (WorkKey c) [((StoredCHR c g,([WorkKey c],[Work c])),s)]
-
--------------------------------------------------------------------------------------------
---- WorkTime of last search
--------------------------------------------------------------------------------------------
-
--- type LastQueryW = Map.Map WorkKey WorkTime
-type LastQueryW v = Map.Map (WorkKey v) WorkTime
--- type LastQuery = Map.Map CHRKey LastQueryW
-type LastQuery v = Map.Map (CHRKey v) (LastQueryW v)
-
--- emptyLastQuery :: LastQuery v
-emptyLastQuery = Map.empty
-{-# INLINE emptyLastQuery #-}
-
--- lqSingleton :: CHRKey v -> Set.Set (WorkKey v) -> WorkTime -> LastQuery v
-lqSingleton ck wks wtm = Map.singleton ck $ Map.fromList [ (w,wtm) | w <- Set.toList wks ]
-{-# INLINE lqSingleton #-}
-
--- lqUnion :: LastQuery v -> LastQuery v -> LastQuery v
-lqUnion = Map.unionWith Map.union
-{-# INLINE lqUnion #-}
-
--- lqLookupC :: CHRKey v -> LastQuery v -> LastQueryW v
-lqLookupC = Map.findWithDefault Map.empty
-{-# INLINE lqLookupC #-}
-
--- lqLookupW :: WorkKey v -> LastQueryW v -> WorkTime
-lqLookupW = Map.findWithDefault initWorkTime
-{-# INLINE lqLookupW #-}
+-- type SolveMatchCache c g s = Map.Map (WorkKey c) [((StoredCHR c g,([WorkKey c],[Work c])),s)]
+type SolveMatchCache c g s = SolveMatchCache' c (StoredCHR c g) s
 
 -------------------------------------------------------------------------------------------
 --- Solve state
 -------------------------------------------------------------------------------------------
 
-data SolveState c g s
-  = SolveState
-      { stWorkList      :: !(WorkList c)
-      , stDoneCnstrSet  :: !(Set.Set c)
-      , stTrace         :: SolveTrace c g s
-      , stCountCnstr    :: SolveCount (WorkKey c) String
-      , stMatchCache    :: !(SolveMatchCache c g s)
-      , stHistoryCount  :: WorkTime
-      , stLastQuery     :: (LastQuery c)
-      }
-
-stDoneCnstrs :: SolveState c g s -> [c]
-stDoneCnstrs = Set.toList . stDoneCnstrSet
-{-# INLINE stDoneCnstrs #-}
-
-emptySolveState :: SolveState c g s
-emptySolveState = SolveState emptyWorkList Set.empty [] Map.empty Map.empty initWorkTime emptyLastQuery
-{-# INLINE emptySolveState #-}
-
-solveStateResetDone :: SolveState c g s -> SolveState c g s
-solveStateResetDone s = s {stDoneCnstrSet = Set.empty}
-{-# INLINE solveStateResetDone #-}
-
-chrSolveStateDoneConstraints :: SolveState c g s -> [c]
-chrSolveStateDoneConstraints = stDoneCnstrs
-{-# INLINE chrSolveStateDoneConstraints #-}
-
-chrSolveStateTrace :: SolveState c g s -> SolveTrace c g s
-chrSolveStateTrace = stTrace
-{-# INLINE chrSolveStateTrace #-}
+type SolveState c g s = SolveState' c (Rule c g) (StoredCHR c g) s
 
 -------------------------------------------------------------------------------------------
 --- Solver
 -------------------------------------------------------------------------------------------
 
+-- | (Class alias) API for solving requirements
+class ( IsCHRConstraint env c s
+      , IsCHRGuard env g s
+      , VarLookupCmb s s
+      , VarUpdatable s s
+      , CHREmptySubstitution s
+      , TrTrKey c ~ TTKey c
+      ) => IsCHRSolvable env c g s
+
 {-
 chrSolve
   :: forall env c g s .
-     ( Ord c
-     , Ord (TTKey c)
-     , IsConstraint c
-     , CHRMatchable env c s, CHRCheckable env g s
-     , VarLookupCmb s s
-     , VarUpdatable s s, VarUpdatable g s, VarUpdatable c s
-     , CHREmptySubstitution s
-     , PP g, PP c, PP (TTKey c) -- for debugging
-     , TrTrKey c ~ TTKey c
+     ( IsCHRSolvable env c g s
      )
      => env
      -> CHRStore c g
@@ -468,16 +222,10 @@ chrSolve env chrStore cnstrs
   where (work, done, _ :: SolveTrace c g s) = chrSolve' env chrStore cnstrs
 -}
 
+-- | Solve
 chrSolve'
-  :: ( Ord c
-     , Ord (TTKey c)
-     , IsConstraint c
-     , CHRMatchable env c s, CHRCheckable env g s
-     , VarLookupCmb s s
-     , VarUpdatable s s, VarUpdatable g s, VarUpdatable c s
-     , CHREmptySubstitution s
-     , PP g, PP c, PP (TTKey c) -- for debugging
-     , TrTrKey c ~ TTKey c
+  :: forall env c g s .
+     ( IsCHRSolvable env c g s
      )
      => env
      -> CHRStore c g
@@ -487,17 +235,10 @@ chrSolve' env chrStore cnstrs
   = (wlToList (stWorkList finalState), stDoneCnstrs finalState, stTrace finalState)
   where finalState = chrSolve'' env chrStore cnstrs emptySolveState
 
+-- | Solve
 chrSolve''
   :: forall env c g s .
-     ( Ord c
-     , Ord (TTKey c)
-     , IsConstraint c
-     , CHRMatchable env c s, CHRCheckable env g s
-     , VarLookupCmb s s
-     , VarUpdatable s s, VarUpdatable g s, VarUpdatable c s
-     , CHREmptySubstitution s
-     , PP g, PP c, PP (TTKey c) -- for debugging
-     , TrTrKey c ~ TTKey c
+     ( IsCHRSolvable env c g s
      )
      => env
      -> CHRStore c g
@@ -505,18 +246,29 @@ chrSolve''
      -> SolveState c g s
      -> SolveState c g s
 chrSolve'' env chrStore cnstrs prevState
-  = postState {stMatchCache = Map.empty}
-  where postState
-          = 
+  = flip execState prevState $ chrSolveM env chrStore cnstrs
+
+-- | Solve
+chrSolveM
+  :: forall env c g s .
+     ( IsCHRSolvable env c g s
+     )
+     => env
+     -> CHRStore c g
+     -> [c]
+     -> State (SolveState c g s) ()
+chrSolveM env chrStore cnstrs = do
+    modify initState
+    iter
 {-
+    modify $
             addStats Map.empty
                 [ ("workMatches",ppAssocLV [(ppTreeTrieKey k,pp (fromJust l))
                 | (k,c) <- Map.toList $ stCountCnstr st, let l = Map.lookup "workMatched" c, isJust l])
                 ]
 -}
-            st
-          where st = execState iter $ initState prevState
-        iter = do
+    modify $ \st -> st {stMatchCache = Map.empty}
+  where iter = do
           st <- get
           case st of
             (SolveState {stWorkList = wl@(WorkList {wlQueue = (workHd@(workHdKey,_) : workTl)})}) ->
@@ -532,7 +284,7 @@ chrSolve'' env chrStore cnstrs prevState
                           stmatch
                       expandMatch matches
                     where -- expandMatch :: SolveState c g s -> [((StoredCHR c g, ([WorkKey c], [Work c])), s)] -> SolveState c g s
-                          expandMatch ( ( ( schr@(StoredCHR {storedIdent = chrId, storedChr = chr@(Rule {chrBody = b, chrSimpSz = simpSz})})
+                          expandMatch ( ( ( schr@(StoredCHR {storedIdent = chrId, storedChr = chr@(Rule {ruleBody = b, ruleSimpSz = simpSz})})
                                           , (keys,works)
                                           )
                                         , subst
@@ -708,17 +460,6 @@ slvCandidate workHdKey lastQuery wlTrie (StoredCHR {storedIdent = (ck,_), stored
                    where lastQueryTm = lqLookupW k $ lqLookupC ck lastQuery
 {-# INLINE slvCandidate #-}
 
-slvCombine :: Eq k => ([([Assoc k v], [Assoc k v])], t) -> [AssocL k v]
-slvCombine ([],_) = []
-slvCombine ((lh:lt),_)
-  = concatMap combineToDistinguishedElts l2
-  where l2 = g2 [] lh lt
-           where g2 ll l []           = [mk ll l []]
-                 g2 ll l lr@(lrh:lrt) = mk ll l lr : g2 (ll ++ [l]) lrh lrt
-                 mk ll (bef,aft) lr   = map fst ll ++ [aft] ++ map cmb lr
-                                      where cmb (a,b) = a++b
-{-# INLINE slvCombine #-}
-
 -- | Check whether the CHR propagation part of a match already has been used (i.e. propagated) earlier,
 --   this to avoid duplicate propagation.
 slvIsUsedByPropPart
@@ -741,10 +482,10 @@ slvMatch
      => env -> StoredCHR c g -> [c] -> Maybe s
 slvMatch env chr cnstrs
   = foldl cmb (Just chrEmptySubst) $ matches chr cnstrs ++ checks chr
-  where matches (StoredCHR {storedChr = Rule {chrHead = hc}}) cnstrs
+  where matches (StoredCHR {storedChr = Rule {ruleHead = hc}}) cnstrs
           = zipWith mt hc cnstrs
           where mt cFr cTo subst = chrMatchTo env subst cFr cTo
-        checks (StoredCHR {storedChr = Rule {chrGuard = gd}})
+        checks (StoredCHR {storedChr = Rule {ruleGuard = gd}})
           = map chk gd
           where chk g subst = chrCheck env subst g
         cmb (Just s) next = fmap (|+> s) $ next s
@@ -759,7 +500,7 @@ instance (Ord (TTKey c), Serialize (TTKey c), Serialize c, Serialize g) => Seria
   sput (CHRStore a) = sput a
   sget = liftM CHRStore sget
   
-instance (Ord (TTKey c), Serialize (TTKey c), Serialize c, Serialize g) => Serialize (StoredCHR c g) where
+instance (Serialize c, Serialize g, Serialize (TTKey c)) => Serialize (StoredCHR c g) where
   sput (StoredCHR a b c d) = sput a >> sput b >> sput c >> sput d
   sget = liftM4 StoredCHR sget sget sget sget
 

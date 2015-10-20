@@ -43,7 +43,8 @@ library
     UHC.Util.CHR,
     UHC.Util.CHR.Key,
     UHC.Util.CHR.Base,
-    UHC.Util.CHR.Solve,
+    UHC.Util.CHR.Solve.TreeTrie.Mono,
+    UHC.Util.CHR.Solve.TreeTrie.Poly,
     UHC.Util.CompileRun,
     UHC.Util.CompileRun2,
     UHC.Util.CompileRun3,
@@ -73,6 +74,8 @@ library
     UHC.Util.Utils,
     UHC.Util.VarLookup,
     UHC.Util.VarMp
+  Other-Modules:
+    UHC.Util.CHR.Solve.TreeTrie.Internal
   Ghc-Options:		
   HS-Source-Dirs:     	src
   Build-Tools:		
