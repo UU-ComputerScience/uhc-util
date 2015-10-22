@@ -25,6 +25,7 @@ import           UHC.Util.CHR.Base
 import           UHC.Util.VarMp
 import           Data.Monoid
 import           Data.Typeable
+import           Data.Data
 import qualified Data.Set as Set
 import           UHC.Util.Pretty
 import           UHC.Util.CHR.Key
@@ -41,6 +42,7 @@ data CHRRule env subst
   = CHRRule
       { chrRule :: Rule (CHRConstraint env subst) (CHRGuard env subst)
       }
+  deriving (Typeable)
 
 type instance TTKey (CHRRule env subst) = TTKey (CHRConstraint env subst)
 
@@ -239,9 +241,15 @@ instance MkRule (Rule c g) where
 -}
 
 -------------------------------------------------------------------------------------------
---- Instances: ForceEval, Binary, Serialize
+--- Instances: Serialize
 -------------------------------------------------------------------------------------------
 
 instance (Serialize c,Serialize g) => Serialize (Rule c g) where
   sput (Rule a b c d) = sput a >> sput b >> sput c >> sput d
   sget = liftM4 Rule sget sget sget sget
+
+{-
+instance Serialize (CHRRule e s) where
+  sput (CHRRule a) = sput a
+  sget = liftM CHRRule sget
+-}

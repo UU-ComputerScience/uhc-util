@@ -28,6 +28,8 @@ module UHC.Util.PrettySimple
   where
 
 import System.IO
+import Data.Data
+import Data.Typeable
 
 -------------------------------------------------------------------------
 -- Doc structure
@@ -38,6 +40,7 @@ data Cached = Cached
     { cchEmp :: !Bool       -- ^ is it empty
     , cchSng :: !Bool       -- ^ is it a single line
     }
+  deriving (Typeable, Data)
 
 -- | Doc structure
 data Doc
@@ -46,6 +49,7 @@ data Doc
   | Hor         !Cached !Doc  !Doc      -- horizontal positioning
   | Ver         !Cached !Doc  !Doc      -- vertical positioning
   | Ind         !Int !Doc               -- indent
+  deriving (Typeable, Data)
 
 type PP_Doc = Doc
 

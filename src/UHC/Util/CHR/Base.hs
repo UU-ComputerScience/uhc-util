@@ -45,6 +45,7 @@ class ( CHRMatchable env c subst
       , VarExtractable c
       , VarUpdatable c subst
       , Typeable c
+      , Serialize c
       , TTKeyable c
       , IsConstraint c
       , Ord c, Ord (TTKey c)
@@ -56,6 +57,7 @@ class ( CHRCheckable env g subst
       , VarExtractable g
       , VarUpdatable g subst
       , Typeable g
+      , Serialize g
       , PP g
       ) => IsCHRGuard env g subst
 
@@ -74,6 +76,7 @@ data CHRConstraint env subst
          }
 
 deriving instance Typeable (CHRConstraint env subst)
+-- deriving instance (Data env, Data subst) => Data (CHRConstraint env subst)
 
 instance TTKeyable (CHRConstraint env subst) where
   toTTKey' o (CHRConstraint c) = toTTKey' o c
@@ -127,6 +130,7 @@ data CHRGuard env subst
          }
 
 deriving instance Typeable (CHRGuard env subst)
+-- deriving instance (Data env, Data subst) => Data (CHRGuard env subst)
 
 instance Show (CHRGuard env subst) where
   show _ = "CHRGuard"
@@ -181,3 +185,41 @@ class IsConstraint c where
   -- | Requires solving? Or is just a residue...
   cnstrRequiresSolve :: c -> Bool
 
+-------------------------------------------------------------------------------------------
+--- Instances: Serialize
+-------------------------------------------------------------------------------------------
+
+-- Does not work...
+
+{-
+instance (Serialize c, IsCHRConstraint e c s, ExtrValVarKey c ~ ExtrValVarKey (CHRConstraint e s), TTKey c ~ TTKey (CHRConstraint e s)) => Serialize (CHRConstraint e s) where
+  sput (CHRConstraint a) = sput a
+  -- sget = sgetCHRConstraint (sget :: SGet c)
+  sget = liftM CHRConstraint (sget :: SGet c)
+-}
+
+{-
+instance (Serialize c, IsCHRConstraint e c s, ExtrValVarKey c ~ ExtrValVarKey (CHRConstraint e s), TTKey c ~ TTKey (CHRConstraint e s)) => Serialize (CHRConstraint e s) where
+  sput (CHRConstraint a) = sput a
+  sget = sgetCHRConstraint (sget :: SGet c)
+  -- sget = liftM CHRConstraint sget
+-}
+
+{-
+sputgetCHRConstraint
+  :: ( Serialize c
+     , IsCHRConstraint e c s
+     , ExtrValVarKey c ~ ExtrValVarKey (CHRConstraint e s)
+     , TTKey c ~ TTKey (CHRConstraint e s)
+     ) => ( c -> SPut
+          , SGet c -> SGet (CHRConstraint e s)
+          )
+sputgetCHRConstraint = (sput, liftM CHRConstraint)
+(sputCHRConstraint, sgetCHRConstraint) = sputgetCHRConstraint
+-}
+
+{-
+instance Serialize (CHRGuard e s) where
+  sput (CHRGuard a) = sput a
+  sget = liftM CHRGuard sget
+-}
