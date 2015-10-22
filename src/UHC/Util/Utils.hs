@@ -20,6 +20,7 @@ module UHC.Util.Utils
   , firstNotEmpty
   , listSaturate, listSaturateWith
   , spanOnRest
+  , filterMb
   
     -- * Tuple
   , tup123to1, tup123to2
@@ -109,6 +110,7 @@ module UHC.Util.Utils
 -- import UHC.Util.Pretty
 import Data.Char
 import Data.List
+import Data.Maybe
 import Data.Typeable
 import GHC.Generics
 import qualified Data.Set as Set
@@ -217,6 +219,11 @@ spanOnRest p xs@(x:xs')
      | p xs      = (x:ys, zs)
      | otherwise = ([],xs)
                        where (ys,zs) = spanOnRest p xs'
+
+-- | variant on 'filter', where predicate also yields a result
+filterMb :: (a -> Maybe b) -> [a] -> [b]
+filterMb p = catMaybes . map p
+{-# INLINE filterMb #-}
 
 -------------------------------------------------------------------------
 -- Tupling, untupling

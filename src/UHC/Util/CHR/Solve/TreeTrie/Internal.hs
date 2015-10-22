@@ -71,11 +71,14 @@ module UHC.Util.CHR.Solve.TreeTrie.Internal
   , chrSolveStateTrace
   
   , slvCombine
+  
+  , module UHC.Util.CHR.Rule
   )
   where
 
 import           UHC.Util.CHR.Base
 import           UHC.Util.CHR.Key
+import           UHC.Util.CHR.Rule
 -- import           UHC.Util.CHR.Constraint.UHC
 import           UHC.Util.Substitutable
 import           UHC.Util.VarLookup

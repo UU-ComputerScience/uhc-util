@@ -18,19 +18,13 @@ module UHC.Util.CHR.Base
   , IsCHRGuard(..)
   , CHRGuard(..)
   
-  , CHRRule(..)
-  
-  , Rule(..)
   , CHREmptySubstitution(..)
   , CHRMatchable(..), CHRMatchableKey
   , CHRCheckable(..)
-  
-  , (<==>), (==>), (|>)
   )
   where
 
 import qualified UHC.Util.TreeTrie as TreeTrie
--- {%{EH}Base.Common},{%{EH}Substitutable}
 import           UHC.Util.VarMp
 import           Data.Monoid
 import           Data.Typeable
@@ -153,79 +147,6 @@ instance CHRCheckable env (CHRGuard env subst) subst where
   chrCheck env subst (CHRGuard g) = chrCheck env subst g
 
 -------------------------------------------------------------------------------------------
---- Existentially quantified Rule representations to allow for mix of arbitrary universes
--------------------------------------------------------------------------------------------
-
-data CHRRule env subst
-  = CHRRule
-      { chrRule :: Rule (CHRConstraint env subst) (CHRGuard env subst)
-      }
-
-type instance TTKey (CHRRule env subst) = TTKey (CHRConstraint env subst)
-
-deriving instance Typeable (CHRRule env subst)
-
-instance Show (CHRRule env subst) where
-  show _ = "CHRRule"
-
-instance PP (CHRRule env subst) where
-  pp (CHRRule r) = pp r
-
--------------------------------------------------------------------------------------------
---- CHR, derived structures
--------------------------------------------------------------------------------------------
-
--- | A CHR (rule) consist of head (simplification + propagation, boundary indicated by an Int), guard, and a body. All may be empty, but not all at the same time.
-data Rule cnstr guard
-  = Rule
-      { ruleHead         :: ![cnstr]
-      , ruleSimpSz       :: !Int             -- length of the part of the head which is the simplification part
-      , ruleGuard        :: ![guard]         -- subst -> Maybe subst
-      , ruleBody         :: ![cnstr]
-      }
-  deriving (Typeable, Data)
-
-emptyCHRGuard :: [a]
-emptyCHRGuard = []
-
-instance Show (Rule c g) where
-  show _ = "Rule"
-
-instance (PP c,PP g) => PP (Rule c g) where
-  pp chr
-    = case chr of
-        (Rule h@(_:_)  sz g b) | sz == 0        -> ppChr ([ppL h, pp  "==>"] ++ ppGB g b)
-        (Rule h@(_:_)  sz g b) | sz == length h -> ppChr ([ppL h, pp "<==>"] ++ ppGB g b)
-        (Rule h@(_:_)  sz g b)                  -> ppChr ([ppL (take sz h), pp "|", ppL (drop sz h), pp "<==>"] ++ ppGB g b)
-        (Rule []       _  g b)                  -> ppChr (ppGB g b)
-    where ppGB g@(_:_) b@(_:_) = [ppL g, "|" >#< ppL b]
-          ppGB g@(_:_) []      = [ppL g >#< "|"]
-          ppGB []      b@(_:_) = [ppL b]
-          ppGB []      []      = []
-          ppL [x] = pp x
-          ppL xs  = ppBracketsCommasBlock xs -- ppParensCommasBlock xs
-          ppChr l = vlist l -- ppCurlysBlock
-
-type instance TTKey (Rule cnstr guard) = TTKey cnstr
-
-instance (TTKeyable cnstr) => TTKeyable (Rule cnstr guard) where
-  toTTKey' o chr = toTTKey' o $ head $ ruleHead chr
-
--------------------------------------------------------------------------------------------
---- Var instances
--------------------------------------------------------------------------------------------
-
-type instance ExtrValVarKey (Rule c g) = ExtrValVarKey c
-
-instance (VarExtractable c, VarExtractable g, ExtrValVarKey c ~ ExtrValVarKey g) => VarExtractable (Rule c g) where
-  varFreeSet          (Rule {ruleHead=h, ruleGuard=g, ruleBody=b})
-    = Set.unions $ concat [map varFreeSet h, map varFreeSet g, map varFreeSet b]
-
-instance (VarUpdatable c s, VarUpdatable g s) => VarUpdatable (Rule c g) s where
-  varUpd s r@(Rule {ruleHead=h, ruleGuard=g, ruleBody=b})
-    = r {ruleHead = map (varUpd s) h, ruleGuard = map (varUpd s) g, ruleBody = map (varUpd s) b}
-
--------------------------------------------------------------------------------------------
 --- CHREmptySubstitution
 -------------------------------------------------------------------------------------------
 
@@ -260,24 +181,3 @@ class IsConstraint c where
   -- | Requires solving? Or is just a residue...
   cnstrRequiresSolve :: c -> Bool
 
--------------------------------------------------------------------------------------------
---- Construction
--------------------------------------------------------------------------------------------
-
-infix   1 <==>, ==>
-infixr  0 |>
-
-(<==>), (==>) :: [c] -> [c] -> Rule c g
-hs <==>  bs = Rule hs (length hs) emptyCHRGuard bs
-hs  ==>  bs = Rule hs 0 emptyCHRGuard bs
-
-(|>) :: Rule c g -> [g] -> Rule c g
-chr |> g = chr {ruleGuard = ruleGuard chr ++ g}
-
--------------------------------------------------------------------------------------------
---- Instances: ForceEval, Binary, Serialize
--------------------------------------------------------------------------------------------
-
-instance (Serialize c,Serialize g) => Serialize (Rule c g) where
-  sput (Rule a b c d) = sput a >> sput b >> sput c >> sput d
-  sget = liftM4 Rule sget sget sget sget
