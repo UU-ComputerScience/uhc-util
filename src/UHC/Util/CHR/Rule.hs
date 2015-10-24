@@ -1,4 +1,5 @@
 {-# LANGUAGE MultiParamTypeClasses, FlexibleInstances, FunctionalDependencies, UndecidableInstances, ExistentialQuantification, ScopedTypeVariables, StandaloneDeriving #-}
+-- {-# LANGUAGE AllowAmbiguousTypes #-}
 
 -------------------------------------------------------------------------------------------
 --- Constraint Handling Rules
@@ -23,6 +24,7 @@ module UHC.Util.CHR.Rule
 import qualified UHC.Util.TreeTrie as TreeTrie
 import           UHC.Util.CHR.Base
 import           UHC.Util.VarMp
+import           UHC.Util.Utils
 import           Data.Monoid
 import           Data.Typeable
 import           Data.Data
@@ -119,7 +121,7 @@ class MkRule c g c' g' r | r c -> g g' c', r g -> c c' g', c c' -> g g' r, g g' 
   -- | Lift constraint, from In to Out
   toSolverConstraint :: c -> c'
   -- | Lift guard, from In to Out
-  mkSolverGuard :: g -> g'
+  toSolverGuard :: g -> g'
   -- | Make rule
   mkRule :: [c'] -> Int -> [g'] -> [c'] -> r
   -- | Add guards to rule
@@ -133,17 +135,16 @@ hs <==>  bs = mkRule (map toSolverConstraint hs) (length hs) ([]::[g']) (map toS
 hs  ==>  bs = mkRule (map toSolverConstraint hs) 0 ([]::[g']) (map toSolverConstraint bs)
 
 (|>) :: (MkRule c g c' g' r) => r -> [g] -> r
-r |> g = guardRule (map mkSolverGuard g) r
+r |> g = guardRule (map toSolverGuard g) r
 
 instance MkRule c g c g (Rule c g) where
   toSolverConstraint = id
-  mkSolverGuard = id
+  toSolverGuard = id
   mkRule = Rule
   guardRule g r = r {ruleGuard = ruleGuard r ++ g}
 -}
 
 class MkSolverConstraint c c' where
-  -- | Lift constraint, from In to Out
   toSolverConstraint :: c' -> c
   fromSolverConstraint :: c -> Maybe c'
 
@@ -160,17 +161,19 @@ instance {-# OVERLAPS #-}
   fromSolverConstraint (CHRConstraint c) = cast c
 
 class MkSolverGuard g g' where
-  -- | Lift constraint, from In to Out
-  mkSolverGuard :: g' -> g
+  toSolverGuard :: g' -> g
+  fromSolverGuard :: g -> Maybe g'
 
 instance {-# INCOHERENT #-} MkSolverGuard g g where
-  mkSolverGuard = id
+  toSolverGuard = id
+  fromSolverGuard = Just
 
 instance {-# OVERLAPS #-}
          ( IsCHRGuard e g s
          , ExtrValVarKey (CHRGuard e s) ~ ExtrValVarKey g
          ) => MkSolverGuard (CHRGuard e s) g where
-  mkSolverGuard = CHRGuard
+  toSolverGuard = CHRGuard
+  fromSolverGuard (CHRGuard g) = cast g
 
 class MkRule r where
   type SolverConstraint r :: *
@@ -200,7 +203,7 @@ hs <==>  bs = mkRule (map toSolverConstraint hs) (length hs) [] (map toSolverCon
 hs  ==>  bs = mkRule (map toSolverConstraint hs) 0 [] (map toSolverConstraint bs)
 
 (|>) :: (MkRule r, MkSolverGuard (SolverGuard r) g') => r -> [g'] -> r
-r |> g = guardRule (map mkSolverGuard g) r
+r |> g = guardRule (map toSolverGuard g) r
 
 
 {-
@@ -213,7 +216,7 @@ class MkRule r where
   -- | Lift constraint, from In to Out
   toSolverConstraint :: MkSolverConstraintIn r -> MkSolverConstraintOut r
   -- | Lift guard, from In to Out
-  mkSolverGuard :: MkSolverGuardIn r -> MkSolverGuardOut r
+  toSolverGuard :: MkSolverGuardIn r -> MkSolverGuardOut r
   -- | Make rule
   mkRule :: [MkSolverConstraintOut r] -> Int -> [MkSolverGuardOut r] -> [MkSolverConstraintOut r] -> r
   -- | Add guards to rule
@@ -223,11 +226,11 @@ infix   1 <==>, ==>
 infixr  0 |>
 
 (<==>), (==>) :: forall r c . (MkRule r, c ~ MkSolverConstraintIn r) => [c] -> [c] -> r
-hs <==>  bs = mkRule (map toSolverConstraint hs) (length hs) (map mkSolverGuard emptyCHRGuard) (map toSolverConstraint bs)
-hs  ==>  bs = mkRule (map toSolverConstraint hs) 0 (map mkSolverGuard emptyCHRGuard) (map toSolverConstraint bs)
+hs <==>  bs = mkRule (map toSolverConstraint hs) (length hs) (map toSolverGuard emptyCHRGuard) (map toSolverConstraint bs)
+hs  ==>  bs = mkRule (map toSolverConstraint hs) 0 (map toSolverGuard emptyCHRGuard) (map toSolverConstraint bs)
 
 (|>) :: (MkRule r, g ~ MkSolverGuardIn r) => r -> [g] -> r
-r |> g = guardRule (map mkSolverGuard g) r
+r |> g = guardRule (map toSolverGuard g) r
 
 instance MkRule (Rule c g) where
   type MkSolverConstraintIn (Rule c g) = c
@@ -235,7 +238,7 @@ instance MkRule (Rule c g) where
   type MkSolverConstraintOut (Rule c g) = c
   type MkSolverGuardOut (Rule c g) = g
   toSolverConstraint = id
-  mkSolverGuard = id
+  toSolverGuard = id
   mkRule = Rule
   guardRule g r = r {ruleGuard = ruleGuard r ++ g}
 -}
@@ -247,6 +250,12 @@ instance MkRule (Rule c g) where
 instance (Serialize c,Serialize g) => Serialize (Rule c g) where
   sput (Rule a b c d) = sput a >> sput b >> sput c >> sput d
   sget = liftM4 Rule sget sget sget sget
+
+{-
+instance (MkSolverConstraint (CHRConstraint e s) x', Serialize x') => Serialize (CHRConstraint e s) where
+  sput x = maybe (panic "UHC.Util.CHR.Rule.Serialize.MkSolverConstraint.sput") sput $ fromSolverConstraint x
+  sget = liftM toSolverConstraint sget
+-}
 
 {-
 instance Serialize (CHRRule e s) where

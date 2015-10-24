@@ -28,10 +28,12 @@ import qualified UHC.Util.TreeTrie as TreeTrie
 import           UHC.Util.VarMp
 import           Data.Monoid
 import           Data.Typeable
+import           Unsafe.Coerce
 import qualified Data.Set as Set
 import           UHC.Util.Pretty
 import           UHC.Util.CHR.Key
 import           Control.Monad
+import           UHC.Util.Utils
 import           UHC.Util.Binary
 import           UHC.Util.Serialize
 import           UHC.Util.Substitutable
@@ -201,10 +203,29 @@ instance (Serialize c, IsCHRConstraint e c s, ExtrValVarKey c ~ ExtrValVarKey (C
 {-
 instance (Serialize c, IsCHRConstraint e c s, ExtrValVarKey c ~ ExtrValVarKey (CHRConstraint e s), TTKey c ~ TTKey (CHRConstraint e s)) => Serialize (CHRConstraint e s) where
   sput (CHRConstraint a) = sput a
-  sget = sgetCHRConstraint (sget :: SGet c)
-  -- sget = liftM CHRConstraint sget
+  -- sget = sgetCHRConstraint (sget :: SGet c)
+  sget = liftM CHRConstraint (sget :: SGet c)
 -}
 
+{-
+sgetCHRConstraint
+  :: forall e c s .
+     ( Serialize c
+     , IsCHRConstraint e c s
+     , ExtrValVarKey c ~ ExtrValVarKey (CHRConstraint e s)
+     , TTKey c ~ TTKey (CHRConstraint e s)
+     ) => SGet c -> SGet (CHRConstraint e s)
+sgetCHRConstraint sgetc
+  = liftM CHRConstraint sgetc
+-}
+
+{-
+  = do tr <- (sget :: SGet TypeRep)
+       if tr == typeRep (Proxy :: Proxy c)
+         then liftM (CHRConstraint . unsafeCoerce) sgetc
+         else panic $ "UHC.Util.CHR.Base.sgetCHRConstraint: " ++ show tr ++ " /= " 
+-}
+  
 {-
 sputgetCHRConstraint
   :: ( Serialize c
