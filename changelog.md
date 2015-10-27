@@ -1,8 +1,12 @@
 # Changelog
 
+## 0.1.6.4
+
+- 
+
 ## 0.1.6.3
 
-- [api] move of RLList, TreeTrie, CHR, Substitutable (partial) from uhc to lib
+- [api] move of RLList, TreeTrie, CHR, Substitutable (partial) from uhc to uhc-util
 
 ## 0.1.6.2
 
