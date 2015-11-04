@@ -2,7 +2,7 @@
 
 ## 0.1.6.4
 
-- 
+- [api] move of RLList functionality encoding lexical scoping to separate module LexScope (taken from UHC)
 
 ## 0.1.6.3
 

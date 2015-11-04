@@ -66,6 +66,7 @@ library
     UHC.Util.Rel,
     UHC.Util.RelMap,
     UHC.Util.RLList,
+    UHC.Util.RLList.LexScope,
     UHC.Util.ScanUtils,
     UHC.Util.ScopeMapGam,
     UHC.Util.Serialize,
