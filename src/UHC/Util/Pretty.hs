@@ -86,12 +86,13 @@ module UHC.Util.Pretty
 
 -- import UU.Pretty
 -- import UHC.Util.Chitil.Pretty
-import UHC.Util.PrettySimple
-import UHC.Util.Utils
-import UHC.Util.FPath
-import UHC.Util.Time
-import System.IO
-import Data.List
+import           UHC.Util.PrettySimple
+import           UHC.Util.Utils
+import           UHC.Util.FPath
+import           UHC.Util.Time
+import           System.IO
+import           Data.List
+import qualified Data.Set as Set
 
 -------------------------------------------------------------------------
 -- PP utils for lists
@@ -162,7 +163,7 @@ ppBlockWithStrings' :: (PP a) => String -> String -> String -> [a] -> [PP_Doc]
 ppBlockWithStrings' = ppBlockWithStrings'' False
 {-# INLINE ppBlockWithStrings' #-}
 
--- | See 'ppBlock', but with string delimiters aligned properly, yielding a list of elements
+-- | See 'ppBlock', but with string delimiters aligned properly, yielding a list of elements, preferring single line horizontal placement
 ppBlockWithStringsH' :: (PP a) => String -> String -> String -> [a] -> [PP_Doc]
 ppBlockWithStringsH' = ppBlockWithStrings'' True
 {-# INLINE ppBlockWithStringsH' #-}
@@ -171,7 +172,7 @@ ppBlockWithStringsH' = ppBlockWithStrings'' True
 ppBlockWithStrings :: (PP a) => String -> String -> String -> [a] -> PP_Doc
 ppBlockWithStrings o c s = vlist . ppBlockWithStrings' o c s
 
--- | See 'ppBlock', but with string delimiters aligned properly
+-- | See 'ppBlock', but with string delimiters aligned properly, preferring single line horizontal placement
 ppBlockWithStringsH :: (PP a) => String -> String -> String -> [a] -> PP_Doc
 ppBlockWithStringsH o c s = vlist . ppBlockWithStringsH' o c s
 
@@ -200,7 +201,7 @@ ppCurlysBlock :: PP a => [a] -> PP_Doc
 ppCurlysBlock = ppBlockWithStrings "{" "}" "  "
 {-# INLINE ppCurlysBlock #-}
 
--- | PP horizontally or vertically with "{", " ", and "}" in a possibly multiline block structure
+-- | PP horizontally or vertically with "{", " ", and "}" in a possibly multiline block structure, preferring single line horizontal placement
 ppCurlysBlockH :: PP a => [a] -> PP_Doc
 ppCurlysBlockH = ppBlockWithStringsH "{" "}" "  "
 {-# INLINE ppCurlysBlockH #-}
@@ -210,7 +211,7 @@ ppCurlysSemisBlock :: PP a => [a] -> PP_Doc
 ppCurlysSemisBlock = ppBlockWithStrings "{" "}" "; "
 {-# INLINE ppCurlysSemisBlock #-}
 
--- | PP horizontally or vertically with "{", ";", and "}" in a possibly multiline block structure
+-- | PP horizontally or vertically with "{", ";", and "}" in a possibly multiline block structure, preferring single line horizontal placement
 ppCurlysSemisBlockH :: PP a => [a] -> PP_Doc
 ppCurlysSemisBlockH = ppBlockWithStringsH "{" "}" "; "
 {-# INLINE ppCurlysSemisBlockH #-}
@@ -220,7 +221,7 @@ ppCurlysCommasBlock :: PP a => [a] -> PP_Doc
 ppCurlysCommasBlock = ppBlockWithStrings "{" "}" ", "
 {-# INLINE ppCurlysCommasBlock #-}
 
--- | PP horizontally or vertically with "{", ",", and "}" in a possibly multiline block structure
+-- | PP horizontally or vertically with "{", ",", and "}" in a possibly multiline block structure, preferring single line horizontal placement
 ppCurlysCommasBlockH :: PP a => [a] -> PP_Doc
 ppCurlysCommasBlockH = ppBlockWithStringsH "{" "}" ", "
 {-# INLINE ppCurlysCommasBlockH #-}
@@ -230,7 +231,7 @@ ppParensSemisBlock :: PP a => [a] -> PP_Doc
 ppParensSemisBlock = ppBlockWithStrings "(" ")" "; "
 {-# INLINE ppParensSemisBlock #-}
 
--- | PP horizontally or vertically with "(", ";", and ")" in a possibly multiline block structure
+-- | PP horizontally or vertically with "(", ";", and ")" in a possibly multiline block structure, preferring single line horizontal placement
 ppParensSemisBlockH :: PP a => [a] -> PP_Doc
 ppParensSemisBlockH = ppBlockWithStringsH "(" ")" "; "
 {-# INLINE ppParensSemisBlockH #-}
@@ -240,7 +241,7 @@ ppParensCommasBlock :: PP a => [a] -> PP_Doc
 ppParensCommasBlock = ppBlockWithStrings "(" ")" ", "
 {-# INLINE ppParensCommasBlock #-}
 
--- | PP horizontally or vertically with "(", ",", and ")" in a possibly multiline block structure
+-- | PP horizontally or vertically with "(", ",", and ")" in a possibly multiline block structure, preferring single line horizontal placement
 ppParensCommasBlockH :: PP a => [a] -> PP_Doc
 ppParensCommasBlockH = ppBlockWithStringsH "(" ")" ", "
 {-# INLINE ppParensCommasBlockH #-}
@@ -410,8 +411,11 @@ ppMb = maybe empty pp
 -- Instances
 -------------------------------------------------------------------------
 
-instance PP a => PP (Maybe a) where
+instance {-# OVERLAPPABLE #-} PP a => PP (Maybe a) where
   pp = maybe (pp "?") pp
+
+instance {-# OVERLAPPABLE #-} PP a => PP (Set.Set a) where
+  pp = ppCurlysCommasBlockH . Set.toList
 
 instance PP Bool where
   pp = pp . show
@@ -421,6 +425,9 @@ instance PP ClockTime where
 
 instance PP FPath where
   pp = pp . fpathToStr
+
+instance PP () where
+  pp _ = pp "()"
 
 instance (PP a, PP b) => PP (a,b) where
   pp (a,b) = "(" >|< a >-|-< "," >|< b >-|-< ")"

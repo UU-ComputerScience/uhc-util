@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.6.5
+
+- [api] additional PP instances
+- [serialize] generic impl of Serialize more efficiently generates tags (1 per datatype instead of log(nr of constructors))
+
 ## 0.1.6.4
 
 - [api] move of RLList functionality encoding lexical scoping to separate module LexScope (taken from UHC)

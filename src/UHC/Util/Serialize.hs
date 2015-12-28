@@ -74,6 +74,7 @@ instance Serialize Foo where
 {-# LANGUAGE DefaultSignatures #-}
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 module UHC.Util.Serialize
     ( SPut
@@ -101,8 +102,10 @@ import           Data.Typeable
 import           Data.Typeable.Internal
 import qualified Data.Map as Map
 import qualified Data.Set as Set
+import qualified Data.List as List
 -- import qualified UHC.Utils.RelMap as RelMap
 import           Data.Maybe
+import           Data.Bits
 import           Data.Word
 import           Data.Int
 import           Data.Array
@@ -201,9 +204,11 @@ liftP p
        ; St.put (s { sputsPut = sputsPut s >> p
                    })
        }
+{-# INLINE liftP #-}
 
 liftG :: Bn.Get x -> SGet x
 liftG g = lift g
+{-# INLINE liftG #-}
 
 sputPlain :: (Bn.Binary x,Serialize x) => x -> SPut
 sputPlain x = liftP (Bn.put x)
@@ -481,67 +486,70 @@ class GSerialize x where
   gsget :: SGet (x y)
   gsput :: x y -> SPut
 
-instance (Datatype d, SerializeSum x) => GSerialize (D1 d x) where
+instance (Datatype d, SerializeSumTagged x) => GSerialize (D1 d x) where
   --
-  gsget = M1 <$> sumGetTagged
+  gsget = do 
+    tg <- sgetWord8
+    M1 <$> sumGetTagged tg
   --
-  gsput (M1 x) = sumPutTagged x
+  gsput (M1 x) = sumPutTagged [] x
 
-class SerializeSum x where
-  sumGetTagged :: SGet (x y)
-  sumPutTagged :: x y -> SPut
+class SerializeSumTagged x where
+  sumGetTagged :: Word8 -> SGet (x y)
+  sumPutTagged :: [Word8] -> x y -> SPut
 
-instance (SerializeProduct x, Constructor c) => SerializeSum (C1 c x) where
+instance (SerializeProduct x) => SerializeSumTagged (C1 c x) where
   --
-  sumGetTagged = M1 <$> productGetMVec
+  sumGetTagged _ = M1 <$> productGet
   {-# INLINE sumGetTagged #-}
   --
-  sumPutTagged (M1 x) = productPutMVec x
+  sumPutTagged tg (M1 x) = sputWord8 (List.foldl' (\acc t -> (acc `shiftL` 1) .|. t) 0 tg) >> productPut x
   {-# INLINE sumPutTagged #-}
 
-instance (SerializeSum a, SerializeSum b) => SerializeSum (a :+: b) where
-  sumGetTagged = do
-    x <- sgetWord8
-    case x of
-      0 -> L1 <$> sumGetTagged
-      1 -> R1 <$> sumGetTagged
+instance (SerializeSumTagged a, SerializeSumTagged b) => SerializeSumTagged (a :+: b) where
+  sumGetTagged tg = 
+      if tg `testBit` 0
+        then L1 <$> sumGetTagged tg'
+        else R1 <$> sumGetTagged tg'
+    where tg' = tg `shiftR` 1
   {-# INLINE sumGetTagged #-}
 
-  sumPutTagged (L1 x) = sputWord8 0 >> sumPutTagged x
-  sumPutTagged (R1 x) = sputWord8 1 >> sumPutTagged x
+  sumPutTagged tg x = case x of
+      L1 x' -> sumPutTagged (1:tg) x'
+      R1 x' -> sumPutTagged (0:tg) x'
   {-# INLINE sumPutTagged #-}
 
 class SerializeProduct x where
-  productGetMVec :: SGet (x y)
-  productPutMVec :: x y -> SPut
+  productGet :: SGet (x y)
+  productPut :: x y -> SPut
 
 instance (SerializeProduct a, SerializeProduct b) => SerializeProduct (a :*: b) where
-  productGetMVec =
-      (:*:) <$> productGetMVec
-            <*> productGetMVec
-  {-# INLINE productGetMVec #-}
+  productGet =
+      (:*:) <$> productGet
+            <*> productGet
+  {-# INLINE productGet #-}
 
-  productPutMVec (a :*: b) = do
-      productPutMVec a
-      productPutMVec b
-  {-# INLINE productPutMVec #-}
+  productPut (a :*: b) = do
+      productPut a
+      productPut b
+  {-# INLINE productPut #-}
 
 instance SerializeProduct x => SerializeProduct (S1 s x) where
-  productGetMVec = M1 <$> productGetMVec
-  {-# INLINE productGetMVec #-}
+  productGet = M1 <$> productGet
+  {-# INLINE productGet #-}
 
-  productPutMVec (M1 x) = productPutMVec x
-  {-# INLINE productPutMVec #-}
+  productPut (M1 x) = productPut x
+  {-# INLINE productPut #-}
 
 instance Serialize x => SerializeProduct (K1 i x) where
-  productGetMVec = K1 <$> sget
-  {-# INLINE productGetMVec #-}
+  productGet = K1 <$> sget
+  {-# INLINE productGet #-}
 
-  productPutMVec (K1 x) = sput x
-  {-# INLINE productPutMVec #-}
+  productPut (K1 x) = sput x
+  {-# INLINE productPut #-}
 
 instance SerializeProduct U1 where
-  productGetMVec = return U1
-  {-# INLINE productGetMVec #-}
-  productPutMVec _ = return ()
-  {-# INLINE productPutMVec #-}
+  productGet = return U1
+  {-# INLINE productGet #-}
+  productPut _ = return ()
+  {-# INLINE productPut #-}
