@@ -164,7 +164,7 @@ ttkEmpty = [[TTM1K []]]
 
 -- | Construct intermediate structure for children for a new Key
 --   length ks >= 2
-ttkChildren :: [TreeTrieKey k] -> [TreeTrieMpKey k]
+ttkChildren :: [TreeTrieKey k] -> TreeTrieKey k
 ttkChildren ks
   =   [TTM1K $ concat [k | TTM1K k <- concat hs]]       -- first level children are put together in singleton list of list with all children
     : merge (split tls)                                 -- and the rest is just concatenated
@@ -174,7 +174,7 @@ ttkChildren ks
         merge (hs,tls) = concat hs : merge (split $ filter (not . List.null) tls)
 
 -- | Add a new layer with single node on top, combining the rest.
-ttkAdd' :: TreeTrie1Key k -> [TreeTrieMpKey k] -> TreeTrieKey k
+ttkAdd' :: TreeTrie1Key k -> TreeTrieKey k -> TreeTrieKey k
 ttkAdd' k ks = [TTM1K [k]] : ks
 
 -- | Add a new layer with single node on top, combining the rest.
@@ -193,7 +193,7 @@ ttkFixate _                                             = []
 -------------------------------------------------------------------------------------------
 
 -- | Split key into parent and children components, inverse of ttkAdd'
-ttkParentChildren :: TreeTrieKey k -> ( TreeTrie1Key k, [TreeTrieMpKey k] )
+ttkParentChildren :: TreeTrieKey k -> ( TreeTrie1Key k, TreeTrieKey k )
 ttkParentChildren k
   = case k of
       ([TTM1K [h]] : t) -> (h,t)
