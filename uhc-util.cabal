@@ -34,8 +34,9 @@ library
     uulib >= 0.9.19,
     time-compat >= 0.1.0.1,
     time >= 1.2,
-    fclabels >= 2.0.2,
-    syb  >= 0.3.6
+    fclabels >= 2.0.3,
+    syb  >= 0.3.6,
+    logict-state >= 0.1.0.0
   Exposed-Modules:
     UHC.Util.AGraph,
     UHC.Util.AssocL,
@@ -46,6 +47,7 @@ library
     UHC.Util.CHR.Rule,
     UHC.Util.CHR.Solve.TreeTrie.Mono,
     UHC.Util.CHR.Solve.TreeTrie.Poly,
+    UHC.Util.CHR.Solve.TreeTrie.MonoBacktrackPrio,
     UHC.Util.CompileRun,
     UHC.Util.CompileRun2,
     UHC.Util.CompileRun3,
