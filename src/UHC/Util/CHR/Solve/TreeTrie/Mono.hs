@@ -71,51 +71,51 @@ import           UHC.Util.Utils
 -------------------------------------------------------------------------------------------
 
 -- | A CHR as stored in a CHRStore, requiring additional info for efficiency
-data StoredCHR c g
+data StoredCHR c g p
   = StoredCHR
-      { storedChr       :: !(Rule c g)      -- the Rule
+      { storedChr       :: !(Rule c g p)      -- the Rule
       , storedKeyedInx  :: !Int                             -- index of constraint for which is keyed into store
       , storedKeys      :: ![Maybe (CHRKey c)]                  -- keys of all constraints; at storedKeyedInx: Nothing
       , storedIdent     :: !(UsedByKey c)                       -- the identification of a CHR, used for propagation rules (see remark at begin)
       }
   deriving (Typeable)
 
-deriving instance (Data (TTKey c), Data c, Data g) => Data (StoredCHR c g)
+-- deriving instance (Data (TTKey c), Data c, Data g) => Data (StoredCHR c g p)
 
-type instance TTKey (StoredCHR c g) = TTKey c
+type instance TTKey (StoredCHR c g p) = TTKey c
 
-instance (TTKeyable (Rule c g)) => TTKeyable (StoredCHR c g) where
+instance (TTKeyable (Rule c g p)) => TTKeyable (StoredCHR c g p) where
   toTTKey' o schr = toTTKey' o $ storedChr schr
 
 -- | The size of the simplification part of a CHR
-storedSimpSz :: StoredCHR c g -> Int
+storedSimpSz :: StoredCHR c g p -> Int
 storedSimpSz = ruleSimpSz . storedChr
 {-# INLINE storedSimpSz #-}
 
 -- | A CHR store is a trie structure
-newtype CHRStore cnstr guard
+newtype CHRStore cnstr guard prio
   = CHRStore
-      { chrstoreTrie    :: CHRTrie [StoredCHR cnstr guard]
+      { chrstoreTrie    :: CHRTrie [StoredCHR cnstr guard prio]
       }
   deriving (Typeable)
 
-deriving instance (Data (TTKey cnstr), Ord (TTKey cnstr), Data cnstr, Data guard) => Data (CHRStore cnstr guard)
+-- deriving instance (Data (TTKey cnstr), Ord (TTKey cnstr), Data cnstr, Data guard) => Data (CHRStore cnstr guard prio)
 
 mkCHRStore trie = CHRStore trie
 
-emptyCHRStore :: CHRStore cnstr guard
+emptyCHRStore :: CHRStore cnstr guard prio
 emptyCHRStore = mkCHRStore emptyCHRTrie
 
 -- | Combine lists of stored CHRs by concat, adapting their identification nr to be unique
-cmbStoredCHRs :: [StoredCHR c g] -> [StoredCHR c g] -> [StoredCHR c g]
+cmbStoredCHRs :: [StoredCHR c g p] -> [StoredCHR c g p] -> [StoredCHR c g p]
 cmbStoredCHRs s1 s2
   = map (\s@(StoredCHR {storedIdent=(k,nr)}) -> s {storedIdent = (k,nr+l)}) s1 ++ s2
   where l = length s2
 
-instance Show (StoredCHR c g) where
+instance Show (StoredCHR c g p) where
   show _ = "StoredCHR"
 
-ppStoredCHR :: (PP (TTKey c), PP c, PP g) => StoredCHR c g -> PP_Doc
+ppStoredCHR :: (PP (TTKey c), PP c, PP g, PP p) => StoredCHR c g p -> PP_Doc
 ppStoredCHR c@(StoredCHR {storedIdent=(idKey,idSeqNr)})
   = storedChr c
     >-< indent 2
@@ -126,11 +126,11 @@ ppStoredCHR c@(StoredCHR {storedIdent=(idKey,idSeqNr)})
             , "ident" >#< ppParensCommas [ppTreeTrieKey idKey,pp idSeqNr]
             ])
 
-instance (PP (TTKey c), PP c, PP g) => PP (StoredCHR c g) where
+instance (PP (TTKey c), PP c, PP g, PP p) => PP (StoredCHR c g p) where
   pp = ppStoredCHR
 
 -- | Convert from list to store
-chrStoreFromElems :: (TTKeyable c, Ord (TTKey c), TTKey c ~ TrTrKey c) => [Rule c g] -> CHRStore c g
+chrStoreFromElems :: (TTKeyable c, Ord (TTKey c), TTKey c ~ TrTrKey c) => [Rule c g p] -> CHRStore c g p
 chrStoreFromElems chrs
   = mkCHRStore
     $ chrTrieFromListByKeyWith cmbStoredCHRs
@@ -144,20 +144,20 @@ chrStoreFromElems chrs
               ks' = map Just ks1 ++ [Nothing] ++ map Just ks2
         ]
 
-chrStoreSingletonElem :: (TTKeyable c, Ord (TTKey c), TTKey c ~ TrTrKey c) => Rule c g -> CHRStore c g
+chrStoreSingletonElem :: (TTKeyable c, Ord (TTKey c), TTKey c ~ TrTrKey c) => Rule c g p -> CHRStore c g p
 chrStoreSingletonElem x = chrStoreFromElems [x]
 
-chrStoreUnion :: (Ord (TTKey c)) => CHRStore c g -> CHRStore c g -> CHRStore c g
+chrStoreUnion :: (Ord (TTKey c)) => CHRStore c g p -> CHRStore c g p -> CHRStore c g p
 chrStoreUnion cs1 cs2 = mkCHRStore $ chrTrieUnionWith cmbStoredCHRs (chrstoreTrie cs1) (chrstoreTrie cs2)
 {-# INLINE chrStoreUnion #-}
 
-chrStoreUnions :: (Ord (TTKey c)) => [CHRStore c g] -> CHRStore c g
+chrStoreUnions :: (Ord (TTKey c)) => [CHRStore c g p] -> CHRStore c g p
 chrStoreUnions []  = emptyCHRStore
 chrStoreUnions [s] = s
 chrStoreUnions ss  = foldr1 chrStoreUnion ss
 {-# INLINE chrStoreUnions #-}
 
-chrStoreToList :: (Ord (TTKey c)) => CHRStore c g -> [(CHRKey c,[Rule c g])]
+chrStoreToList :: (Ord (TTKey c)) => CHRStore c g p -> [(CHRKey c,[Rule c g p])]
 chrStoreToList cs
   = [ (k,chrs)
     | (k,e) <- chrTrieToListByKey $ chrstoreTrie cs
@@ -165,35 +165,35 @@ chrStoreToList cs
     , not $ Prelude.null chrs
     ]
 
-chrStoreElems :: (Ord (TTKey c)) => CHRStore c g -> [Rule c g]
+chrStoreElems :: (Ord (TTKey c)) => CHRStore c g p -> [Rule c g p]
 chrStoreElems = concatMap snd . chrStoreToList
 
-ppCHRStore :: (PP c, PP g, Ord (TTKey c), PP (TTKey c)) => CHRStore c g -> PP_Doc
+ppCHRStore :: (PP c, PP g, PP p, Ord (TTKey c), PP (TTKey c)) => CHRStore c g p -> PP_Doc
 ppCHRStore = ppCurlysCommasBlock . map (\(k,v) -> ppTreeTrieKey k >-< indent 2 (":" >#< ppBracketsCommasBlock v)) . chrStoreToList
 
-ppCHRStore' :: (PP c, PP g, Ord (TTKey c), PP (TTKey c)) => CHRStore c g -> PP_Doc
+ppCHRStore' :: (PP c, PP g, PP p, Ord (TTKey c), PP (TTKey c)) => CHRStore c g p -> PP_Doc
 ppCHRStore' = ppCurlysCommasBlock . map (\(k,v) -> ppTreeTrieKey k >-< indent 2 (":" >#< ppBracketsCommasBlock v)) . chrTrieToListByKey . chrstoreTrie
 
 -------------------------------------------------------------------------------------------
 --- Solver trace
 -------------------------------------------------------------------------------------------
 
-type SolveStep  c g s = SolveStep'  c (Rule c g) s
-type SolveTrace c g s = SolveTrace' c (Rule c g) s
+type SolveStep  c g s p = SolveStep'  c (Rule c g p) s
+type SolveTrace c g s p = SolveTrace' c (Rule c g p) s
 
 -------------------------------------------------------------------------------------------
 --- Cache for maintaining which WorkKey has already had a match
 -------------------------------------------------------------------------------------------
 
--- type SolveMatchCache c g s = Map.Map (CHRKey c) [((StoredCHR c g,([WorkKey c],[Work c])),s)]
--- type SolveMatchCache c g s = Map.Map (WorkKey c) [((StoredCHR c g,([WorkKey c],[Work c])),s)]
-type SolveMatchCache c g s = SolveMatchCache' c (StoredCHR c g) s
+-- type SolveMatchCache c g p s = Map.Map (CHRKey c) [((StoredCHR c g p,([WorkKey c],[Work c])),s)]
+-- type SolveMatchCache c g p s = Map.Map (WorkKey c) [((StoredCHR c g p,([WorkKey c],[Work c])),s)]
+type SolveMatchCache c g p s = SolveMatchCache' c (StoredCHR c g p) s
 
 -------------------------------------------------------------------------------------------
 --- Solve state
 -------------------------------------------------------------------------------------------
 
-type SolveState c g s = SolveState' c (Rule c g) (StoredCHR c g) s
+type SolveState c g s p = SolveState' c (Rule c g p) (StoredCHR c g p) s
 
 -------------------------------------------------------------------------------------------
 --- Solver
@@ -202,61 +202,62 @@ type SolveState c g s = SolveState' c (Rule c g) (StoredCHR c g) s
 -- | (Class alias) API for solving requirements
 class ( IsCHRConstraint env c s
       , IsCHRGuard env g s
+      , IsCHRPrio env p s
       , VarLookupCmb s s
       , VarUpdatable s s
       , CHREmptySubstitution s
       , TrTrKey c ~ TTKey c
-      ) => IsCHRSolvable env c g s
+      ) => IsCHRSolvable env c g p s
 
 {-
 chrSolve
-  :: forall env c g s .
-     ( IsCHRSolvable env c g s
+  :: forall env c g p s .
+     ( IsCHRSolvable env c g p s
      )
      => env
-     -> CHRStore c g
+     -> CHRStore c g p
      -> [c]
      -> [c]
 chrSolve env chrStore cnstrs
   = work ++ done
-  where (work, done, _ :: SolveTrace c g s) = chrSolve' env chrStore cnstrs
+  where (work, done, _ :: SolveTrace c g s p) = chrSolve' env chrStore cnstrs
 -}
 
 -- | Solve
 chrSolve'
-  :: forall env c g s .
-     ( IsCHRSolvable env c g s
+  :: forall env c g p s .
+     ( IsCHRSolvable env c g p s
      )
      => env
-     -> CHRStore c g
+     -> CHRStore c g p
      -> [c]
-     -> ([c],[c],SolveTrace c g s)
+     -> ([c],[c],SolveTrace c g s p)
 chrSolve' env chrStore cnstrs
   = (wlToList (stWorkList finalState), stDoneCnstrs finalState, stTrace finalState)
   where finalState = chrSolve'' env chrStore cnstrs emptySolveState
 
 -- | Solve
 chrSolve''
-  :: forall env c g s .
-     ( IsCHRSolvable env c g s
+  :: forall env c g p s .
+     ( IsCHRSolvable env c g p s
      )
      => env
-     -> CHRStore c g
+     -> CHRStore c g p
      -> [c]
-     -> SolveState c g s
-     -> SolveState c g s
+     -> SolveState c g s p
+     -> SolveState c g s p
 chrSolve'' env chrStore cnstrs prevState
   = flip execState prevState $ chrSolveM env chrStore cnstrs
 
 -- | Solve
 chrSolveM
-  :: forall env c g s .
-     ( IsCHRSolvable env c g s
+  :: forall env c g p s .
+     ( IsCHRSolvable env c g p s
      )
      => env
-     -> CHRStore c g
+     -> CHRStore c g p
      -> [c]
-     -> State (SolveState c g s) ()
+     -> State (SolveState c g s p) ()
 chrSolveM env chrStore cnstrs = do
     modify initState
     iter
@@ -283,7 +284,7 @@ chrSolveM env chrStore cnstrs = do
 -}    
                           stmatch
                       expandMatch matches
-                    where -- expandMatch :: SolveState c g s -> [((StoredCHR c g, ([WorkKey c], [Work c])), s)] -> SolveState c g s
+                    where -- expandMatch :: SolveState c g s p -> [((StoredCHR c g p, ([WorkKey c], [Work c])), s)] -> SolveState c g s p
                           expandMatch ( ( ( schr@(StoredCHR {storedIdent = chrId, storedChr = chr@(Rule {ruleBody = b, ruleSimpSz = simpSz})})
                                           , (keys,works)
                                           )
@@ -391,14 +392,14 @@ chrSolveM env chrStore cnstrs = do
                 
                 -- results, stepwise computed for later reference in debugging output
                 -- basic search result
-                r2 :: [StoredCHR c g]                                       -- CHRs matching workHdKey
+                r2 :: [StoredCHR c g p]                                       -- CHRs matching workHdKey
                 r2  = concat                                                    -- flatten
                         $ TreeTrie.lookupResultToList                                   -- convert to list
                         $ chrTrieLookup chrLookupHowWildAtTrie workHdKey        -- lookup the store, allowing too many results
                         $ chrstoreTrie chrStore
                 
                 -- lookup further info in wlTrie, in particular to find out what has been done already
-                r23 :: [( StoredCHR c g                                     -- the CHR
+                r23 :: [( StoredCHR c g p                                     -- the CHR
                         , ( [( [(CHRKey c, Work c)]                             -- for each CHR the list of constraints, all possible work matches
                              , [(CHRKey c, Work c)]
                              )]
@@ -408,7 +409,7 @@ chrSolveM env chrStore cnstrs = do
                 
                 -- possible matches
                 r3, r4
-                    :: [( StoredCHR c g                                     -- the matched CHR
+                    :: [( StoredCHR c g p                                     -- the matched CHR
                         , ( [CHRKey c]                                            -- possible matching constraints (matching with the CHR constraints), as Keys, as Works
                           , [Work c]
                         ) )]
@@ -418,7 +419,7 @@ chrSolveM env chrStore cnstrs = do
                 r4  = filter (not . slvIsUsedByPropPart wlUsedIn) r3
                 
                 -- finally, the 'real' match of the 'real' constraint, yielding (by tupling) substitutions instantiating the found trie matches
-                r5  :: [( ( StoredCHR c g
+                r5  :: [( ( StoredCHR c g p
                           , ( [CHRKey c]          
                             , [Work c]
                           ) )
@@ -445,7 +446,7 @@ slvCandidate
      => CHRKey c
      -> LastQuery c
      -> WorkTrie c
-     -> StoredCHR c g
+     -> StoredCHR c g p
      -> ( [( [(CHRKey c, Work c)]
            , [(CHRKey c, Work c)]
            )]
@@ -465,7 +466,7 @@ slvCandidate workHdKey lastQuery wlTrie (StoredCHR {storedIdent = (ck,_), stored
 slvIsUsedByPropPart
   :: (Ord k, Ord (TTKey c))
      => Map.Map (Set.Set k) (Set.Set (UsedByKey c))
-     -> (StoredCHR c g, ([k], t))
+     -> (StoredCHR c g p, ([k], t))
      -> Bool
 slvIsUsedByPropPart wlUsedIn (chr,(keys,_))
   = fnd $ drop (storedSimpSz chr) keys
@@ -479,7 +480,7 @@ slvMatch
      , CHRCheckable env g s
      , VarLookupCmb s s
      )
-     => env -> StoredCHR c g -> [c] -> Maybe s
+     => env -> StoredCHR c g p -> [c] -> Maybe s
 slvMatch env chr cnstrs
   = foldl cmb (Just chrEmptySubst) $ matches chr cnstrs ++ checks chr
   where matches (StoredCHR {storedChr = Rule {ruleHead = hc}}) cnstrs
@@ -496,11 +497,11 @@ slvMatch env chr cnstrs
 --- Instances: Serialize
 -------------------------------------------------------------------------------------------
 
-instance (Ord (TTKey c), Serialize (TTKey c), Serialize c, Serialize g) => Serialize (CHRStore c g) where
+instance (Ord (TTKey c), Serialize (TTKey c), Serialize c, Serialize g, Serialize p) => Serialize (CHRStore c g p) where
   sput (CHRStore a) = sput a
   sget = liftM CHRStore sget
   
-instance (Serialize c, Serialize g, Serialize (TTKey c)) => Serialize (StoredCHR c g) where
+instance (Serialize c, Serialize g, Serialize p, Serialize (TTKey c)) => Serialize (StoredCHR c g p) where
   sput (StoredCHR a b c d) = sput a >> sput b >> sput c >> sput d
   sget = liftM4 StoredCHR sget sget sget sget
 

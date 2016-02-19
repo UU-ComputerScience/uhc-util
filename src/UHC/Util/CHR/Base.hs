@@ -18,9 +18,13 @@ module UHC.Util.CHR.Base
   , IsCHRGuard(..)
   , CHRGuard(..)
   
+  , IsCHRPrio(..)
+  , CHRPrio(..)
+  
   , CHREmptySubstitution(..)
   , CHRMatchable(..), CHRMatchableKey
   , CHRCheckable(..)
+  , CHRPrioEvaluatable(..)
   )
   where
 
@@ -62,6 +66,13 @@ class ( CHRCheckable env g subst
       , Serialize g
       , PP g
       ) => IsCHRGuard env g subst
+
+-- | (Class alias) API for priority requirements
+class ( CHRPrioEvaluatable env p subst
+      , Typeable p
+      , Serialize p
+      , PP p
+      ) => IsCHRPrio env p subst
 
 -------------------------------------------------------------------------------------------
 --- Existentially quantified Constraint representations to allow for mix of arbitrary universes
@@ -153,6 +164,41 @@ instance CHRCheckable env (CHRGuard env subst) subst where
   chrCheck env subst (CHRGuard g) = chrCheck env subst g
 
 -------------------------------------------------------------------------------------------
+--- Existentially quantified Prio representations to allow for mix of arbitrary universes
+-------------------------------------------------------------------------------------------
+
+data CHRPrio env subst
+  = forall p . 
+    ( IsCHRPrio env p subst
+    )
+    => CHRPrio
+         { chrPrio :: p
+         }
+
+deriving instance Typeable (CHRPrio env subst)
+-- deriving instance (Data env, Data subst) => Data (CHRGuard env subst)
+
+instance Show (CHRPrio env subst) where
+  show _ = "CHRPrio"
+
+instance PP (CHRPrio env subst) where
+  pp (CHRPrio c) = pp c
+
+{-
+instance (Ord (ExtrValVarKey (CHRGuard env subst))) => VarExtractable (CHRGuard env subst) where
+  varFreeSet (CHRGuard g) = varFreeSet g
+
+instance VarUpdatable (CHRGuard env subst) subst where
+  s `varUpd`    CHRGuard g =  CHRGuard g'
+    where g'        = s `varUpd`    g
+  s `varUpdCyc` CHRGuard g = (CHRGuard g', cyc)
+    where (g', cyc) = s `varUpdCyc` g
+-}
+
+instance CHRPrioEvaluatable env (CHRPrio env subst) subst where
+  chrPrioEval env subst (CHRPrio p) = chrPrioEval env subst p
+
+-------------------------------------------------------------------------------------------
 --- CHREmptySubstitution
 -------------------------------------------------------------------------------------------
 
@@ -177,6 +223,17 @@ class (TTKeyable x, TTKey x ~ CHRMatchableKey subst) => CHRMatchable env x subst
 -- | A Checkable participates in the reduction process as a guard, to be checked.
 class CHRCheckable env x subst where
   chrCheck      :: env -> subst -> x -> Maybe subst
+
+-------------------------------------------------------------------------------------------
+--- CHRPrioEvaluatable
+-------------------------------------------------------------------------------------------
+
+-- | A PrioEvaluatable participates in the reduction process to indicate the rule priority
+class CHRPrioEvaluatable env x subst where
+  chrPrioEval      :: env -> subst -> x -> Int
+
+instance {-# OVERLAPPABLE #-} CHRPrioEvaluatable env () subst where
+  chrPrioEval _ _ _ = minBound
 
 -------------------------------------------------------------------------------------------
 --- What a constraint must be capable of

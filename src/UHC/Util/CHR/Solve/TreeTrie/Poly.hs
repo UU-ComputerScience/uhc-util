@@ -101,7 +101,7 @@ newtype CHRStore e s
       }
   deriving (Typeable)
 
-deriving instance (Ord (TTKey (CHRRule e s)), Data e, Data s, Data (TTKey (CHRRule e s)), Data (TTKey (CHRConstraint e s)), Data (CHRRule e s)) => Data (CHRStore e s)
+-- deriving instance (Ord (TTKey (CHRRule e s)), Data e, Data s, Data (TTKey (CHRRule e s)), Data (TTKey (CHRConstraint e s)), Data (CHRRule e s)) => Data (CHRStore e s)
 
 mkCHRStore trie = CHRStore trie
 

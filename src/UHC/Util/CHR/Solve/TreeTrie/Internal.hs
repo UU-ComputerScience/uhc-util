@@ -183,7 +183,7 @@ deriving instance (Data (TTKey c), Data c, Data g) => Data (StoredCHR c g)
 
 type instance TTKey (StoredCHR c g) = TTKey c
 
-instance (TTKeyable (Rule c g)) => TTKeyable (StoredCHR c g) where
+instance (TTKeyable (Rule c g p)) => TTKeyable (StoredCHR c g) where
   toTTKey' o schr = toTTKey' o $ storedChr schr
 
 -- | The size of the simplification part of a CHR
@@ -229,7 +229,7 @@ instance (PP (TTKey c), PP c, PP g) => PP (StoredCHR c g) where
   pp = ppStoredCHR
 
 -- | Convert from list to store
-chrStoreFromElems :: (TTKeyable c, Ord (TTKey c), TTKey c ~ TrTrKey c) => [Rule c g] -> CHRStore c g
+chrStoreFromElems :: (TTKeyable c, Ord (TTKey c), TTKey c ~ TrTrKey c) => [Rule c g p] -> CHRStore c g p
 chrStoreFromElems chrs
   = mkCHRStore
     $ chrTrieFromListByKeyWith cmbStoredCHRs
@@ -243,20 +243,20 @@ chrStoreFromElems chrs
               ks' = map Just ks1 ++ [Nothing] ++ map Just ks2
         ]
 
-chrStoreSingletonElem :: (TTKeyable c, Ord (TTKey c), TTKey c ~ TrTrKey c) => Rule c g -> CHRStore c g
+chrStoreSingletonElem :: (TTKeyable c, Ord (TTKey c), TTKey c ~ TrTrKey c) => Rule c g p -> CHRStore c g p
 chrStoreSingletonElem x = chrStoreFromElems [x]
 
-chrStoreUnion :: (Ord (TTKey c)) => CHRStore c g -> CHRStore c g -> CHRStore c g
+chrStoreUnion :: (Ord (TTKey c)) => CHRStore c g p -> CHRStore c g p -> CHRStore c g p
 chrStoreUnion cs1 cs2 = mkCHRStore $ chrTrieUnionWith cmbStoredCHRs (chrstoreTrie cs1) (chrstoreTrie cs2)
 {-# INLINE chrStoreUnion #-}
 
-chrStoreUnions :: (Ord (TTKey c)) => [CHRStore c g] -> CHRStore c g
+chrStoreUnions :: (Ord (TTKey c)) => [CHRStore c g p] -> CHRStore c g p
 chrStoreUnions []  = emptyCHRStore
 chrStoreUnions [s] = s
 chrStoreUnions ss  = foldr1 chrStoreUnion ss
 {-# INLINE chrStoreUnions #-}
 
-chrStoreToList :: (Ord (TTKey c)) => CHRStore c g -> [(CHRKey c,[Rule c g])]
+chrStoreToList :: (Ord (TTKey c)) => CHRStore c g p -> [(CHRKey c,[Rule c g p])]
 chrStoreToList cs
   = [ (k,chrs)
     | (k,e) <- chrTrieToListByKey $ chrstoreTrie cs
@@ -264,13 +264,13 @@ chrStoreToList cs
     , not $ Prelude.null chrs
     ]
 
-chrStoreElems :: (Ord (TTKey c)) => CHRStore c g -> [Rule c g]
+chrStoreElems :: (Ord (TTKey c)) => CHRStore c g p -> [Rule c g p]
 chrStoreElems = concatMap snd . chrStoreToList
 
-ppCHRStore :: (PP c, PP g, Ord (TTKey c), PP (TTKey c)) => CHRStore c g -> PP_Doc
+ppCHRStore :: (PP c, PP g, Ord (TTKey c), PP (TTKey c)) => CHRStore c g p -> PP_Doc
 ppCHRStore = ppCurlysCommasBlock . map (\(k,v) -> ppTreeTrieKey k >-< indent 2 (":" >#< ppBracketsCommasBlock v)) . chrStoreToList
 
-ppCHRStore' :: (PP c, PP g, Ord (TTKey c), PP (TTKey c)) => CHRStore c g -> PP_Doc
+ppCHRStore' :: (PP c, PP g, Ord (TTKey c), PP (TTKey c)) => CHRStore c g p -> PP_Doc
 ppCHRStore' = ppCurlysCommasBlock . map (\(k,v) -> ppTreeTrieKey k >-< indent 2 (":" >#< ppBracketsCommasBlock v)) . chrTrieToListByKey . chrstoreTrie
 
 -}

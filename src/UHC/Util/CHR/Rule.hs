@@ -18,6 +18,7 @@ module UHC.Util.CHR.Rule
   , (<==>), (==>), (|>)
   , MkSolverConstraint(..)
   , MkSolverGuard(..)
+  , MkSolverPrio(..)
   )
   where
 
@@ -27,7 +28,7 @@ import           UHC.Util.VarMp
 import           UHC.Util.Utils
 import           Data.Monoid
 import           Data.Typeable
-import           Data.Data
+-- import           Data.Data
 import qualified Data.Set as Set
 import           UHC.Util.Pretty
 import           UHC.Util.CHR.Key
@@ -42,7 +43,7 @@ import           UHC.Util.Substitutable
 
 data CHRRule env subst
   = CHRRule
-      { chrRule :: Rule (CHRConstraint env subst) (CHRGuard env subst)
+      { chrRule :: Rule (CHRConstraint env subst) (CHRGuard env subst) ()
       }
   deriving (Typeable)
 
@@ -61,28 +62,29 @@ instance PP (CHRRule env subst) where
 -------------------------------------------------------------------------------------------
 
 -- | A CHR (rule) consist of head (simplification + propagation, boundary indicated by an Int), guard, and a body. All may be empty, but not all at the same time.
-data Rule cnstr guard
+data Rule cnstr guard prio
   = Rule
       { ruleHead         :: ![cnstr]
-      , ruleSimpSz       :: !Int             -- length of the part of the head which is the simplification part
-      , ruleGuard        :: ![guard]         -- subst -> Maybe subst
+      , ruleSimpSz       :: !Int                -- ^ length of the part of the head which is the simplification part
+      , ruleGuard        :: ![guard]            
       , ruleBody         :: ![cnstr]
+      , rulePrio         :: !(Maybe prio)       -- ^ optional priority, if absent it is considered the lowest possible
       }
-  deriving (Typeable, Data)
+  deriving (Typeable)
 
 emptyCHRGuard :: [a]
 emptyCHRGuard = []
 
-instance Show (Rule c g) where
+instance Show (Rule c g p) where
   show _ = "Rule"
 
-instance (PP c,PP g) => PP (Rule c g) where
+instance (PP c, PP g, PP p) => PP (Rule c g p) where
   pp chr
     = case chr of
-        (Rule h@(_:_)  sz g b) | sz == 0        -> ppChr ([ppL h, pp  "==>"] ++ ppGB g b)
-        (Rule h@(_:_)  sz g b) | sz == length h -> ppChr ([ppL h, pp "<==>"] ++ ppGB g b)
-        (Rule h@(_:_)  sz g b)                  -> ppChr ([ppL (take sz h), pp "|", ppL (drop sz h), pp "<==>"] ++ ppGB g b)
-        (Rule []       _  g b)                  -> ppChr (ppGB g b)
+        (Rule h@(_:_)  sz g b p) | sz == 0        -> ppChr ([ppL h, pp  "==>"] ++ ppGB g b)
+        (Rule h@(_:_)  sz g b p) | sz == length h -> ppChr ([ppL h, pp "<==>"] ++ ppGB g b)
+        (Rule h@(_:_)  sz g b p)                  -> ppChr ([ppL (take sz h), pp "|", ppL (drop sz h), pp "<==>"] ++ ppGB g b)
+        (Rule []       _  g b p)                  -> ppChr (ppGB g b)
     where ppGB g@(_:_) b@(_:_) = [ppL g, "|" >#< ppL b]
           ppGB g@(_:_) []      = [ppL g >#< "|"]
           ppGB []      b@(_:_) = [ppL b]
@@ -91,58 +93,28 @@ instance (PP c,PP g) => PP (Rule c g) where
           ppL xs  = ppBracketsCommasBlock xs -- ppParensCommasBlock xs
           ppChr l = vlist l -- ppCurlysBlock
 
-type instance TTKey (Rule cnstr guard) = TTKey cnstr
+type instance TTKey (Rule cnstr guard prio) = TTKey cnstr
 
-instance (TTKeyable cnstr) => TTKeyable (Rule cnstr guard) where
+instance (TTKeyable cnstr) => TTKeyable (Rule cnstr guard prio) where
   toTTKey' o chr = toTTKey' o $ head $ ruleHead chr
 
 -------------------------------------------------------------------------------------------
 --- Var instances
 -------------------------------------------------------------------------------------------
 
-type instance ExtrValVarKey (Rule c g) = ExtrValVarKey c
+type instance ExtrValVarKey (Rule c g p) = ExtrValVarKey c
 
-instance (VarExtractable c, VarExtractable g, ExtrValVarKey c ~ ExtrValVarKey g) => VarExtractable (Rule c g) where
+instance (VarExtractable c, VarExtractable g, ExtrValVarKey c ~ ExtrValVarKey g) => VarExtractable (Rule c g p) where
   varFreeSet          (Rule {ruleHead=h, ruleGuard=g, ruleBody=b})
     = Set.unions $ concat [map varFreeSet h, map varFreeSet g, map varFreeSet b]
 
-instance (VarUpdatable c s, VarUpdatable g s) => VarUpdatable (Rule c g) s where
+instance (VarUpdatable c s, VarUpdatable g s) => VarUpdatable (Rule c g p) s where
   varUpd s r@(Rule {ruleHead=h, ruleGuard=g, ruleBody=b})
     = r {ruleHead = map (varUpd s) h, ruleGuard = map (varUpd s) g, ruleBody = map (varUpd s) b}
 
 -------------------------------------------------------------------------------------------
 --- Construction: Rule
 -------------------------------------------------------------------------------------------
-
-{-
-class MkRule c g c' g' r | r c -> g g' c', r g -> c c' g', c c' -> g g' r, g g' -> c c' r, r g' -> c c' g, c' g' r -> c g, r -> c g c' g' where
--- class MkRule c g c' g' r | r -> c' g' c g, c' -> g' r, g' -> c' r, c -> g r, g -> c r where
--- class MkRule c g c' g' r | r -> c' g' c g where
-  -- | Lift constraint, from In to Out
-  toSolverConstraint :: c -> c'
-  -- | Lift guard, from In to Out
-  toSolverGuard :: g -> g'
-  -- | Make rule
-  mkRule :: [c'] -> Int -> [g'] -> [c'] -> r
-  -- | Add guards to rule
-  guardRule :: [g'] -> r -> r
-
-infix   1 <==>, ==>
-infixr  0 |>
-
-(<==>), (==>) :: forall c g c' g' r . (MkRule c g c' g' r) => [c] -> [c] -> r
-hs <==>  bs = mkRule (map toSolverConstraint hs) (length hs) ([]::[g']) (map toSolverConstraint bs)
-hs  ==>  bs = mkRule (map toSolverConstraint hs) 0 ([]::[g']) (map toSolverConstraint bs)
-
-(|>) :: (MkRule c g c' g' r) => r -> [g] -> r
-r |> g = guardRule (map toSolverGuard g) r
-
-instance MkRule c g c g (Rule c g) where
-  toSolverConstraint = id
-  toSolverGuard = id
-  mkRule = Rule
-  guardRule g r = r {ruleGuard = ruleGuard r ++ g}
--}
 
 class MkSolverConstraint c c' where
   toSolverConstraint :: c' -> c
@@ -175,81 +147,65 @@ instance {-# OVERLAPS #-}
   toSolverGuard = CHRGuard
   fromSolverGuard (CHRGuard g) = cast g
 
+class MkSolverPrio p p' where
+  toSolverPrio :: p' -> p
+  fromSolverPrio :: p -> Maybe p'
+
+instance {-# INCOHERENT #-} MkSolverPrio p p where
+  toSolverPrio = id
+  fromSolverPrio = Just
+
+instance {-# OVERLAPS #-}
+         ( IsCHRPrio e p s
+         -- , ExtrValVarKey (CHRPrio e s) ~ ExtrValVarKey p
+         ) => MkSolverPrio (CHRPrio e s) p where
+  toSolverPrio = CHRPrio
+  fromSolverPrio (CHRPrio p) = cast p
+
 class MkRule r where
   type SolverConstraint r :: *
   type SolverGuard r :: *
+  type SolverPrio r :: *
   -- | Make rule
-  mkRule :: [SolverConstraint r] -> Int -> [SolverGuard r] -> [SolverConstraint r] -> r
+  mkRule :: [SolverConstraint r] -> Int -> [SolverGuard r] -> [SolverConstraint r] -> Maybe (SolverPrio r) -> r
   -- | Add guards to rule
   guardRule :: [SolverGuard r] -> r -> r
+  -- | Add prio to rule
+  prioritizeRule :: SolverPrio r -> r -> r
 
-instance MkRule (Rule c g) where
-  type SolverConstraint (Rule c g) = c
-  type SolverGuard (Rule c g) = g
+instance MkRule (Rule c g p) where
+  type SolverConstraint (Rule c g p) = c
+  type SolverGuard (Rule c g p) = g
+  type SolverPrio (Rule c g p) = p
   mkRule = Rule
   guardRule g r = r {ruleGuard = ruleGuard r ++ g}
+  prioritizeRule p r = r {rulePrio = Just p}
 
 instance MkRule (CHRRule e s) where
   type SolverConstraint (CHRRule e s) = (CHRConstraint e s)
   type SolverGuard (CHRRule e s) = (CHRGuard e s)
-  mkRule h1 h2 l b = CHRRule $ mkRule h1 h2 l b 
+  type SolverPrio (CHRRule e s) = ()
+  mkRule h1 h2 l b p = CHRRule $ mkRule h1 h2 l b p
   guardRule g (CHRRule r) = CHRRule $ guardRule g r
+  prioritizeRule p (CHRRule r) = CHRRule $ prioritizeRule p r
 
 infix   1 <==>, ==>
 infixr  0 |>
 
-(<==>), (==>) :: (MkRule r, MkSolverConstraint (SolverConstraint r) c1, MkSolverConstraint (SolverConstraint r) c2) => [c1] -> [c2] -> r
-hs <==>  bs = mkRule (map toSolverConstraint hs) (length hs) [] (map toSolverConstraint bs)
-hs  ==>  bs = mkRule (map toSolverConstraint hs) 0 [] (map toSolverConstraint bs)
+(<==>), (==>) :: forall r c1 c2 . (MkRule r, MkSolverConstraint (SolverConstraint r) c1, MkSolverConstraint (SolverConstraint r) c2) => [c1] -> [c2] -> r
+hs <==>  bs = mkRule (map toSolverConstraint hs) (length hs) [] (map toSolverConstraint bs) Nothing
+hs  ==>  bs = mkRule (map toSolverConstraint hs) 0 [] (map toSolverConstraint bs) Nothing
 
 (|>) :: (MkRule r, MkSolverGuard (SolverGuard r) g') => r -> [g'] -> r
 r |> g = guardRule (map toSolverGuard g) r
-
-
-{-
--- Below variant runs into typing problem w.r.t. injectivity of type functions...
-class MkRule r where
-  type MkSolverConstraintIn r :: *
-  type MkSolverGuardIn r :: *
-  type MkSolverConstraintOut r :: *
-  type MkSolverGuardOut r :: *
-  -- | Lift constraint, from In to Out
-  toSolverConstraint :: MkSolverConstraintIn r -> MkSolverConstraintOut r
-  -- | Lift guard, from In to Out
-  toSolverGuard :: MkSolverGuardIn r -> MkSolverGuardOut r
-  -- | Make rule
-  mkRule :: [MkSolverConstraintOut r] -> Int -> [MkSolverGuardOut r] -> [MkSolverConstraintOut r] -> r
-  -- | Add guards to rule
-  guardRule :: [MkSolverGuardOut r] -> r -> r
-
-infix   1 <==>, ==>
-infixr  0 |>
-
-(<==>), (==>) :: forall r c . (MkRule r, c ~ MkSolverConstraintIn r) => [c] -> [c] -> r
-hs <==>  bs = mkRule (map toSolverConstraint hs) (length hs) (map toSolverGuard emptyCHRGuard) (map toSolverConstraint bs)
-hs  ==>  bs = mkRule (map toSolverConstraint hs) 0 (map toSolverGuard emptyCHRGuard) (map toSolverConstraint bs)
-
-(|>) :: (MkRule r, g ~ MkSolverGuardIn r) => r -> [g] -> r
-r |> g = guardRule (map toSolverGuard g) r
-
-instance MkRule (Rule c g) where
-  type MkSolverConstraintIn (Rule c g) = c
-  type MkSolverGuardIn (Rule c g) = g
-  type MkSolverConstraintOut (Rule c g) = c
-  type MkSolverGuardOut (Rule c g) = g
-  toSolverConstraint = id
-  toSolverGuard = id
-  mkRule = Rule
-  guardRule g r = r {ruleGuard = ruleGuard r ++ g}
--}
 
 -------------------------------------------------------------------------------------------
 --- Instances: Serialize
 -------------------------------------------------------------------------------------------
 
-instance (Serialize c,Serialize g) => Serialize (Rule c g) where
-  sput (Rule a b c d) = sput a >> sput b >> sput c >> sput d
-  sget = liftM4 Rule sget sget sget sget
+instance (Serialize c,Serialize g,Serialize p) => Serialize (Rule c g p) where
+  sput (Rule a b c d e) = sput a >> sput b >> sput c >> sput d >> sput e
+  sget = liftM5 Rule sget sget sget sget sget
 
 {-
 instance (MkSolverConstraint (CHRConstraint e s) x', Serialize x') => Serialize (CHRConstraint e s) where
