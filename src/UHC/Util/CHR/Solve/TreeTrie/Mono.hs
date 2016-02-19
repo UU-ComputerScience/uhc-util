@@ -178,8 +178,8 @@ ppCHRStore' = ppCurlysCommasBlock . map (\(k,v) -> ppTreeTrieKey k >-< indent 2 
 --- Solver trace
 -------------------------------------------------------------------------------------------
 
-type SolveStep  c g s p = SolveStep'  c (Rule c g p) s
-type SolveTrace c g s p = SolveTrace' c (Rule c g p) s
+type SolveStep  c g p s = SolveStep'  c (Rule c g p) s
+type SolveTrace c g p s = SolveTrace' c (Rule c g p) s
 
 -------------------------------------------------------------------------------------------
 --- Cache for maintaining which WorkKey has already had a match
@@ -193,7 +193,7 @@ type SolveMatchCache c g p s = SolveMatchCache' c (StoredCHR c g p) s
 --- Solve state
 -------------------------------------------------------------------------------------------
 
-type SolveState c g s p = SolveState' c (Rule c g p) (StoredCHR c g p) s
+type SolveState c g p s = SolveState' c (Rule c g p) (StoredCHR c g p) s
 
 -------------------------------------------------------------------------------------------
 --- Solver
@@ -220,7 +220,7 @@ chrSolve
      -> [c]
 chrSolve env chrStore cnstrs
   = work ++ done
-  where (work, done, _ :: SolveTrace c g s p) = chrSolve' env chrStore cnstrs
+  where (work, done, _ :: SolveTrace c g p s) = chrSolve' env chrStore cnstrs
 -}
 
 -- | Solve
@@ -231,7 +231,7 @@ chrSolve'
      => env
      -> CHRStore c g p
      -> [c]
-     -> ([c],[c],SolveTrace c g s p)
+     -> ([c],[c],SolveTrace c g p s)
 chrSolve' env chrStore cnstrs
   = (wlToList (stWorkList finalState), stDoneCnstrs finalState, stTrace finalState)
   where finalState = chrSolve'' env chrStore cnstrs emptySolveState
@@ -244,8 +244,8 @@ chrSolve''
      => env
      -> CHRStore c g p
      -> [c]
-     -> SolveState c g s p
-     -> SolveState c g s p
+     -> SolveState c g p s
+     -> SolveState c g p s
 chrSolve'' env chrStore cnstrs prevState
   = flip execState prevState $ chrSolveM env chrStore cnstrs
 
@@ -257,7 +257,7 @@ chrSolveM
      => env
      -> CHRStore c g p
      -> [c]
-     -> State (SolveState c g s p) ()
+     -> State (SolveState c g p s) ()
 chrSolveM env chrStore cnstrs = do
     modify initState
     iter
@@ -284,7 +284,7 @@ chrSolveM env chrStore cnstrs = do
 -}    
                           stmatch
                       expandMatch matches
-                    where -- expandMatch :: SolveState c g s p -> [((StoredCHR c g p, ([WorkKey c], [Work c])), s)] -> SolveState c g s p
+                    where -- expandMatch :: SolveState c g p s -> [((StoredCHR c g p, ([WorkKey c], [Work c])), s)] -> SolveState c g p s
                           expandMatch ( ( ( schr@(StoredCHR {storedIdent = chrId, storedChr = chr@(Rule {ruleBody = b, ruleSimpSz = simpSz})})
                                           , (keys,works)
                                           )

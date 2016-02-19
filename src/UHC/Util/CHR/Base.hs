@@ -74,6 +74,8 @@ class ( CHRPrioEvaluatable env p subst
       , PP p
       ) => IsCHRPrio env p subst
 
+instance {-# OVERLAPPABLE #-} IsCHRPrio env () subst
+
 -------------------------------------------------------------------------------------------
 --- Existentially quantified Constraint representations to allow for mix of arbitrary universes
 -------------------------------------------------------------------------------------------
@@ -228,7 +230,7 @@ class CHRCheckable env x subst where
 --- CHRPrioEvaluatable
 -------------------------------------------------------------------------------------------
 
--- | A PrioEvaluatable participates in the reduction process to indicate the rule priority
+-- | A PrioEvaluatable participates in the reduction process to indicate the rule priority, higher prio takes precedence
 class CHRPrioEvaluatable env x subst where
   chrPrioEval      :: env -> subst -> x -> Int
 

@@ -2,6 +2,9 @@
 
 ## 0.1.6.5
 
+- [libs] updated version lowerbound for hashable and fclabels
+- [chr] dependency on logict-state lib, as prep for new solver
+- [chr] CHR rules have an additional priority field, as prep for new solver
 - [api] additional PP instances
 - [serialize] generic impl of Serialize more efficiently generates tags (1 per datatype instead of log(nr of constructors))
 
