@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.1.6.6
+
 ## 0.1.6.5
 
 - [libs] updated version lowerbound for hashable and fclabels
