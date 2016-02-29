@@ -119,7 +119,7 @@ deriving instance Typeable  RLList
 #else
 deriving instance Typeable1 RLList
 #endif
-deriving instance Data x => Data (RLList x)
+-- deriving instance Data x => Data (RLList x)
 
 -------------------------------------------------------------------------------------------
 --- Instances: Binary, Serialize

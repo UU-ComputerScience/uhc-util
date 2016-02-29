@@ -35,7 +35,6 @@ library
     time-compat >= 0.1.0.1,
     time >= 1.2,
     fclabels >= 2.0.3,
-    syb  >= 0.3.6,
     logict-state >= 0.1.0.0
   Exposed-Modules:
     UHC.Util.AGraph,
@@ -79,8 +78,9 @@ library
     UHC.Util.VarLookup,
     UHC.Util.VarMp
   Other-Modules:
-    UHC.Util.CHR.Solve.TreeTrie.Internal
+    UHC.Util.CHR.Solve.TreeTrie.Internal,
+    UHC.Util.CHR.Solve.TreeTrie.Examples
   Ghc-Options:		
   HS-Source-Dirs:     	src
   Build-Tools:		
-  Extensions: NoMagicHash, DeriveGeneric, DeriveDataTypeable, TypeFamilies, FlexibleContexts
+  Extensions: NoMagicHash, DeriveGeneric, DeriveDataTypeable, TypeFamilies, FlexibleContexts, FunctionalDependencies

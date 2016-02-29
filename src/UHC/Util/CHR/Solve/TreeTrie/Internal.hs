@@ -5,7 +5,8 @@
 -------------------------------------------------------------------------------------------
 
 module UHC.Util.CHR.Solve.TreeTrie.Internal
-  ( CHRTrie
+  ( CHRTrie'
+  , CHRTrie
   , CHRTrieKey
   , CHRLookupHow
   
@@ -17,6 +18,7 @@ module UHC.Util.CHR.Solve.TreeTrie.Internal
   
   , chrToKey
   , chrToWorkKey
+  , chrTrieSingleton
   , chrTrieDeleteListByKey
   , chrTrieElems
   , chrTrieFromListByKeyWith
@@ -58,6 +60,7 @@ module UHC.Util.CHR.Solve.TreeTrie.Internal
   , lqSingleton
   , lqLookupW
   , lqLookupC
+  , ppLastQuery
   
   , SolveStep'(..)
   , SolveTrace'
@@ -101,7 +104,8 @@ import           UHC.Util.Utils
 --- Choice of Trie structure
 -------------------------------------------------------------------------------------------
 
-type CHRTrie v = TreeTrie.TreeTrie (TTKey v) v
+type CHRTrie' k v = TreeTrie.TreeTrie (TTKey k) v
+type CHRTrie v = CHRTrie' v v
 type CHRTrieKey v = TreeTrie.TreeTrieKey (TTKey v)
 type CHRLookupHow = TreeTrieLookup
 
@@ -110,6 +114,10 @@ chrLookupHowWildAtTrie = TTL_WildInTrie
 chrLookupHowWildAtKey  = TTL_WildInKey
 
 emptyCHRTrie = TreeTrie.empty
+
+chrTrieSingleton :: (Ord (TTKey v)) => CHRTrieKey v -> v -> CHRTrie v
+chrTrieSingleton = TreeTrie.singleton
+{-# INLINE chrTrieSingleton #-}
 
 chrTrieFromListByKeyWith :: (Ord (TTKey v)) => (v -> v -> v) -> [(CHRTrieKey v,v)] -> CHRTrie v
 chrTrieFromListByKeyWith = TreeTrie.fromListByKeyWith
@@ -381,6 +389,9 @@ type SolveMatchCache' c schr s = Map.Map (WorkKey c) [((schr,([WorkKey c],[Work 
 
 type LastQueryW v = Map.Map (WorkKey v) WorkTime
 type LastQuery v = Map.Map (CHRKey v) (LastQueryW v)
+
+ppLastQueryW = ppAssocL . Map.toList
+ppLastQuery = ppAssocL . assocLMapElt ppLastQueryW . Map.toList
 
 -- emptyLastQuery :: LastQuery v
 emptyLastQuery = Map.empty

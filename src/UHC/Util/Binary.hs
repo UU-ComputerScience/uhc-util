@@ -8,7 +8,7 @@ module UHC.Util.Binary
   , module Data.Binary.Put
   , module UHC.Util.Control.Monad
   , module Data.Typeable
-  , module Data.Generics
+  -- , module Data.Generics
 
   , hGetBinary
   , getBinaryFile
@@ -26,7 +26,7 @@ module UHC.Util.Binary
 
 import qualified Data.ByteString.Lazy as L
 import Data.Typeable
-import Data.Generics (Data)
+-- import Data.Generics (Data)
 import Data.Binary
 import Data.Binary.Put(runPut,putWord16be)
 import Data.Binary.Get(runGet,getWord16be)

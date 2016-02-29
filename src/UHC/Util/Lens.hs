@@ -2,7 +2,7 @@
     in addition providing some of the instances for datatypes defined in the remainder of the uhc-util package.
 -}
 
-{-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE TypeOperators, NoMonomorphismRestriction #-}
 
 module UHC.Util.Lens
   ( (:->)
@@ -19,6 +19,7 @@ module UHC.Util.Lens
   , (=.)
   , (=:)
   , (=$:)
+  , modifyAndGet
   , getl
   
   -- * Misc
@@ -26,6 +27,10 @@ module UHC.Util.Lens
   , focus
   
   , mkLabel
+  
+  -- * Tuple accessors
+  , fstl
+  , sndl
   
   -- * Wrappers
   
@@ -41,7 +46,8 @@ import           Control.Monad.Trans
 import           Control.Category
 
 import           Data.Label hiding (Lens)
-import           Data.Label.Monadic((=:), (=.))
+import qualified Data.Label.Base as L
+import           Data.Label.Monadic((=:), (=.), modifyAndGet)
 import qualified Data.Label.Monadic as M
 import qualified Data.Label.Partial as P
 
@@ -81,6 +87,14 @@ infixr 4 ^$=
 
 -- * Operator interface for monadic part (occasionally similar to Data.Lens)
 
+{-
+infixr 4 =$^:
+-- | monadic modify & set & get
+(=$^:) :: MS.MonadState f m => (f :-> o) -> (o -> (a,o)) -> m a
+(=$^:) = M.modify
+{-# INLINE (=$^:) #-}
+-}
+
 infixr 4 =$:
 -- | monadic modify & set
 (=$:) :: MS.MonadState f m => (f :-> o) -> (o -> o) -> m ()
@@ -102,6 +116,14 @@ focus f m = do
 -- | Alias for 'gets' avoiding conflict with MonadState
 getl :: MS.MonadState f m => (f :-> o) -> m o
 getl = M.gets
+
+-- * Tuple
+
+fstl = L.fst
+{-# INLINE fstl #-}
+
+sndl = L.snd
+{-# INLINE sndl #-}
 
 -- * Wrappers
 

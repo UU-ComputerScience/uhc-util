@@ -61,7 +61,7 @@ import UHC.Util.Utils
 import UHC.Util.AssocL
 -- import EH100.Base.Common
 import Data.Typeable (Typeable)
-import Data.Generics (Data)
+-- import Data.Generics (Data)
 import UHC.Util.Serialize
 import Control.Monad
 -- import EH100.Base.Binary
@@ -75,7 +75,7 @@ data SGamElt v
       { sgeScpId    :: !Int                         -- ^ scope ident
       , sgeVal      :: v                            -- ^ the value
       }
-  deriving (Typeable, Data, Generic)
+  deriving (Typeable, Generic)
 
 type SMap k v = VarMp' k [SGamElt v]
 
@@ -88,7 +88,7 @@ data SGam k v
       , sgScp       :: !Scp                         -- ^ scope stack
       , sgMap       :: SMap k v                     -- ^ map holding the values
       }
-  deriving (Typeable, Data, Generic)
+  deriving (Typeable, Generic)
 
 mkSGam :: SMap k v -> SGam k v
 mkSGam = SGam 0 [0]

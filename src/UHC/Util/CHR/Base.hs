@@ -25,6 +25,8 @@ module UHC.Util.CHR.Base
   , CHRMatchable(..), CHRMatchableKey
   , CHRCheckable(..)
   , CHRPrioEvaluatable(..)
+  
+  , CHRTrOpt(..)
   )
   where
 
@@ -43,7 +45,7 @@ import           UHC.Util.Serialize
 import           UHC.Util.Substitutable
 
 -------------------------------------------------------------------------------------------
---- Constraint, Guard API
+--- Constraint, Guard, & Prio API
 -------------------------------------------------------------------------------------------
 
 -- | (Class alias) API for constraint requirements
@@ -184,7 +186,7 @@ instance Show (CHRPrio env subst) where
   show _ = "CHRPrio"
 
 instance PP (CHRPrio env subst) where
-  pp (CHRPrio c) = pp c
+  pp (CHRPrio p) = pp p
 
 {-
 instance (Ord (ExtrValVarKey (CHRGuard env subst))) => VarExtractable (CHRGuard env subst) where
@@ -247,59 +249,11 @@ class IsConstraint c where
   cnstrRequiresSolve :: c -> Bool
 
 -------------------------------------------------------------------------------------------
---- Instances: Serialize
+--- Tracing options, specific for CHR solvers
 -------------------------------------------------------------------------------------------
 
--- Does not work...
+data CHRTrOpt
+  = CHRTrOpt_Lookup     -- ^ trie query
+  | CHRTrOpt_Stats      -- ^ various stats
+  deriving (Eq, Ord, Show)
 
-{-
-instance (Serialize c, IsCHRConstraint e c s, ExtrValVarKey c ~ ExtrValVarKey (CHRConstraint e s), TTKey c ~ TTKey (CHRConstraint e s)) => Serialize (CHRConstraint e s) where
-  sput (CHRConstraint a) = sput a
-  -- sget = sgetCHRConstraint (sget :: SGet c)
-  sget = liftM CHRConstraint (sget :: SGet c)
--}
-
-{-
-instance (Serialize c, IsCHRConstraint e c s, ExtrValVarKey c ~ ExtrValVarKey (CHRConstraint e s), TTKey c ~ TTKey (CHRConstraint e s)) => Serialize (CHRConstraint e s) where
-  sput (CHRConstraint a) = sput a
-  -- sget = sgetCHRConstraint (sget :: SGet c)
-  sget = liftM CHRConstraint (sget :: SGet c)
--}
-
-{-
-sgetCHRConstraint
-  :: forall e c s .
-     ( Serialize c
-     , IsCHRConstraint e c s
-     , ExtrValVarKey c ~ ExtrValVarKey (CHRConstraint e s)
-     , TTKey c ~ TTKey (CHRConstraint e s)
-     ) => SGet c -> SGet (CHRConstraint e s)
-sgetCHRConstraint sgetc
-  = liftM CHRConstraint sgetc
--}
-
-{-
-  = do tr <- (sget :: SGet TypeRep)
-       if tr == typeRep (Proxy :: Proxy c)
-         then liftM (CHRConstraint . unsafeCoerce) sgetc
-         else panic $ "UHC.Util.CHR.Base.sgetCHRConstraint: " ++ show tr ++ " /= " 
--}
-  
-{-
-sputgetCHRConstraint
-  :: ( Serialize c
-     , IsCHRConstraint e c s
-     , ExtrValVarKey c ~ ExtrValVarKey (CHRConstraint e s)
-     , TTKey c ~ TTKey (CHRConstraint e s)
-     ) => ( c -> SPut
-          , SGet c -> SGet (CHRConstraint e s)
-          )
-sputgetCHRConstraint = (sput, liftM CHRConstraint)
-(sputCHRConstraint, sgetCHRConstraint) = sputgetCHRConstraint
--}
-
-{-
-instance Serialize (CHRGuard e s) where
-  sput (CHRGuard a) = sput a
-  sget = liftM CHRGuard sget
--}

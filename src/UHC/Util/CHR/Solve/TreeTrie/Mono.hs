@@ -208,6 +208,7 @@ class ( IsCHRConstraint env c s
       , CHREmptySubstitution s
       , TrTrKey c ~ TTKey c
       ) => IsCHRSolvable env c g p s
+        |  c g p -> s
 
 {-
 chrSolve
@@ -228,37 +229,40 @@ chrSolve'
   :: forall env c g p s .
      ( IsCHRSolvable env c g p s
      )
-     => env
+     => [CHRTrOpt]
+     -> env
      -> CHRStore c g p
      -> [c]
      -> ([c],[c],SolveTrace c g p s)
-chrSolve' env chrStore cnstrs
+chrSolve' tropts env chrStore cnstrs
   = (wlToList (stWorkList finalState), stDoneCnstrs finalState, stTrace finalState)
-  where finalState = chrSolve'' env chrStore cnstrs emptySolveState
+  where finalState = chrSolve'' tropts env chrStore cnstrs emptySolveState
 
 -- | Solve
 chrSolve''
   :: forall env c g p s .
      ( IsCHRSolvable env c g p s
      )
-     => env
+     => [CHRTrOpt]
+     -> env
      -> CHRStore c g p
      -> [c]
      -> SolveState c g p s
      -> SolveState c g p s
-chrSolve'' env chrStore cnstrs prevState
-  = flip execState prevState $ chrSolveM env chrStore cnstrs
+chrSolve'' tropts env chrStore cnstrs prevState
+  = flip execState prevState $ chrSolveM tropts env chrStore cnstrs
 
 -- | Solve
 chrSolveM
   :: forall env c g p s .
      ( IsCHRSolvable env c g p s
      )
-     => env
+     => [CHRTrOpt]
+     -> env
      -> CHRStore c g p
      -> [c]
      -> State (SolveState c g p s) ()
-chrSolveM env chrStore cnstrs = do
+chrSolveM tropts env chrStore cnstrs = do
     modify initState
     iter
 {-
@@ -353,8 +357,8 @@ chrSolveM env chrStore cnstrs = do
                           st'
                       iter
                     where wl' = wl { wlScanned = workHd : wlScanned wl, wlQueue = workTl }
-                          st' = stmatch { stWorkList = wl', stTrace = SolveDbg (ppdbg) : {- -} stTrace stmatch }
-              where (matches,lastQuery,ppdbg,stats) = workMatches st
+                          st' = stmatch { stWorkList = wl' {- , stTrace = SolveDbg (ppdbg) : stTrace stmatch -} }
+              where (matches,lastQuery {- ,ppdbg,stats -}) = workMatches st
 {-  
                     stmatch = addStats stats [("(a) workHd", ppTreeTrieKey workHdKey), ("(b) matches", ppBracketsCommasBlock [ s `varUpd` storedChr schr | ((schr,_),s) <- matches ])]
 -}
@@ -372,20 +376,28 @@ chrSolveM env chrStore cnstrs = do
 -}
         addStats _     _   st = st
 
+        mkDbgPP o | o `elem` tropts = id
+                  | otherwise       = const Pretty.empty
+
         workMatches st@(SolveState {stWorkList = WorkList {wlQueue = (workHd@(workHdKey,Work {workTime = workHdTm}) : _), wlTrie = wlTrie, wlUsedIn = wlUsedIn}, stHistoryCount = histCount, stLastQuery = lastQuery})
           | isJust mbInCache  = ( fromJust mbInCache
                                 , lastQuery
-                                , Pretty.empty, mkStats Map.empty [("cache sz",pp (Map.size (stMatchCache st)))]
+                                {-
+                                , Pretty.empty
+                                , mkStats Map.empty [("cache sz",pp (Map.size (stMatchCache st)))]
+                                -}
                                 )
           | otherwise         = ( r5
                                 , foldr lqUnion lastQuery [ lqSingleton ck wks histCount | (_,(_,(ck,wks))) <- r23 ]
-{-
                                 -- , Pretty.empty
-                                , pp2 >-< {- pp2b >-< pp2c >-< -} pp3
+                                -- , mkDbgPP CHRTrOpt_Lookup $ pp2 >-< pp2b >-< {- pp2c >-< -} pp3
+{-
                                 , mkStats Map.empty [("(1) lookup sz",pp (length r2)), ("(2) cand sz",pp (length r3)), ("(3) unused cand sz",pp (length r4)), ("(4) final cand sz",pp (length r5))]
 -}
+{-
                                 , Pretty.empty
-                                , Map.empty
+-}
+                                -- , Map.empty
                                 )
           where -- cache result, if present use that, otherwise the below computation
                 mbInCache = Map.lookup workHdKey (stMatchCache st)
@@ -426,12 +438,14 @@ chrSolveM env chrStore cnstrs = do
                         , s
                         )]
                 r5  = mapMaybe (\r@(chr,kw@(_,works)) -> fmap (\s -> (r,s)) $ slvMatch env chr (map workCnstr works)) r4
-{-
+
                 -- debug info
                 pp2  = "lookups"    >#< ("for" >#< ppTreeTrieKey workHdKey >-< ppBracketsCommasBlock r2)
+                pp2b = "cand1"      >#< ("lastQ" >#< ppLastQuery lastQuery >-< vlist [ pp (storedKeyedInx chr) | (chr,mtch) <- r23 ])
                 -- pp2b = "cand1"      >#< (ppBracketsCommasBlock $ map (ppBracketsCommasBlock . map (ppBracketsCommasBlock . map (\(k,w) -> ppTreeTrieKey k >#< w)) . fst . candidate) r2)
                 -- pp2c = "cand2"      >#< (ppBracketsCommasBlock $ map (ppBracketsCommasBlock . map (ppBracketsCommasBlock) . combineToDistinguishedElts . fst . candidate) r2)
                 pp3  = "candidates" >#< (ppBracketsCommasBlock $ map (\(chr,(ks,ws)) -> "chr" >#< chr >-< "keys" >#< ppBracketsCommas (map ppTreeTrieKey ks) >-< "works" >#< ppBracketsCommasBlock ws) $ r3)
+{-
 -}
         initState st = st { stWorkList = wlInsert (stHistoryCount st) wlnew $ stWorkList st, stDoneCnstrSet = Set.unions [Set.fromList done, stDoneCnstrSet st] }
                      where (wlnew,done) = splitDone cnstrs
@@ -457,7 +471,10 @@ slvCandidate workHdKey lastQuery wlTrie (StoredCHR {storedIdent = (ck,_), stored
     , ( ck
       , Set.fromList $ map (maybe workHdKey id) ks
     ) )
-  where lkup how k = partition (\(_,w) -> workTime w < lastQueryTm) $ map (\w -> (workKey w,w)) $ TreeTrie.lookupResultToList $ chrTrieLookup how k wlTrie
+  where lkup how k = partition (\(_,w) -> workTime w < lastQueryTm)
+                       $ map (\w -> (workKey w,w))
+                       $ TreeTrie.lookupResultToList
+                       $ chrTrieLookup how k wlTrie
                    where lastQueryTm = lqLookupW k $ lqLookupC ck lastQuery
 {-# INLINE slvCandidate #-}
 

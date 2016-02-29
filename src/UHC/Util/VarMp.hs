@@ -98,7 +98,7 @@ import UHC.Util.VarLookup
 import UHC.Util.Utils
 import Control.Monad
 import Data.Typeable (Typeable)
-import Data.Generics (Data)
+-- import Data.Generics (Data)
 -- import EH100.Base.Binary
 import UHC.Util.Serialize
 
@@ -113,7 +113,7 @@ data VarMp' k v
       , varmpMpL        :: [Map.Map k v]        -- ^ for each level a map, starting at the base meta level
       }
   deriving ( Eq, Ord
-           , Typeable, Data, Generic
+           , Typeable, Generic
            )
 
 -- get the base meta level map, ignore the others

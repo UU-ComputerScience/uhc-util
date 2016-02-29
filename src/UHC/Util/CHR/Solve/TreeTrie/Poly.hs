@@ -60,7 +60,7 @@ import qualified Data.Set as Set
 import qualified Data.Map as Map
 import           Data.List as List
 import           Data.Typeable
-import           Data.Data
+-- import           Data.Data
 import           Data.Maybe
 import           UHC.Util.Pretty as Pretty
 import           UHC.Util.Serialize
@@ -82,7 +82,7 @@ data StoredCHR e s
       }
   deriving (Typeable)
 
-deriving instance (Data (TTKey (CHRConstraint e s)), Data (CHRRule e s), Data e, Data s) => Data (StoredCHR e s)
+-- deriving instance (Data (TTKey (CHRConstraint e s)), Data (CHRRule e s), Data e, Data s) => Data (StoredCHR e s)
 
 type instance TTKey (StoredCHR e s) = TTKey (CHRRule e s)
 
@@ -223,13 +223,14 @@ chrSolve'
      ( IsCHRSolvable e s
      , c ~ CHRConstraint e s
      )
-     => e
+     => [CHRTrOpt]
+     -> e
      -> CHRStore e s
      -> [c]
      -> ([c],[c],SolveTrace e s)
-chrSolve' env chrStore cnstrs
+chrSolve' tropts env chrStore cnstrs
   = (wlToList (stWorkList finalState), stDoneCnstrs finalState, stTrace finalState)
-  where finalState = chrSolve'' env chrStore cnstrs emptySolveState
+  where finalState = chrSolve'' tropts env chrStore cnstrs emptySolveState
 
 -- | Solve
 chrSolve''
@@ -237,13 +238,14 @@ chrSolve''
      ( IsCHRSolvable e s
      , c ~ CHRConstraint e s
      )
-     => e
+     => [CHRTrOpt]
+     -> e
      -> CHRStore e s
      -> [c]
      -> SolveState e s
      -> SolveState e s
-chrSolve'' env chrStore cnstrs prevState
-  = flip execState prevState $ chrSolveM env chrStore cnstrs
+chrSolve'' tropts env chrStore cnstrs prevState
+  = flip execState prevState $ chrSolveM tropts env chrStore cnstrs
 
 
 -- | Solve
@@ -252,11 +254,12 @@ chrSolveM
      ( IsCHRSolvable e s
      , c ~ CHRConstraint e s
      )
-     => e
+     => [CHRTrOpt]
+     -> e
      -> CHRStore e s
      -> [c]
      -> State (SolveState e s) ()
-chrSolveM env chrStore cnstrs = do
+chrSolveM tropts env chrStore cnstrs = do
     modify initState
     iter
 {-

@@ -2,6 +2,9 @@
 
 ## 0.1.6.6
 
+- [chr] examples
+- [libs] removed dependency on syb (and Data instances)
+
 ## 0.1.6.5
 
 - [libs] updated version lowerbound for hashable and fclabels

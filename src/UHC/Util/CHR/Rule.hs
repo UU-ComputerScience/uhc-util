@@ -14,8 +14,9 @@ module UHC.Util.CHR.Rule
   ( CHRRule(..)
   
   , Rule(..)
+  , ruleSz
   
-  , (<==>), (==>), (|>)
+  , (<==>), (==>), (<\=>), (|>)
   , MkSolverConstraint(..)
   , MkSolverGuard(..)
   , MkSolverPrio(..)
@@ -72,6 +73,11 @@ data Rule cnstr guard prio
       }
   deriving (Typeable)
 
+-- | Total nr of cnstrs in rule
+ruleSz :: Rule c g p -> Int
+ruleSz = length . ruleHead
+{-# INLINE ruleSz #-}
+
 emptyCHRGuard :: [a]
 emptyCHRGuard = []
 
@@ -83,7 +89,7 @@ instance (PP c, PP g, PP p) => PP (Rule c g p) where
     = case chr of
         (Rule h@(_:_)  sz g b p) | sz == 0        -> ppChr ([ppL h, pp  "==>"] ++ ppGB g b)
         (Rule h@(_:_)  sz g b p) | sz == length h -> ppChr ([ppL h, pp "<==>"] ++ ppGB g b)
-        (Rule h@(_:_)  sz g b p)                  -> ppChr ([ppL (take sz h), pp "|", ppL (drop sz h), pp "<==>"] ++ ppGB g b)
+        (Rule h@(_:_)  sz g b p)                  -> ppChr ([ppL (take sz h), pp "|", ppL (drop sz h), pp "<\\=>"] ++ ppGB g b)
         (Rule []       _  g b p)                  -> ppChr (ppGB g b)
     where ppGB g@(_:_) b@(_:_) = [ppL g, "|" >#< ppL b]
           ppGB g@(_:_) []      = [ppL g >#< "|"]
@@ -94,6 +100,7 @@ instance (PP c, PP g, PP p) => PP (Rule c g p) where
           ppChr l = vlist l -- ppCurlysBlock
 
 type instance TTKey (Rule cnstr guard prio) = TTKey cnstr
+type instance TreeTrie.TrTrKey (Rule cnstr guard prio) = TTKey cnstr
 
 instance (TTKeyable cnstr) => TTKeyable (Rule cnstr guard prio) where
   toTTKey' o chr = toTTKey' o $ head $ ruleHead chr
@@ -189,12 +196,17 @@ instance MkRule (CHRRule e s) where
   guardRule g (CHRRule r) = CHRRule $ guardRule g r
   prioritizeRule p (CHRRule r) = CHRRule $ prioritizeRule p r
 
-infix   1 <==>, ==>
+infix   1 <==>, ==>, <\=>
 infixr  0 |>
 
-(<==>), (==>) :: forall r c1 c2 . (MkRule r, MkSolverConstraint (SolverConstraint r) c1, MkSolverConstraint (SolverConstraint r) c2) => [c1] -> [c2] -> r
+(<==>), (==>) :: forall r c1 c2 . (MkRule r, MkSolverConstraint (SolverConstraint r) c1, MkSolverConstraint (SolverConstraint r) c2)
+  => [c1] -> [c2] -> r
 hs <==>  bs = mkRule (map toSolverConstraint hs) (length hs) [] (map toSolverConstraint bs) Nothing
 hs  ==>  bs = mkRule (map toSolverConstraint hs) 0 [] (map toSolverConstraint bs) Nothing
+
+(<\=>) :: forall r c1 c2 . (MkRule r, MkSolverConstraint (SolverConstraint r) c1, MkSolverConstraint (SolverConstraint r) c2)
+  => ([c1],[c1]) -> [c2] -> r
+(hsprop,hssimp) <\=>  bs = mkRule (map toSolverConstraint $ hssimp ++ hsprop) (length hssimp) [] (map toSolverConstraint bs) Nothing
 
 (|>) :: (MkRule r, MkSolverGuard (SolverGuard r) g') => r -> [g'] -> r
 r |> g = guardRule (map toSolverGuard g) r

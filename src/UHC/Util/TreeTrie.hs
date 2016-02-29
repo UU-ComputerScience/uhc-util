@@ -86,7 +86,7 @@ import           UHC.Util.Pretty hiding (empty)
 import qualified UHC.Util.Pretty as PP
 import           Control.Monad
 import           Data.Typeable(Typeable)
-import           Data.Generics(Data)
+-- import           Data.Generics(Data)
 import           UHC.Util.Serialize
 
 -------------------------------------------------------------------------------------------
@@ -120,12 +120,12 @@ deriving instance Typeable  TreeTrieMp1Key
 deriving instance Typeable1 TreeTrie1Key
 deriving instance Typeable1 TreeTrieMp1Key
 #endif
-deriving instance Data x => Data (TreeTrie1Key x) 
-deriving instance Data x => Data (TreeTrieMp1Key x) 
+-- deriving instance Data x => Data (TreeTrie1Key x) 
+-- deriving instance Data x => Data (TreeTrieMp1Key x) 
 
 instance Show k => Show (TreeTrie1Key k) where
   show  TT1K_Any    = "*"
-  show (TT1K_One k) = "1:" ++ show k
+  show (TT1K_One k) = "(1:" ++ show k ++ ")"
 
 instance Show k => Show (TreeTrieMp1Key k) where
   show (TTM1K_Any )  = "**" -- ++ show i
@@ -133,7 +133,7 @@ instance Show k => Show (TreeTrieMp1Key k) where
 
 instance PP k => PP (TreeTrie1Key k) where
   pp  TT1K_Any    = pp "*"
-  pp (TT1K_One k) = "1:" >|< k
+  pp (TT1K_One k) = ppParens $ "1:" >|< k
 
 instance PP k => PP (TreeTrieMp1Key k) where
   pp = ppTreeTrieMp1Key
@@ -242,7 +242,7 @@ data TreeTrie k v
       { ttrieMbVal       :: Maybe v                                                 -- value
       , ttrieSubs        :: TreeTrieChildren k v                                    -- children
       }
- deriving (Typeable, Data)
+ deriving (Typeable)
 
 emptyTreeTrie, empty :: TreeTrie k v
 emptyTreeTrie = TreeTrie Nothing Map.empty
@@ -652,14 +652,14 @@ test3
       ]
 
 l1t3 = lookupPartialByKey' (,) TTL_WildInTrie
-		[[TTM1K [TT1K_One "1:S:Prf"]]
-		,[TTM1K [TT1K_One "1:S:occ"]]
-		,[TTM1K [TT1K_One "1:S:[0,0,0,0,0,0]", TT1K_One "1:H:Language.UHC.JS.ECMA.Types.ToJS"]]
-		,[TTM1K [],TTM1K [TT1K_One "1:H:UHC.Base.Maybe", TT1K_One "1:H:Language.UHC.JS.ECMA.Types.JSAny"]]
-		,[TTM1K [TT1K_One "1:H:Language.UHC.JS.ECMA.Types.JSAny"], TTM1K [TT1K_One "1:U:12_398_1_0"]]
-		,[TTM1K [TT1K_One "1:H:Language.UHC.JS.ECMA.Types.JSObject_"], TTM1K []]
-		,[TTM1K [TT1K_One "1:H:Language.UHC.JS.W3C.HTML5.NodePtr"]]
-		]
+        [[TTM1K [TT1K_One "1:S:Prf"]]
+        ,[TTM1K [TT1K_One "1:S:occ"]]
+        ,[TTM1K [TT1K_One "1:S:[0,0,0,0,0,0]", TT1K_One "1:H:Language.UHC.JS.ECMA.Types.ToJS"]]
+        ,[TTM1K [],TTM1K [TT1K_One "1:H:UHC.Base.Maybe", TT1K_One "1:H:Language.UHC.JS.ECMA.Types.JSAny"]]
+        ,[TTM1K [TT1K_One "1:H:Language.UHC.JS.ECMA.Types.JSAny"], TTM1K [TT1K_One "1:U:12_398_1_0"]]
+        ,[TTM1K [TT1K_One "1:H:Language.UHC.JS.ECMA.Types.JSObject_"], TTM1K []]
+        ,[TTM1K [TT1K_One "1:H:Language.UHC.JS.W3C.HTML5.NodePtr"]]
+        ]
 
           
 

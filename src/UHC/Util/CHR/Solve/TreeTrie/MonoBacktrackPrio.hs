@@ -1,4 +1,4 @@
-{-# LANGUAGE ScopedTypeVariables, StandaloneDeriving, UndecidableInstances, NoMonomorphismRestriction, MultiParamTypeClasses #-}
+{-# LANGUAGE ScopedTypeVariables, StandaloneDeriving, UndecidableInstances, NoMonomorphismRestriction, MultiParamTypeClasses, TemplateHaskell, FunctionalDependencies #-}
 
 -------------------------------------------------------------------------------------------
 --- CHR solver
@@ -15,8 +15,16 @@ Solver is:
 -}
 
 module UHC.Util.CHR.Solve.TreeTrie.MonoBacktrackPrio
-  (
-  )
+  ( CHRGlobState(..)
+  , CHRBackState(..)
+  
+  , emptyCHRStore
+  
+  , CHRMonoBacktrackPrioT
+  , MonoBacktrackPrio
+  , runCHRMonoBacktrackPrioT
+  
+  , addRule
 {-
   ( CHRStore
   , emptyCHRStore
@@ -41,13 +49,16 @@ module UHC.Util.CHR.Solve.TreeTrie.MonoBacktrackPrio
   , solveStateResetDone
   , chrSolveStateDoneConstraints
   , chrSolveStateTrace
+-}
   
   , IsCHRSolvable(..)
+{-
   , chrSolve'
   , chrSolve''
   , chrSolveM
   )
 -}
+  )
   where
 
 import           UHC.Util.CHR.Base
@@ -60,6 +71,7 @@ import           UHC.Util.AssocL
 import           UHC.Util.TreeTrie as TreeTrie
 import qualified Data.Set as Set
 import qualified Data.Map as Map
+import qualified Data.IntMap as IntMap
 import           Data.List as List
 import           Data.Typeable
 -- import           Data.Data
@@ -69,39 +81,34 @@ import           UHC.Util.Serialize
 import           Control.Monad
 import           Control.Monad.State.Strict
 import           UHC.Util.Utils
+import           UHC.Util.Lens
+import           Control.Monad.LogicState
 
 -------------------------------------------------------------------------------------------
---- The CHR monad, state, etc
+--- A CHR as stored
 -------------------------------------------------------------------------------------------
 
--- | Global state
-data CHRGlobState cnstr guard prio
-  = CHRGlobState
-      { chrgstStore                 :: !(CHRStore cnstr guard prio)      -- ^ Actual database of rules, to be searched
-      , chrgstNextFreeRuleInx       :: !Int                         -- ^ Next free rule identification, used by solving to identify whether a rule has been used for a constraint.
-                                                                    --   The numbering is applied to constraints inside a rule which can be matched.
-      }
-  deriving (Typeable)
+-- | Index into table of CHR's, allowing for indirection required for sharing of rules by search for different constraints in the head
+type CHRInx = Int
 
--------------------------------------------------------------------------------------------
---- CHR store, with fast search
--------------------------------------------------------------------------------------------
+-- | Index into rule and head constraint
+data CHRConstraintInx = CHRConstraintInx {-# UNPACK #-} !CHRInx !Int
 
 -- | A CHR as stored in a CHRStore, requiring additional info for efficiency
 data StoredCHR c g p
   = StoredCHR
-      { storedChr       :: !(Rule c g p)      -- the Rule
-      , storedKeyedInx  :: !Int                             -- index of constraint for which is keyed into store
-      , storedKeys      :: ![Maybe (CHRKey c)]                  -- keys of all constraints; at storedKeyedInx: Nothing
-      , storedIdent     :: !(UsedByKey c)                       -- the identification of a CHR, used for propagation rules (see remark at begin)
+      { _storedChr       :: !(Rule c g p)                          -- ^ the Rule
+      , _storedCHRInx    :: !CHRInx                                -- ^ index of constraint for which is keyed into store
+      -- , storedKeys      :: ![Maybe (CHRKey c)]                  -- ^ keys of all constraints; at storedCHRInx: Nothing
+      -- , storedIdent     :: !(UsedByKey c)                       -- ^ the identification of a CHR, used for propagation rules (see remark at begin)
       }
   deriving (Typeable)
 
-{-
-deriving instance (Data (TTKey c), Data c, Data g) => Data (StoredCHR c g p)
+mkLabel ''StoredCHR
 
 type instance TTKey (StoredCHR c g p) = TTKey c
 
+{-
 instance (TTKeyable (Rule c g p)) => TTKeyable (StoredCHR c g p) where
   toTTKey' o schr = toTTKey' o $ storedChr schr
 
@@ -112,20 +119,82 @@ storedSimpSz = ruleSimpSz . storedChr
 -}
 
 -- | A CHR store is a trie structure
-newtype CHRStore cnstr guard prio
+data CHRStore cnstr guard prio
   = CHRStore
-      { chrstoreTrie    :: CHRTrie [StoredCHR cnstr guard prio]
+      { _chrstoreTrie    :: CHRTrie' cnstr [CHRConstraintInx]                       -- ^ map from the search key of a rule to the index into tabl
+      , _chrstoreTable   :: IntMap.IntMap (StoredCHR cnstr guard prio)      -- ^ (possibly multiple) rules for a key
       }
   deriving (Typeable)
 
-{-
--- deriving instance (Data (TTKey cnstr), Ord (TTKey cnstr), Data cnstr, Data guard) => Data (CHRStore cnstr guard prio)
-
-mkCHRStore trie = CHRStore trie
+mkLabel ''CHRStore
 
 emptyCHRStore :: CHRStore cnstr guard prio
-emptyCHRStore = mkCHRStore emptyCHRTrie
+emptyCHRStore = CHRStore TreeTrie.empty IntMap.empty
 
+-------------------------------------------------------------------------------------------
+--- Index into CHR and head constraint
+-------------------------------------------------------------------------------------------
+
+
+-------------------------------------------------------------------------------------------
+--- The CHR monad, state, etc. Used to interact with store and solver
+-------------------------------------------------------------------------------------------
+
+-- | Global state
+data CHRGlobState cnstr guard prio
+  = CHRGlobState
+      { _chrgstStore                 :: !(CHRStore cnstr guard prio)                     -- ^ Actual database of rules, to be searched
+      , _chrgstNextFreeRuleInx       :: !CHRInx                                          -- ^ Next free rule identification, used by solving to identify whether a rule has been used for a constraint.
+                                                                                         --   The numbering is applied to constraints inside a rule which can be matched.
+      , _chrgstNextFreshVarId        :: !(ExtrValVarKey (Rule cnstr guard prio))         -- ^ The next free id used for a fresh variable
+      }
+  deriving (Typeable)
+
+mkLabel ''CHRGlobState
+
+{-
+emptyCHRGlobState :: ExtrValVarKey (Rule c g p) -> CHRGlobState c g p
+emptyCHRGlobState i = CHRGlobState emptyCHRStore 0 i
+-}
+
+-- | Backtrackable state
+data CHRBackState subst
+  = CHRBackState
+      { _chrbstSubst                 :: !subst                           -- ^ subst for variable bindings
+      }
+  deriving (Typeable)
+
+mkLabel ''CHRBackState
+
+{-
+emptyCHRBackState :: CHRBackState
+emptyCHRBackState = CHRBackState
+-}
+
+-- | Monad for CHR, taking from 'LogicStateT' the state and backtracking behavior
+type CHRMonoBacktrackPrioT cnstr guard prio env subst m a = LogicStateT (CHRGlobState cnstr guard prio) (CHRBackState subst) m a
+
+-- | All required behavior, as class alias
+class ( IsCHRSolvable env cnstr guard prio subst
+      , Monad m
+      , Ord (TTKey cnstr)
+      , TTKeyable cnstr
+      -- , TTKey cnstr ~ TrTrKey cnstr
+      ) => MonoBacktrackPrio cnstr guard prio env subst m
+         | cnstr guard prio subst -> env
+
+runCHRMonoBacktrackPrioT :: Monad m => CHRGlobState cnstr guard prio -> CHRBackState subst -> CHRMonoBacktrackPrioT cnstr guard prio env subst m a -> m [a]
+runCHRMonoBacktrackPrioT gs bs m = observeAllT (gs,bs) m
+
+
+-------------------------------------------------------------------------------------------
+--- CHR store, API for adding rules
+-------------------------------------------------------------------------------------------
+
+
+-- deriving instance (Data (TTKey cnstr), Ord (TTKey cnstr), Data cnstr, Data guard) => Data (CHRStore cnstr guard prio)
+
+{-
 -- | Combine lists of stored CHRs by concat, adapting their identification nr to be unique
 cmbStoredCHRs :: [StoredCHR c g p] -> [StoredCHR c g p] -> [StoredCHR c g p]
 cmbStoredCHRs s1 s2
@@ -140,7 +209,7 @@ ppStoredCHR c@(StoredCHR {storedIdent=(idKey,idSeqNr)})
   = storedChr c
     >-< indent 2
           (ppParensCommas
-            [ pp $ storedKeyedInx c
+            [ pp $ storedCHRInx c
             , pp $ storedSimpSz c
             , "keys" >#< (ppBracketsCommas $ map (maybe (pp "?") ppTreeTrieKey) $ storedKeys c)
             , "ident" >#< ppParensCommas [ppTreeTrieKey idKey,pp idSeqNr]
@@ -163,6 +232,23 @@ chrStoreFromElems chrs
         , let (ks1,(_:ks2)) = splitAt i ks
               ks' = map Just ks1 ++ [Nothing] ++ map Just ks2
         ]
+-}
+
+addRule :: MonoBacktrackPrio c g p e s m => Rule c g p -> CHRMonoBacktrackPrioT c g p e s m ()
+addRule chr = do
+    i <- modifyAndGet (fstl ^* chrgstNextFreeRuleInx) $ \i -> (i, i + 1)
+{-
+    focus (fstl ^* chrgstStore) $ do
+      chrstoreTable =$: IntMap.insert i (StoredCHR chr i)
+      chrstoreTrie =$: \t ->
+        foldr (TreeTrie.unionWith (++)) t [ TreeTrie.singleton (chrToKey c) [CHRConstraintInx i j] | (c,j) <- zip (ruleHead chr) [0..] ]
+-}
+    fstl ^* chrgstStore ^* chrstoreTable =$: IntMap.insert i (StoredCHR chr i)
+    fstl ^* chrgstStore ^* chrstoreTrie =$: \t ->
+      foldr (TreeTrie.unionWith (++)) t [ TreeTrie.singleton (chrToKey c) [CHRConstraintInx i j] | (c,j) <- zip (ruleHead chr) [0..] ]
+    return ()
+
+{-
 
 chrStoreSingletonElem :: (TTKeyable c, Ord (TTKey c), TTKey c ~ TrTrKey c) => Rule c g p -> CHRStore c g p
 chrStoreSingletonElem x = chrStoreFromElems [x]
@@ -181,7 +267,7 @@ chrStoreToList :: (Ord (TTKey c)) => CHRStore c g p -> [(CHRKey c,[Rule c g p])]
 chrStoreToList cs
   = [ (k,chrs)
     | (k,e) <- chrTrieToListByKey $ chrstoreTrie cs
-    , let chrs = [chr | (StoredCHR {storedChr = chr, storedKeyedInx = 0}) <- e]
+    , let chrs = [chr | (StoredCHR {storedChr = chr, storedCHRInx = 0}) <- e]
     , not $ Prelude.null chrs
     ]
 
@@ -227,7 +313,6 @@ type SolveState c g p s = SolveState' c (Rule c g p) (StoredCHR c g p) s
 --- Solver
 -------------------------------------------------------------------------------------------
 
-{-
 -- | (Class alias) API for solving requirements
 class ( IsCHRConstraint env c s
       , IsCHRGuard env g s
@@ -236,6 +321,7 @@ class ( IsCHRConstraint env c s
       , CHREmptySubstitution s
       , TrTrKey c ~ TTKey c
       ) => IsCHRSolvable env c g p s
+{-
 -}
 
 {-
@@ -249,7 +335,7 @@ chrSolve
      -> [c]
 chrSolve env chrStore cnstrs
   = work ++ done
-  where (work, done, _ :: SolveTrace c g p s) = chrSolve' env chrStore cnstrs
+  where (work, done, _ :: SolveTrace c g p s) = chrSolve' [] env chrStore cnstrs
 -}
 
 {-
@@ -258,37 +344,40 @@ chrSolve'
   :: forall env c g p s .
      ( IsCHRSolvable env c g p s
      )
-     => env
+     => [CHRTrOpt]
+     -> env
      -> CHRStore c g p
      -> [c]
      -> ([c],[c],SolveTrace c g p s)
-chrSolve' env chrStore cnstrs
+chrSolve' tropts env chrStore cnstrs
   = (wlToList (stWorkList finalState), stDoneCnstrs finalState, stTrace finalState)
-  where finalState = chrSolve'' env chrStore cnstrs emptySolveState
+  where finalState = chrSolve'' tropts env chrStore cnstrs emptySolveState
 
 -- | Solve
 chrSolve''
   :: forall env c g p s .
      ( IsCHRSolvable env c g p s
      )
-     => env
+     => [CHRTrOpt]
+     -> env
      -> CHRStore c g p
      -> [c]
      -> SolveState c g p s
      -> SolveState c g p s
-chrSolve'' env chrStore cnstrs prevState
-  = flip execState prevState $ chrSolveM env chrStore cnstrs
+chrSolve'' tropts env chrStore cnstrs prevState
+  = flip execState prevState $ chrSolveM tropts env chrStore cnstrs
 
 -- | Solve
 chrSolveM
   :: forall env c g p s .
      ( IsCHRSolvable env c g p s
      )
-     => env
+     => [CHRTrOpt]
+     -> env
      -> CHRStore c g p
      -> [c]
      -> State (SolveState c g p s) ()
-chrSolveM env chrStore cnstrs = do
+chrSolveM tropts env chrStore cnstrs = do
     modify initState
     iter
 {-
