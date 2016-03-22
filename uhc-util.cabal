@@ -78,6 +78,7 @@ library
     UHC.Util.VarLookup,
     UHC.Util.VarMp
   Other-Modules:
+    UHC.Util.CHR.Solve.TreeTrie.Internal.Shared,
     UHC.Util.CHR.Solve.TreeTrie.Internal,
     UHC.Util.CHR.Solve.TreeTrie.Examples
   Ghc-Options:		

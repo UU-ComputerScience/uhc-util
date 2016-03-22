@@ -5,9 +5,7 @@
 -------------------------------------------------------------------------------------------
 
 module UHC.Util.CHR.Solve.TreeTrie.Internal
-  ( CHRTrie'
-  , CHRTrie
-  , CHRTrieKey
+  ( CHRTrie
   , CHRLookupHow
   
   , chrLookupHowExact
@@ -16,8 +14,6 @@ module UHC.Util.CHR.Solve.TreeTrie.Internal
   
   , emptyCHRTrie
   
-  , chrToKey
-  , chrToWorkKey
   , chrTrieSingleton
   , chrTrieDeleteListByKey
   , chrTrieElems
@@ -28,19 +24,12 @@ module UHC.Util.CHR.Solve.TreeTrie.Internal
   , chrTrieUnion
   , chrTrieUnionWith
 
-  , CHRKey
   , UsedByKey
   , ppUsedByKey
   
-  , WorkTime
-  , initWorkTime
-  
-  , WorkKey
   , WorkUsedInMap
   , WorkTrie
 
-  , Work(..)
-  
   , WorkList(..)
   , emptyWorkList
   , wlUsedInUnion
@@ -62,10 +51,6 @@ module UHC.Util.CHR.Solve.TreeTrie.Internal
   , lqLookupC
   , ppLastQuery
   
-  , SolveStep'(..)
-  , SolveTrace'
-  , ppSolveTrace
-  
   , SolveState'(..)
   , emptySolveState
   , stDoneCnstrs
@@ -76,6 +61,7 @@ module UHC.Util.CHR.Solve.TreeTrie.Internal
   , slvCombine
   
   , module UHC.Util.CHR.Rule
+  , module UHC.Util.CHR.Solve.TreeTrie.Internal.Shared
   )
   where
 
@@ -83,6 +69,7 @@ import           UHC.Util.CHR.Base
 import           UHC.Util.CHR.Key
 import           UHC.Util.CHR.Rule
 -- import           UHC.Util.CHR.Constraint.UHC
+import           UHC.Util.CHR.Solve.TreeTrie.Internal.Shared
 import           UHC.Util.Substitutable
 import           UHC.Util.VarLookup
 import           UHC.Util.VarMp
@@ -104,9 +91,7 @@ import           UHC.Util.Utils
 --- Choice of Trie structure
 -------------------------------------------------------------------------------------------
 
-type CHRTrie' k v = TreeTrie.TreeTrie (TTKey k) v
 type CHRTrie v = CHRTrie' v v
-type CHRTrieKey v = TreeTrie.TreeTrieKey (TTKey v)
 type CHRLookupHow = TreeTrieLookup
 
 chrLookupHowExact      = TTL_Exact
@@ -155,20 +140,10 @@ chrTrieLookup :: (Ord (TTKey v), PP (TTKey v)) => CHRLookupHow -> CHRTrieKey v -
 chrTrieLookup = TreeTrie.lookupPartialByKey
 {-# INLINE chrTrieLookup #-}
 
-chrToKey :: (TTKeyable x, TrTrKey x ~ TTKey x) => x -> CHRTrieKey x
-chrToKey = ttkFixate . toTTKey
-{-# INLINE chrToKey #-}
-
-chrToWorkKey :: (TTKeyable x) => x -> CHRTrieKey x
-chrToWorkKey = ttkFixate . toTTKey' (defaultTTKeyableOpts {ttkoptsVarsAsWild = False})
-{-# INLINE chrToWorkKey #-}
-
 -------------------------------------------------------------------------------------------
 --- CHR store, with fast search
 -------------------------------------------------------------------------------------------
 
--- type CHRKey = CHRTrieKey
-type CHRKey v = CHRTrieKey v
 type UsedByKey v = (CHRKey v,Int)
 
 -- ppUsedByKey :: UsedByKey v -> PP_Doc
@@ -284,33 +259,12 @@ ppCHRStore' = ppCurlysCommasBlock . map (\(k,v) -> ppTreeTrieKey k >-< indent 2 
 -}
 
 -------------------------------------------------------------------------------------------
---- WorkTime, the time/history counter
--------------------------------------------------------------------------------------------
-
-type WorkTime = Int
-
-initWorkTime :: WorkTime
-initWorkTime = 0
-
--------------------------------------------------------------------------------------------
 --- Solver worklist
 -------------------------------------------------------------------------------------------
 
 
-type WorkKey       v = CHRKey v
 type WorkUsedInMap v = Map.Map (Set.Set (CHRKey v)) (Set.Set (UsedByKey v))
 type WorkTrie      c = CHRTrie (Work c)
-
--- | A chunk of work to do when solving, a constraint + sequence nr
-data Work c
-  = Work
-      { workKey     :: WorkKey c
-      , workCnstr   :: !c            -- the constraint to be reduced
-      , workTime    :: WorkTime                     -- the history count at which the work was added
-      -- , workUsedIn  :: Set.Set (CHRKey c)              -- marked with the propagation rules already applied to it
-      }
-
-type instance TTKey (Work c) = TTKey c
 
 -- | The work to be done (wlQueue), also represented as a trie (wlTrie) because efficient check on already worked on is needed.
 --   A done set (wlDoneSet) remembers which CHRs (itself a list of constraints) have been solved.
@@ -329,12 +283,6 @@ emptyWorkList = WorkList emptyCHRTrie Set.empty [] [] Map.empty
 -- wlUsedInUnion :: (Ord k, k ~ TTKey c) => WorkUsedInMap c -> WorkUsedInMap c -> WorkUsedInMap c
 wlUsedInUnion = Map.unionWith Set.union
 {-# INLINE wlUsedInUnion #-}
-
-instance Show (Work c) where
-  show _ = "SolveWork"
-
-instance (PP c) => PP (Work c) where
-  pp w = pp $ workCnstr w
 
 
 
@@ -412,38 +360,6 @@ lqLookupC = Map.findWithDefault Map.empty
 -- lqLookupW :: WorkKey v -> LastQueryW v -> WorkTime
 lqLookupW = Map.findWithDefault initWorkTime
 {-# INLINE lqLookupW #-}
-
--------------------------------------------------------------------------------------------
---- Solver trace
--------------------------------------------------------------------------------------------
-
--- | A trace step
-data SolveStep' c r s
-  = SolveStep
-      { stepChr         :: r
-      , stepSubst       :: s
-      , stepNewTodo     :: [c]
-      , stepNewDone     :: [c]
-      }
-  | SolveStats
-      { stepStats       :: Map.Map String PP_Doc
-      }
-  | SolveDbg
-      { stepPP          :: PP_Doc
-      }
-
-type SolveTrace' c r s = [SolveStep' c r s]
-
-instance Show (SolveStep' c r s) where
-  show _ = "SolveStep"
-
-instance (PP r, PP c) => {- (PP c, PP g) => -} PP (SolveStep' c r s) where
-  pp (SolveStep   step _ todo done) = "STEP" >#< (step >-< "new todo:" >#< ppBracketsCommas todo >-< "new done:" >#< ppBracketsCommas done)
-  pp (SolveStats  stats           ) = "STATS"  >#< (ppAssocLV (Map.toList stats))
-  pp (SolveDbg    p               ) = "DBG"  >#< p
-
-ppSolveTrace :: (PP r, PP c) => {- (PP s, PP c, PP g) => -} SolveTrace' c r s -> PP_Doc
-ppSolveTrace tr = ppBracketsCommasBlock [ pp st | st <- tr ]
 
 -------------------------------------------------------------------------------------------
 --- Solve state

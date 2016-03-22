@@ -89,10 +89,10 @@ instance (PP c, PP g, PP p) => PP (Rule c g p) where
     = case chr of
         (Rule h@(_:_)  sz g b p) | sz == 0        -> ppChr ([ppL h, pp  "==>"] ++ ppGB g b)
         (Rule h@(_:_)  sz g b p) | sz == length h -> ppChr ([ppL h, pp "<==>"] ++ ppGB g b)
-        (Rule h@(_:_)  sz g b p)                  -> ppChr ([ppL (take sz h), pp "|", ppL (drop sz h), pp "<\\=>"] ++ ppGB g b)
+        (Rule h@(_:_)  sz g b p)                  -> ppChr ([ppL (take sz h), pp "\\", ppL (drop sz h), pp "<\\=>"] ++ ppGB g b)
         (Rule []       _  g b p)                  -> ppChr (ppGB g b)
-    where ppGB g@(_:_) b@(_:_) = [ppL g, "|" >#< ppL b]
-          ppGB g@(_:_) []      = [ppL g >#< "|"]
+    where ppGB g@(_:_) b@(_:_) = [ppL b, "|" >#< ppL g]
+          ppGB g@(_:_) []      = ["|" >#< ppL g]
           ppGB []      b@(_:_) = [ppL b]
           ppGB []      []      = []
           ppL [x] = pp x

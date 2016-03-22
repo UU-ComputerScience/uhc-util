@@ -16,6 +16,7 @@ import           UHC.Util.CHR.Rule
 import           Data.Typeable
 import qualified Data.Map as Map
 import qualified Data.Set as Set
+import           Control.Monad.IO.Class
 import qualified UHC.Util.CHR.Solve.TreeTrie.Mono as M
 import qualified UHC.Util.CHR.Solve.TreeTrie.MonoBacktrackPrio as MBP
 
@@ -70,7 +71,7 @@ data G
   deriving (Show, Typeable, Generic)
 
 instance PP G where
-  pp (G_Eq x y) = "|eq" >#< x >#< y
+  pp (G_Eq x y) = "eq_grd" >#< x >#< y
 
 instance Serialize G
 
@@ -109,6 +110,9 @@ instance TTKeyable C where
      transitivity @ X leq Y , Y leq Z ==> X leq Z.
 -}
 
+type E = ()
+type P = ()
+
 x = Tm_Var 0
 y = Tm_Var 1
 z = Tm_Var 2
@@ -117,7 +121,7 @@ a = Tm_Str "A"
 b = Tm_Str "B"
 c = Tm_Str "C"
 
-str :: M.CHRStore C G ()
+str :: M.CHRStore C G P
 str = M.chrStoreFromElems
   [ [x `leq` y] <==> [x `eq` y] |> [x `geq` y]
   , [x `leq` y, y `leq` x] <==> [x `eq` y]
@@ -176,11 +180,11 @@ instance IsConstraint C where
   cnstrRequiresSolve (C_Eq _ _) = False
   cnstrRequiresSolve _      = True
 
-instance IsCHRGuard () G S where
+instance IsCHRGuard E G S where
 
-instance IsCHRConstraint () C S where
+instance IsCHRConstraint E C S where
 
-instance CHRCheckable () G S where
+instance CHRCheckable E G S where
   chrCheck _ s g =
     case s `varUpd` g of
       G_Eq (Tm_Str s1) (Tm_Str s2) | s1 == s2 -> return chrEmptySubst
@@ -189,14 +193,14 @@ instance CHRCheckable () G S where
       G_Eq (t1       ) (Tm_Var v2)            -> return $ Map.singleton v2 t1
       _                                       -> Nothing
 
-instance CHRMatchable () Tm S where
+instance CHRMatchable E Tm S where
   chrMatchTo _ s t1 t2 = case (s `varUpd` t1, s `varUpd` t2) of
       (Tm_Str s1, Tm_Str s2) | s1 == s2 -> return chrEmptySubst
       (Tm_Var v1, Tm_Var v2) | v1 == v2 -> return chrEmptySubst
       (Tm_Var v1, t2       )            -> return $ Map.singleton v1 t2
       _                                 -> Nothing
 
-instance CHRMatchable () C S where
+instance CHRMatchable E C S where
   chrMatchTo e s c1 c2 = case (s `varUpd` c1, s `varUpd` c2) of
       (C_Leq x1 y1, C_Leq x2 y2) -> m x1 y1 x2 y2
       (C_Eq x1 y1, C_Eq x2 y2) -> m x1 y1 x2 y2
@@ -209,7 +213,7 @@ instance CHRMatchable () C S where
         let s'' = s2 |+> s'
         return s''
 
-instance M.IsCHRSolvable () C G () S where
+instance M.IsCHRSolvable E C G P S where
 
 cSolve@(cUnresolved, cResidue, cTrace) =
   M.chrSolve' [CHRTrOpt_Lookup] () str [a `leq` b, b `leq` c, c `leq` a]
@@ -222,11 +226,11 @@ mainMono = do
 --------------------------------------------------------
 -- leq example, backtrack prio specific
 
-instance MBP.IsCHRSolvable () C G () S where
+instance MBP.IsCHRSolvable E C G P S where
 
-instance MBP.MonoBacktrackPrio C G () () S IO
+instance MBP.MonoBacktrackPrio C G P S E IO
 
-mbp :: MBP.CHRMonoBacktrackPrioT C G () () S IO ()
+mbp :: MBP.CHRMonoBacktrackPrioT C G P S E IO ()
 mbp = do
     mapM_ MBP.addRule
       [ [x `leq` y] <==> [x `eq` y] |> [x `geq` y]
@@ -234,5 +238,12 @@ mbp = do
       , ([x `leq` y], [x `leq` y]) <\=> none
       , [x `leq` y, y `leq` z] ==> [x `leq` z]
       ]
+    mapM_ MBP.addConstraintAsWork
+      [ a `leq` b
+      , b `leq` c
+      , c `leq` a
+      ]
+    MBP.chrSolve
+    MBP.getSolveTrace >>= (liftIO . putPPLn)
 
-mainMBP = MBP.runCHRMonoBacktrackPrioT (MBP.CHRGlobState MBP.emptyCHRStore 0 0) (MBP.CHRBackState Map.empty) mbp
+mainMBP = MBP.runCHRMonoBacktrackPrioT (MBP.emptyCHRGlobState) (MBP.emptyCHRBackState) mbp
