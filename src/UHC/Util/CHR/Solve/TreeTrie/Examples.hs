@@ -13,6 +13,7 @@ import           UHC.Util.Serialize
 import           UHC.Util.CHR.Key
 import           UHC.Util.CHR.Base
 import           UHC.Util.CHR.Rule
+import           UHC.Util.AssocL
 import           Data.Typeable
 import qualified Data.Map as Map
 import qualified Data.Set as Set
@@ -111,7 +112,7 @@ instance TTKeyable C where
 -}
 
 type E = ()
-type P = ()
+type P = Tm
 
 x = Tm_Var 0
 y = Tm_Var 1
@@ -134,6 +135,9 @@ sLkup :: Var -> S -> Maybe Tm
 sLkup v s = Map.lookup v s >>= \t -> case t of
   Tm_Var v -> sLkup v s
   t        -> Just t
+
+instance PP S where
+  pp = ppAssocL . Map.toList
 
 type instance ExtrValVarKey G = Var
 type instance ExtrValVarKey C = Var
@@ -184,6 +188,8 @@ instance IsCHRGuard E G S where
 
 instance IsCHRConstraint E C S where
 
+instance IsCHRPrio E P S where
+
 instance CHRCheckable E G S where
   chrCheck _ s g =
     case s `varUpd` g of
@@ -202,16 +208,21 @@ instance CHRMatchable E Tm S where
 
 instance CHRMatchable E C S where
   chrMatchTo e s c1 c2 = case (s `varUpd` c1, s `varUpd` c2) of
-      (C_Leq x1 y1, C_Leq x2 y2) -> m x1 y1 x2 y2
-      (C_Eq x1 y1, C_Eq x2 y2) -> m x1 y1 x2 y2
+      (C_Leq x1 y1, C_Leq x2 y2) -> m chrEmptySubst x1 y1 x2 y2
+      (C_Eq x1 y1, C_Eq x2 y2) -> m chrEmptySubst x1 y1 x2 y2
       _ -> Nothing
     where
-      m x1 y1 x2 y2 = do
+      m s x1 y1 x2 y2 = do
         s1 <- chrMatchTo e s x1 x2
         let s' = s1 |+> s
         s2 <- chrMatchTo e s' y1 y2
         let s'' = s2 |+> s'
         return s''
+
+instance CHRPrioEvaluatable E Tm S where
+  chrPrioEval e s p = case s `varUpd` p of
+    Tm_Str s -> sum $ map fromEnum s
+    _ -> minBound
 
 instance M.IsCHRSolvable E C G P S where
 
@@ -236,14 +247,14 @@ mbp = do
       [ [x `leq` y] <==> [x `eq` y] |> [x `geq` y]
       , [x `leq` y, y `leq` x] <==> [x `eq` y]
       , ([x `leq` y], [x `leq` y]) <\=> none
-      , [x `leq` y, y `leq` z] ==> [x `leq` z]
+      , [x `leq` y, y `leq` z] ==> [x `leq` z] |! x
       ]
     mapM_ MBP.addConstraintAsWork
       [ a `leq` b
       , b `leq` c
       , c `leq` a
       ]
-    MBP.chrSolve
+    MBP.chrSolve ()
     MBP.getSolveTrace >>= (liftIO . putPPLn)
 
 mainMBP = MBP.runCHRMonoBacktrackPrioT (MBP.emptyCHRGlobState) (MBP.emptyCHRBackState) mbp

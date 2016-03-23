@@ -16,10 +16,12 @@ module UHC.Util.CHR.Rule
   , Rule(..)
   , ruleSz
   
-  , (<==>), (==>), (<\=>), (|>)
+  , (<==>), (==>), (<\=>), (|>), (|!)
   , MkSolverConstraint(..)
   , MkSolverGuard(..)
   , MkSolverPrio(..)
+  
+  , MkRule(prioritizeRule)
   )
   where
 
@@ -198,6 +200,7 @@ instance MkRule (CHRRule e s) where
 
 infix   1 <==>, ==>, <\=>
 infixr  0 |>
+infixr  0 |!
 
 (<==>), (==>) :: forall r c1 c2 . (MkRule r, MkSolverConstraint (SolverConstraint r) c1, MkSolverConstraint (SolverConstraint r) c2)
   => [c1] -> [c2] -> r
@@ -210,6 +213,9 @@ hs  ==>  bs = mkRule (map toSolverConstraint hs) 0 [] (map toSolverConstraint bs
 
 (|>) :: (MkRule r, MkSolverGuard (SolverGuard r) g') => r -> [g'] -> r
 r |> g = guardRule (map toSolverGuard g) r
+
+(|!) :: (MkRule r, MkSolverPrio (SolverPrio r) p') => r -> p' -> r
+r |! p = prioritizeRule (toSolverPrio p) r
 
 -------------------------------------------------------------------------------------------
 --- Instances: Serialize

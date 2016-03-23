@@ -1,5 +1,5 @@
 {-# LANGUAGE CPP #-}
-{-# LANGUAGE TypeOperators, TypeSynonymInstances, FlexibleInstances, DefaultSignatures, FlexibleContexts, UndecidableInstances #-}
+{-# LANGUAGE TypeOperators, TypeSynonymInstances, FlexibleInstances, DefaultSignatures, UndecidableInstances #-}
 
 module UHC.Util.Utils
   ( -- * Set
@@ -21,6 +21,8 @@ module UHC.Util.Utils
   , listSaturate, listSaturateWith
   , spanOnRest
   , filterMb
+  , splitPlaces
+  , combineToDistinguishedEltsBy
   
     -- * Tuple
   , tup123to1, tup123to2
@@ -224,6 +226,45 @@ spanOnRest p xs@(x:xs')
 filterMb :: (a -> Maybe b) -> [a] -> [b]
 filterMb p = catMaybes . map p
 {-# INLINE filterMb #-}
+
+-- | Split at index places (inspired by/from split package). Places should be increasing, starting with an index >= 0.
+-- The number of sublists returned is one higher than the number of places.
+-- 
+-- Examples:
+-- >>> splitPlaces [2,3] [1,2,3,4,5,6,7] 
+-- [[1,2],[3],[4,5,6,7]]
+--
+-- >>> splitPlaces [6,7] [1,2,3,4,5,6,7] 
+-- [[1,2,3,4,5,6],[7],[]]
+--
+-- >>> splitPlaces [0,7] [1,2,3,4,5,6,7]
+-- [[],[1,2,3,4,5,6,7],[]]
+--
+-- >>> splitPlaces [0,1,2,3,4,5,6,7] [1,2,3,4,5,6,7] 
+-- [[],[1],[2],[3],[4],[5],[6],[7],[]]
+splitPlaces
+  :: [Int]            -- ^ places
+  -> [e]
+  -> [[e]]
+splitPlaces ps es = spl 0 ps es
+  where spl _   []     es = [es]
+        spl pos (p:ps) es = es1 : spls
+          where (es1,es2) = splitAt (p-pos) es
+                spls = spl (pos + length es1) ps es2
+
+-- | Combine [[x1..xn],..,[y1..ym]] to [[x1..y1],[x2..y1],..,[xn..ym]].
+--   Each element [xi..yi] is distinct based on the the key k in xi==(k,_)
+combineToDistinguishedEltsBy :: (e -> e -> Bool) -> [[e]] -> [[e]]
+combineToDistinguishedEltsBy _  []     = []
+combineToDistinguishedEltsBy _  [[]]   = []
+combineToDistinguishedEltsBy _  [x]    = map (:[]) x
+combineToDistinguishedEltsBy eq (l:ls)
+  = combine l $ combineToDistinguishedEltsBy eq ls
+  where combine l ls
+          = concatMap (\e
+                         -> mapMaybe (\ll -> maybe (Just (e:ll)) (const Nothing) $ find (eq e) ll)
+                                     ls
+                      ) l
 
 -------------------------------------------------------------------------
 -- Tupling, untupling

@@ -16,6 +16,7 @@ import UHC.Util.Pretty
 import UHC.Util.Utils
 import Data.List
 import Data.Maybe
+import Data.Function
 
 -------------------------------------------------------------------------------------------
 --- AssocL
@@ -32,6 +33,7 @@ ppAssocL = ppAssocL' (ppBlock "[" "]" ",") ":"
 
 ppAssocLV :: (PP k, PP v) => AssocL k v -> PP_Doc
 ppAssocLV = ppAssocL' vlist ":"
+{-# INLINE ppAssocLV #-}
 
 -- | intended for parsing
 ppCurlysAssocL :: (k -> PP_Doc) -> (v -> PP_Doc) -> AssocL k v -> PP_Doc
@@ -70,6 +72,8 @@ assocLGroupSort = map (foldr (\(k,v) (_,vs) -> (k,v:vs)) (panic "UHC.Util.AssocL
 -- | Combine [[x1..xn],..,[y1..ym]] to [[x1..y1],[x2..y1],..,[xn..ym]].
 --   Each element [xi..yi] is distinct based on the the key k in xi==(k,_)
 combineToDistinguishedElts :: Eq k => [AssocL k v] -> [AssocL k v]
+combineToDistinguishedElts = combineToDistinguishedEltsBy ((==) `on` fst)
+{-
 combineToDistinguishedElts []     = []
 combineToDistinguishedElts [[]]   = []
 combineToDistinguishedElts [x]    = map (:[]) x
@@ -81,3 +85,5 @@ combineToDistinguishedElts (l:ls)
                                      ls
                       ) l
 
+-}
+{-# INLINE combineToDistinguishedElts #-}

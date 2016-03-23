@@ -23,6 +23,7 @@ library
   Build-Depends:
     base >= 4.8 && < 5,
     mtl >= 2,
+    transformers >= 0.4.2,
     fgl >= 5.4,
     hashable >= 1.2.4,
     containers >= 0.4,

@@ -1,4 +1,4 @@
-{-# LANGUAGE UndecidableInstances, FlexibleContexts, FlexibleInstances, TypeSynonymInstances, FunctionalDependencies, MultiParamTypeClasses, RankNTypes #-}
+{-# LANGUAGE UndecidableInstances, FlexibleInstances, TypeSynonymInstances, FunctionalDependencies, MultiParamTypeClasses, RankNTypes #-}
 
 -------------------------------------------------------------------------
 -- Combinators for a compile run

@@ -1,4 +1,4 @@
-{-# LANGUAGE TemplateHaskell, UndecidableInstances, FlexibleContexts, FlexibleInstances, TypeSynonymInstances, FunctionalDependencies, MultiParamTypeClasses, RankNTypes, ScopedTypeVariables #-}
+{-# LANGUAGE TemplateHaskell, UndecidableInstances, FlexibleInstances, TypeSynonymInstances, FunctionalDependencies, MultiParamTypeClasses, RankNTypes, ScopedTypeVariables #-}
 
 -------------------------------------------------------------------------
 -- | Combinators for a compile run.

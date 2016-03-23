@@ -89,8 +89,8 @@ type instance TTKey (Work c) = TTKey c
 instance Show (Work c) where
   show _ = "SolveWork"
 
-instance (PP c) => PP (Work c) where
-  pp w = pp $ workCnstr w
+instance (PP (TTKey c), PP c) => PP (Work c) where
+  pp w = ppParens (workKey w) >|< "@" >|< workTime w >#< workCnstr w
 
 -------------------------------------------------------------------------------------------
 --- Solver trace
@@ -103,10 +103,6 @@ data SolveStep' c r s
       , stepSubst       :: s
       , stepNewTodo     :: [c]
       , stepNewDone     :: [c]
-      }
-  | SolveWorkStep
-      { stepWork        :: Work c
-      , stepFndChrInxs  :: [[Int]]
       }
   | SolveStats
       { stepStats       :: Map.Map String PP_Doc
@@ -125,7 +121,6 @@ instance Show (SolveStep' c r s) where
 
 instance (PP r, PP c) => {- (PP c, PP g) => -} PP (SolveStep' c r s) where
   pp (SolveStep   step _ todo done) = "STEP" >#< (step >-< "new todo:" >#< ppBracketsCommas todo >-< "new done:" >#< ppBracketsCommas done)
-  pp (SolveWorkStep  wk ixs       ) = "WSTEP"  >#< wk
   pp (SolveStats  stats           ) = "STATS"  >#< (ppAssocLV (Map.toList stats))
   pp (SolveDbg    p               ) = "DBG"  >#< p
 

@@ -1,4 +1,4 @@
-{-# LANGUAGE RankNTypes, FlexibleContexts, CPP #-}
+{-# LANGUAGE RankNTypes, CPP #-}
 
 module UHC.Util.ParseUtils
   ( -- * Specific parser types
