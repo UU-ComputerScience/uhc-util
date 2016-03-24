@@ -70,7 +70,7 @@ initWorkTime :: WorkTime
 initWorkTime = 0
 
 -------------------------------------------------------------------------------------------
---- Solver work
+--- Solver work and/or residual (non)work
 -------------------------------------------------------------------------------------------
 
 type WorkKey       v = CHRKey v
@@ -81,7 +81,9 @@ data Work c
       { workKey     :: WorkKey c                    -- ^ the key into the CHR store
       , workCnstr   :: !c                           -- ^ the constraint to be reduced
       , workTime    :: WorkTime                     -- ^ the timestamp identification at which the work was added
-      -- , workUsedIn  :: Set.Set (CHRKey c)              -- marked with the propagation rules already applied to it
+      }
+  | Residue
+      { workCnstr   :: !c                           -- ^ the residual constraint
       }
 
 type instance TTKey (Work c) = TTKey c
@@ -90,7 +92,8 @@ instance Show (Work c) where
   show _ = "SolveWork"
 
 instance (PP (TTKey c), PP c) => PP (Work c) where
-  pp w = ppParens (workKey w) >|< "@" >|< workTime w >#< workCnstr w
+  pp (Work    k c t) = ppParens k >|< "@" >|< t >#< c
+  pp (Residue   c  ) = pp                           c
 
 -------------------------------------------------------------------------------------------
 --- Solver trace

@@ -241,7 +241,7 @@ instance MBP.IsCHRSolvable E C G P S where
 
 instance MBP.MonoBacktrackPrio C G P S E IO
 
-mbp :: MBP.CHRMonoBacktrackPrioT C G P S E IO ()
+mbp :: MBP.CHRMonoBacktrackPrioT C G P S E IO MBP.SolverResult
 mbp = do
     mapM_ MBP.addRule
       [ [x `leq` y] <==> [x `eq` y] |> [x `geq` y]
@@ -254,7 +254,9 @@ mbp = do
       , b `leq` c
       , c `leq` a
       ]
-    MBP.chrSolve ()
-    MBP.getSolveTrace >>= (liftIO . putPPLn)
+    r <- MBP.chrSolve ()
+    -- MBP.getSolveTrace >>= (liftIO . putPPLn)
+    MBP.ppSolverResult r >>= (liftIO . putPPLn)
+    return r
 
 mainMBP = MBP.runCHRMonoBacktrackPrioT (MBP.emptyCHRGlobState) (MBP.emptyCHRBackState) mbp

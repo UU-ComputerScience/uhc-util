@@ -194,7 +194,7 @@ instance MkRule (CHRRule e s) where
   type SolverConstraint (CHRRule e s) = (CHRConstraint e s)
   type SolverGuard (CHRRule e s) = (CHRGuard e s)
   type SolverPrio (CHRRule e s) = ()
-  mkRule h1 h2 l b p = CHRRule $ mkRule h1 h2 l b p
+  mkRule h l g b p = CHRRule $ mkRule h l g b p
   guardRule g (CHRRule r) = CHRRule $ guardRule g r
   prioritizeRule p (CHRRule r) = CHRRule $ prioritizeRule p r
 
