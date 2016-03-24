@@ -180,9 +180,9 @@ instance CHREmptySubstitution S where
   chrEmptySubst = Map.empty
 
 instance IsConstraint C where
-  cnstrRequiresSolve C_True = False
-  cnstrRequiresSolve (C_Eq _ _) = False
-  cnstrRequiresSolve _      = True
+  cnstrSolvesVia  C_True    = ConstraintSolvesVia_Residual
+  cnstrSolvesVia (C_Eq _ _) = ConstraintSolvesVia_Solve
+  cnstrSolvesVia _          = ConstraintSolvesVia_Rule
 
 instance IsCHRGuard E G S where
 
@@ -195,8 +195,10 @@ instance CHRCheckable E G S where
     case s `varUpd` g of
       G_Eq (Tm_Str s1) (Tm_Str s2) | s1 == s2 -> return chrEmptySubst
       G_Eq (Tm_Var v1) (Tm_Var v2) | v1 == v2 -> return chrEmptySubst
+      {-
       G_Eq (Tm_Var v1) (t2       )            -> return $ Map.singleton v1 t2
       G_Eq (t1       ) (Tm_Var v2)            -> return $ Map.singleton v2 t1
+      -}
       _                                       -> Nothing
 
 instance CHRMatchable E Tm S where
@@ -247,7 +249,7 @@ mbp = do
       [ [x `leq` y] <==> [x `eq` y] |> [x `geq` y]
       , [x `leq` y, y `leq` x] <==> [x `eq` y]
       , ([x `leq` y], [x `leq` y]) <\=> none
-      , [x `leq` y, y `leq` z] ==> [x `leq` z] |! x
+      , [x `leq` y, y `leq` z] ==> [x `leq` z] -- |! x
       ]
     mapM_ MBP.addConstraintAsWork
       [ a `leq` b
@@ -259,4 +261,36 @@ mbp = do
     MBP.ppSolverResult r >>= (liftIO . putPPLn)
     return r
 
-mainMBP = MBP.runCHRMonoBacktrackPrioT (MBP.emptyCHRGlobState) (MBP.emptyCHRBackState) mbp
+mbp2 :: MBP.CHRMonoBacktrackPrioT C G P S E IO MBP.SolverResult
+mbp2 = do
+    mapM_ MBP.addRule
+      [ [x `leq` y, y `leq` x] <==> [x `eq` y]
+      ]
+    mapM_ MBP.addConstraintAsWork
+      [ a `leq` b
+      , b `leq` a
+      ]
+    r <- MBP.chrSolve ()
+    -- MBP.getSolveTrace >>= (liftIO . putPPLn)
+    MBP.ppSolverResult r >>= (liftIO . putPPLn)
+    return r
+
+mbp3 :: MBP.CHRMonoBacktrackPrioT C G P S E IO MBP.SolverResult
+mbp3 = do
+    mapM_ MBP.addRule
+      [ [x `leq` y] <==> [x `eq` y] |> [x `geq` y]
+      , [x `leq` y, y `leq` x] <==> [x `eq` y]
+      , ([x `leq` y], [x `leq` y]) <\=> none
+      , [x `leq` y, y `leq` z] ==> [x `leq` z] -- |! x
+      ]
+    mapM_ MBP.addConstraintAsWork
+      [ a `leq` b
+      , b `leq` c
+      , c `leq` a
+      ]
+    r <- MBP.chrSolve ()
+    -- MBP.getSolveTrace >>= (liftIO . putPPLn)
+    MBP.ppSolverResult r >>= (liftIO . putPPLn)
+    return r
+
+mainMBP = MBP.runCHRMonoBacktrackPrioT (MBP.emptyCHRGlobState) (MBP.emptyCHRBackState) mbp3

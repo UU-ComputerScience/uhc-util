@@ -82,8 +82,11 @@ data Work c
       , workCnstr   :: !c                           -- ^ the constraint to be reduced
       , workTime    :: WorkTime                     -- ^ the timestamp identification at which the work was added
       }
-  | Residue
+  | Work_Residue
       { workCnstr   :: !c                           -- ^ the residual constraint
+      }
+  | Work_Solve
+      { workCnstr   :: !c                           -- ^ constraint which must be solved
       }
 
 type instance TTKey (Work c) = TTKey c
@@ -92,8 +95,9 @@ instance Show (Work c) where
   show _ = "SolveWork"
 
 instance (PP (TTKey c), PP c) => PP (Work c) where
-  pp (Work    k c t) = ppParens k >|< "@" >|< t >#< c
-  pp (Residue   c  ) = pp                           c
+  pp (Work         k c t) = ppParens k >|< "@" >|< t >#< c
+  pp (Work_Residue   c  ) = pp                           c
+  pp (Work_Solve     c  ) = pp                           c
 
 -------------------------------------------------------------------------------------------
 --- Solver trace

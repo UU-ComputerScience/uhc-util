@@ -11,6 +11,7 @@ to avoid explosion of search space during resolution.
 
 module UHC.Util.CHR.Base
   ( IsConstraint(..)
+  , ConstraintSolvesVia(..)
 
   , IsCHRConstraint(..)
   , CHRConstraint(..)
@@ -243,10 +244,24 @@ instance {-# OVERLAPPABLE #-} CHRPrioEvaluatable env () subst where
 --- What a constraint must be capable of
 -------------------------------------------------------------------------------------------
 
+-- | Different ways of solving
+data ConstraintSolvesVia
+  = ConstraintSolvesVia_Rule        -- ^ rewrite/CHR rules apply
+  | ConstraintSolvesVia_Solve       -- ^ solving involving finding of variable bindings (e.g. unification)
+  | ConstraintSolvesVia_Residual    -- ^ a leftover, residue
+  deriving (Show, Enum, Eq, Ord)
+
 -- | The things a constraints needs to be capable of in order to participate in solving
 class IsConstraint c where
   -- | Requires solving? Or is just a residue...
   cnstrRequiresSolve :: c -> Bool
+  cnstrRequiresSolve c = case cnstrSolvesVia c of
+    ConstraintSolvesVia_Residual -> False
+    _                            -> True
+  
+  cnstrSolvesVia :: c -> ConstraintSolvesVia
+  cnstrSolvesVia c | cnstrRequiresSolve c = ConstraintSolvesVia_Rule
+                   | otherwise            = ConstraintSolvesVia_Residual
 
 -------------------------------------------------------------------------------------------
 --- Tracing options, specific for CHR solvers
