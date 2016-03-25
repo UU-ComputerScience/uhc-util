@@ -19,13 +19,21 @@ module UHC.Util.CHR.Base
   , IsCHRGuard(..)
   , CHRGuard(..)
   
+  , IsCHRBuiltin(..)
+  , CHRBuiltin(..)
+  
   , IsCHRPrio(..)
   , CHRPrio(..)
   
   , CHREmptySubstitution(..)
+  
   , CHRMatchable(..), CHRMatchableKey
+  
   , CHRCheckable(..)
+  
   , CHRPrioEvaluatable(..)
+  
+  , CHRBuiltinSolvable(..)
   
   , CHRTrOpt(..)
   )
@@ -69,6 +77,15 @@ class ( CHRCheckable env g subst
       , Serialize g
       , PP g
       ) => IsCHRGuard env g subst
+
+-- | (Class alias) API for builtin solvable requirements
+class ( CHRBuiltinSolvable env b subst
+      , Typeable b
+      , Serialize b
+      , PP b
+      ) => IsCHRBuiltin env b subst
+
+instance {-# OVERLAPPABLE #-} IsCHRBuiltin env () subst
 
 -- | (Class alias) API for priority requirements
 class ( CHRPrioEvaluatable env p subst
@@ -204,6 +221,29 @@ instance CHRPrioEvaluatable env (CHRPrio env subst) subst where
   chrPrioEval env subst (CHRPrio p) = chrPrioEval env subst p
 
 -------------------------------------------------------------------------------------------
+--- Existentially quantified Builtin representations to allow for mix of arbitrary universes
+-------------------------------------------------------------------------------------------
+
+data CHRBuiltin env subst
+  = forall b . 
+    ( IsCHRBuiltin env b subst
+    )
+    => CHRBuiltin
+         { chrBuiltin :: b
+         }
+
+deriving instance Typeable (CHRBuiltin env subst)
+
+instance Show (CHRBuiltin env subst) where
+  show _ = "CHRBuiltin"
+
+instance PP (CHRBuiltin env subst) where
+  pp (CHRBuiltin b) = pp b
+
+instance CHRBuiltinSolvable env (CHRBuiltin env subst) subst where
+  chrBuiltinSolve env subst (CHRBuiltin b) = chrBuiltinSolve env subst b
+
+-------------------------------------------------------------------------------------------
 --- CHREmptySubstitution
 -------------------------------------------------------------------------------------------
 
@@ -219,7 +259,7 @@ type family CHRMatchableKey subst :: *
 
 -- | A Matchable participates in the reduction process as a reducable constraint.
 class (TTKeyable x, TTKey x ~ CHRMatchableKey subst) => CHRMatchable env x subst where -- skey | subst -> skey where --- | x -> subst env where
-  chrMatchTo      :: env -> subst -> x -> x -> Maybe subst
+  chrMatchTo :: env -> subst -> x -> x -> Maybe subst
 
 -------------------------------------------------------------------------------------------
 --- CHRCheckable
@@ -227,7 +267,18 @@ class (TTKeyable x, TTKey x ~ CHRMatchableKey subst) => CHRMatchable env x subst
 
 -- | A Checkable participates in the reduction process as a guard, to be checked.
 class CHRCheckable env x subst where
-  chrCheck      :: env -> subst -> x -> Maybe subst
+  chrCheck :: env -> subst -> x -> Maybe subst
+
+-------------------------------------------------------------------------------------------
+--- CHRBuiltinSolvable
+-------------------------------------------------------------------------------------------
+
+-- | A BuiltinSolvable can result from reduction to a CHR body, representing something which the solver domain specifically solves
+class CHRBuiltinSolvable env x subst where
+  chrBuiltinSolve :: env -> subst -> x -> Maybe subst
+
+instance {-# OVERLAPPABLE #-} CHRBuiltinSolvable env () subst where
+  chrBuiltinSolve _ _ _ = Nothing
 
 -------------------------------------------------------------------------------------------
 --- CHRPrioEvaluatable

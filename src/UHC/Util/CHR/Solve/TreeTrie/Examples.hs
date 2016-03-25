@@ -60,6 +60,15 @@ instance PP C where
 
 instance Serialize C
 
+data B
+  = B_Eq Tm Tm
+  deriving (Show, Eq, Ord, Typeable, Generic)
+
+instance PP B where
+  pp (B_Eq x y) = "eq_bltin" >#< x >#< y
+
+instance Serialize B
+
 infix   2 `leq`
 leq = C_Leq
 eq = C_Eq
@@ -122,7 +131,7 @@ a = Tm_Str "A"
 b = Tm_Str "B"
 c = Tm_Str "C"
 
-str :: M.CHRStore C G P
+str :: M.CHRStore C G
 str = M.chrStoreFromElems
   [ [x `leq` y] <==> [x `eq` y] |> [x `geq` y]
   , [x `leq` y, y `leq` x] <==> [x `eq` y]
@@ -164,6 +173,10 @@ instance VarUpdatable C S where
     C_Leq x y -> C_Leq (s `varUpd` x) (s `varUpd` y)
     c -> c
 
+instance VarUpdatable B S where
+  s `varUpd` c = case c of
+    B_Eq x y -> B_Eq (s `varUpd` x) (s `varUpd` y)
+
 instance VarExtractable Tm where
   varFreeSet (Tm_Var v) = Set.singleton v
   varFreeSet _ = Set.empty
@@ -189,6 +202,8 @@ instance IsCHRGuard E G S where
 instance IsCHRConstraint E C S where
 
 instance IsCHRPrio E P S where
+
+instance IsCHRBuiltin E B S where
 
 instance CHRCheckable E G S where
   chrCheck _ s g =
@@ -221,12 +236,16 @@ instance CHRMatchable E C S where
         let s'' = s2 |+> s'
         return s''
 
+instance CHRBuiltinSolvable E B S where
+  chrBuiltinSolve e s b = case s `varUpd` b of
+    B_Eq x y -> Nothing -- TBD
+
 instance CHRPrioEvaluatable E Tm S where
   chrPrioEval e s p = case s `varUpd` p of
     Tm_Str s -> sum $ map fromEnum s
     _ -> minBound
 
-instance M.IsCHRSolvable E C G P S where
+instance M.IsCHRSolvable E C G S where
 
 cSolve@(cUnresolved, cResidue, cTrace) =
   M.chrSolve' [CHRTrOpt_Lookup] () str [a `leq` b, b `leq` c, c `leq` a]
@@ -239,17 +258,17 @@ mainMono = do
 --------------------------------------------------------
 -- leq example, backtrack prio specific
 
-instance MBP.IsCHRSolvable E C G P S where
+instance MBP.IsCHRSolvable E C G B P S where
 
-instance MBP.MonoBacktrackPrio C G P S E IO
+instance MBP.MonoBacktrackPrio C G B P S E IO
 
-mbp :: MBP.CHRMonoBacktrackPrioT C G P S E IO MBP.SolverResult
+mbp :: MBP.CHRMonoBacktrackPrioT C G B P S E IO MBP.SolverResult
 mbp = do
     mapM_ MBP.addRule
       [ [x `leq` y] <==> [x `eq` y] |> [x `geq` y]
       , [x `leq` y, y `leq` x] <==> [x `eq` y]
       , ([x `leq` y], [x `leq` y]) <\=> none
-      , [x `leq` y, y `leq` z] ==> [x `leq` z] -- |! x
+      , [x `leq` y, y `leq` z] ==> [x `leq` z] -- -- |! x
       ]
     mapM_ MBP.addConstraintAsWork
       [ a `leq` b
@@ -261,7 +280,7 @@ mbp = do
     MBP.ppSolverResult r >>= (liftIO . putPPLn)
     return r
 
-mbp2 :: MBP.CHRMonoBacktrackPrioT C G P S E IO MBP.SolverResult
+mbp2 :: MBP.CHRMonoBacktrackPrioT C G B P S E IO MBP.SolverResult
 mbp2 = do
     mapM_ MBP.addRule
       [ [x `leq` y, y `leq` x] <==> [x `eq` y]
@@ -275,13 +294,13 @@ mbp2 = do
     MBP.ppSolverResult r >>= (liftIO . putPPLn)
     return r
 
-mbp3 :: MBP.CHRMonoBacktrackPrioT C G P S E IO MBP.SolverResult
+mbp3 :: MBP.CHRMonoBacktrackPrioT C G B P S E IO MBP.SolverResult
 mbp3 = do
     mapM_ MBP.addRule
       [ [x `leq` y] <==> [x `eq` y] |> [x `geq` y]
       , [x `leq` y, y `leq` x] <==> [x `eq` y]
       , ([x `leq` y], [x `leq` y]) <\=> none
-      , [x `leq` y, y `leq` z] ==> [x `leq` z] -- |! x
+      , [x `leq` y, y `leq` z] ==> [x `leq` z] -- -- |! x
       ]
     mapM_ MBP.addConstraintAsWork
       [ a `leq` b

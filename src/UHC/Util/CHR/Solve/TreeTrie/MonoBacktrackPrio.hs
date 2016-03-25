@@ -120,10 +120,10 @@ instance PP CHRConstraintInx where
   pp (CHRConstraintInx i j) = i >|< "." >|< j
 
 -- | A CHR as stored in a CHRStore, requiring additional info for efficiency
-data StoredCHR c g p
+data StoredCHR c g b p
   = StoredCHR
       { _storedHeadKeys  :: ![CHRTrieKey c]                        -- ^ the keys corresponding to the head of the rule
-      , _storedChrRule   :: !(Rule c g p)                          -- ^ the rule
+      , _storedChrRule   :: !(Rule c g b p)                          -- ^ the rule
       , _storedChrInx    :: !CHRInx                                -- ^ index of constraint for which is keyed into store
       -- , storedKeys      :: ![Maybe (CHRKey c)]                  -- ^ keys of all constraints; at storedChrInx: Nothing
       -- , storedIdent     :: !(UsedByKey c)                       -- ^ the identification of a CHR, used for propagation rules (see remark at begin)
@@ -132,29 +132,29 @@ data StoredCHR c g p
 
 mkLabel ''StoredCHR
 
-type instance TTKey (StoredCHR c g p) = TTKey c
+type instance TTKey (StoredCHR c g b p) = TTKey c
 
 {-
-instance (TTKeyable (Rule c g p)) => TTKeyable (StoredCHR c g p) where
+instance (TTKeyable (Rule c g b p)) => TTKeyable (StoredCHR c g b p) where
   toTTKey' o schr = toTTKey' o $ storedChrRule schr
 
 -- | The size of the simplification part of a CHR
-storedSimpSz :: StoredCHR c g p -> Int
+storedSimpSz :: StoredCHR c g b p -> Int
 storedSimpSz = ruleSimpSz . storedChrRule
 {-# INLINE storedSimpSz #-}
 -}
 
 -- | A CHR store is a trie structure
-data CHRStore cnstr guard prio
+data CHRStore cnstr guard builtin prio
   = CHRStore
       { _chrstoreTrie    :: CHRTrie' cnstr [CHRConstraintInx]                       -- ^ map from the search key of a rule to the index into tabl
-      , _chrstoreTable   :: IntMap.IntMap (StoredCHR cnstr guard prio)      -- ^ (possibly multiple) rules for a key
+      , _chrstoreTable   :: IntMap.IntMap (StoredCHR cnstr guard builtin prio)      -- ^ (possibly multiple) rules for a key
       }
   deriving (Typeable)
 
 mkLabel ''CHRStore
 
-emptyCHRStore :: CHRStore cnstr guard prio
+emptyCHRStore :: CHRStore cnstr guard builtin prio
 emptyCHRStore = CHRStore TreeTrie.empty IntMap.empty
 
 -------------------------------------------------------------------------------------------
@@ -242,21 +242,21 @@ instance (PP w) => PP (SolverReductionStep' Int w) where
 -------------------------------------------------------------------------------------------
 
 -- | Global state
-data CHRGlobState cnstr guard prio subst
+data CHRGlobState cnstr guard builtin prio subst
   = CHRGlobState
-      { _chrgstStore                 :: !(CHRStore cnstr guard prio)                     -- ^ Actual database of rules, to be searched
+      { _chrgstStore                 :: !(CHRStore cnstr guard builtin prio)                     -- ^ Actual database of rules, to be searched
       , _chrgstNextFreeRuleInx       :: !CHRInx                                          -- ^ Next free rule identification, used by solving to identify whether a rule has been used for a constraint.
                                                                                          --   The numbering is applied to constraints inside a rule which can be matched.
-      , _chrgstNextFreshVarId        :: !(ExtrValVarKey (Rule cnstr guard prio))         -- ^ The next free id used for a fresh variable
+      , _chrgstNextFreshVarId        :: !(ExtrValVarKey (Rule cnstr guard builtin prio))         -- ^ The next free id used for a fresh variable
       , _chrgstWorkStore             :: !(WorkStore cnstr)                               -- ^ Actual database of solvable constraints
       , _chrgstNextFreeWorkInx       :: !WorkTime                                        -- ^ Next free work/constraint identification, used by solving to identify whether a rule has been used for a constraint.
-      , _chrgstTrace                 :: SolveTrace' cnstr (StoredCHR cnstr guard prio) subst
+      , _chrgstTrace                 :: SolveTrace' cnstr (StoredCHR cnstr guard builtin prio) subst
       }
   deriving (Typeable)
 
 mkLabel ''CHRGlobState
 
-emptyCHRGlobState :: Num (ExtrValVarKey c) => CHRGlobState c g p s
+emptyCHRGlobState :: Num (ExtrValVarKey c) => CHRGlobState c g b p s
 emptyCHRGlobState = CHRGlobState emptyCHRStore 0 0 emptyWorkStore initWorkTime emptySolveTrace
 
 -- | Backtrackable state
@@ -277,10 +277,11 @@ emptyCHRBackState :: CHREmptySubstitution s => CHRBackState c s
 emptyCHRBackState = CHRBackState chrEmptySubst emptyWorkQueue emptyWorkQueue [] Set.empty []
 
 -- | Monad for CHR, taking from 'LogicStateT' the state and backtracking behavior
-type CHRMonoBacktrackPrioT cnstr guard prio subst env m a = LogicStateT (CHRGlobState cnstr guard prio subst) (CHRBackState cnstr subst) m a
+type CHRMonoBacktrackPrioT cnstr guard builtin prio subst env m a
+  = LogicStateT (CHRGlobState cnstr guard builtin prio subst) (CHRBackState cnstr subst) m a
 
 -- | All required behavior, as class alias
-class ( IsCHRSolvable env cnstr guard prio subst
+class ( IsCHRSolvable env cnstr guard builtin prio subst
       , Monad m
       , Ord (TTKey cnstr)
       , TTKeyable cnstr
@@ -290,34 +291,31 @@ class ( IsCHRSolvable env cnstr guard prio subst
       -- , VarLookupCmb subst subst
       -- , TTKey cnstr ~ TrTrKey cnstr
       , MonadIO m -- for debugging
-      ) => MonoBacktrackPrio cnstr guard prio subst env m
-         | cnstr guard prio subst -> env
+      ) => MonoBacktrackPrio cnstr guard builtin prio subst env m
+         | cnstr guard builtin prio subst -> env
 
-runCHRMonoBacktrackPrioT :: Monad m => CHRGlobState cnstr guard prio subst -> CHRBackState cnstr subst -> CHRMonoBacktrackPrioT cnstr guard prio subst env m a -> m [a]
+runCHRMonoBacktrackPrioT :: Monad m => CHRGlobState cnstr guard builtin prio subst -> CHRBackState cnstr subst -> CHRMonoBacktrackPrioT cnstr guard builtin prio subst env m a -> m [a]
 runCHRMonoBacktrackPrioT gs bs m = observeAllT (gs,bs) m
 
-getSolveTrace :: (PP c, PP g, MonoBacktrackPrio c g p s e m) => CHRMonoBacktrackPrioT c g p s e m PP_Doc
+getSolveTrace :: (PP c, PP g, PP b, MonoBacktrackPrio c g b p s e m) => CHRMonoBacktrackPrioT c g b p s e m PP_Doc
 getSolveTrace = fmap (ppSolveTrace . reverse) $ getl $ fstl ^* chrgstTrace
 
 -------------------------------------------------------------------------------------------
 --- CHR store, API for adding rules
 -------------------------------------------------------------------------------------------
 
-
--- deriving instance (Data (TTKey cnstr), Ord (TTKey cnstr), Data cnstr, Data guard) => Data (CHRStore cnstr guard prio)
-
 {-
 -- | Combine lists of stored CHRs by concat, adapting their identification nr to be unique
-cmbStoredCHRs :: [StoredCHR c g p] -> [StoredCHR c g p] -> [StoredCHR c g p]
+cmbStoredCHRs :: [StoredCHR c g b p] -> [StoredCHR c g b p] -> [StoredCHR c g b p]
 cmbStoredCHRs s1 s2
   = map (\s@(StoredCHR {storedIdent=(k,nr)}) -> s {storedIdent = (k,nr+l)}) s1 ++ s2
   where l = length s2
 -}
 
-instance Show (StoredCHR c g p) where
+instance Show (StoredCHR c g b p) where
   show _ = "StoredCHR"
 
-ppStoredCHR :: (PP (TTKey c), PP c, PP g, PP p) => StoredCHR c g p -> PP_Doc
+ppStoredCHR :: (PP (TTKey c), PP c, PP g, PP p, PP b) => StoredCHR c g b p -> PP_Doc
 ppStoredCHR c@(StoredCHR {})
   = ppParensCommas (_storedHeadKeys c)
     >-< _storedChrRule c
@@ -329,12 +327,12 @@ ppStoredCHR c@(StoredCHR {})
             -- , "ident" >#< ppParensCommas [ppTreeTrieKey idKey,pp idSeqNr]
             ])
 
-instance (PP (TTKey c), PP c, PP g, PP p) => PP (StoredCHR c g p) where
+instance (PP (TTKey c), PP c, PP g, PP p, PP b) => PP (StoredCHR c g b p) where
   pp = ppStoredCHR
 
 {-
 -- | Convert from list to store
-chrStoreFromElems :: (TTKeyable c, Ord (TTKey c), TTKey c ~ TrTrKey c) => [Rule c g p] -> CHRStore c g p
+chrStoreFromElems :: (TTKeyable c, Ord (TTKey c), TTKey c ~ TrTrKey c) => [Rule c g b p] -> CHRStore c g b p
 chrStoreFromElems chrs
   = mkCHRStore
     $ chrTrieFromListByKeyWith cmbStoredCHRs
@@ -350,7 +348,7 @@ chrStoreFromElems chrs
 -}
 
 -- | Add a rule as a CHR
-addRule :: MonoBacktrackPrio c g p s e m => Rule c g p -> CHRMonoBacktrackPrioT c g p s e m ()
+addRule :: MonoBacktrackPrio c g b p s e m => Rule c g b p -> CHRMonoBacktrackPrioT c g b p s e m ()
 addRule chr = do
     i <- modifyAndGet (fstl ^* chrgstNextFreeRuleInx) $ \i -> (i, i + 1)
     let ks = map chrToKey $ ruleHead chr
@@ -360,29 +358,29 @@ addRule chr = do
     return ()
 
 -- | Add work to the rule work queue
-addWorkToRuleWorkQueue :: MonoBacktrackPrio c g p s e m => WorkInx -> CHRMonoBacktrackPrioT c g p s e m ()
+addWorkToRuleWorkQueue :: MonoBacktrackPrio c g b p s e m => WorkInx -> CHRMonoBacktrackPrioT c g b p s e m ()
 addWorkToRuleWorkQueue i = do
     -- sndl ^* chrbstRuleWorkQueue ^* wkqueueQueue =$: (Seq.|> i)
     sndl ^* chrbstRuleWorkQueue ^* wkqueueSet =$: (Set.insert i)
 
 -- | Add work to the solve queue
-addWorkToSolveQueue :: MonoBacktrackPrio c g p s e m => WorkInx -> CHRMonoBacktrackPrioT c g p s e m ()
+addWorkToSolveQueue :: MonoBacktrackPrio c g b p s e m => WorkInx -> CHRMonoBacktrackPrioT c g b p s e m ()
 addWorkToSolveQueue i = do
     -- sndl ^* chrbstRuleWorkQueue ^* wkqueueQueue =$: (Seq.|> i)
     sndl ^* chrbstSolveQueue ^* wkqueueSet =$: (Set.insert i)
 
 -- | Remove work from the work queue
-deleteWorkFromQueue :: MonoBacktrackPrio c g p s e m => [WorkInx] -> CHRMonoBacktrackPrioT c g p s e m ()
+deleteWorkFromQueue :: MonoBacktrackPrio c g b p s e m => [WorkInx] -> CHRMonoBacktrackPrioT c g b p s e m ()
 deleteWorkFromQueue is = do
     -- sndl ^* chrbstRuleWorkQueue ^* wkqueueQueue =$: (Seq.|> i)
     sndl ^* chrbstRuleWorkQueue ^* wkqueueSet =$: (\s -> foldr (Set.delete) s is)
 
 -- | Extract the active work in the queue
-activeInQueue :: MonoBacktrackPrio c g p s e m => CHRMonoBacktrackPrioT c g p s e m (Set.Set WorkInx)
+activeInQueue :: MonoBacktrackPrio c g b p s e m => CHRMonoBacktrackPrioT c g b p s e m (Set.Set WorkInx)
 activeInQueue = getl $ sndl ^* chrbstRuleWorkQueue ^* wkqueueSet
 
 -- | Split off work from the work queue, possible none left
-splitWorkFromQueue :: MonoBacktrackPrio c g p s e m => CHRMonoBacktrackPrioT c g p s e m (Maybe (WorkInx, Set.Set WorkInx))
+splitWorkFromQueue :: MonoBacktrackPrio c g b p s e m => CHRMonoBacktrackPrioT c g b p s e m (Maybe (WorkInx, Set.Set WorkInx))
 splitWorkFromQueue = do
     -- wq <- getl $ sndl ^* chrbstRuleWorkQueue ^* wkqueueQueue
     wq <- getl $ sndl ^* chrbstRuleWorkQueue ^* wkqueueSet
@@ -401,7 +399,7 @@ splitWorkFromQueue = do
           return $ Just (workInx, wq')
 
 -- | Add a constraint to be solved or residualised
-addConstraintAsWork :: MonoBacktrackPrio c g p s e m => c -> CHRMonoBacktrackPrioT c g p s e m WorkInx
+addConstraintAsWork :: MonoBacktrackPrio c g b p s e m => c -> CHRMonoBacktrackPrioT c g b p s e m WorkInx
 addConstraintAsWork c = do
     i <- modifyAndGet (fstl ^* chrgstNextFreeWorkInx) $ \i -> (i, i + 1)
     w <- case cnstrSolvesVia c of
@@ -422,20 +420,20 @@ addConstraintAsWork c = do
 
 {-
 
-chrStoreSingletonElem :: (TTKeyable c, Ord (TTKey c), TTKey c ~ TrTrKey c) => Rule c g p -> CHRStore c g p
+chrStoreSingletonElem :: (TTKeyable c, Ord (TTKey c), TTKey c ~ TrTrKey c) => Rule c g b p -> CHRStore c g b p
 chrStoreSingletonElem x = chrStoreFromElems [x]
 
-chrStoreUnion :: (Ord (TTKey c)) => CHRStore c g p -> CHRStore c g p -> CHRStore c g p
+chrStoreUnion :: (Ord (TTKey c)) => CHRStore c g b p -> CHRStore c g b p -> CHRStore c g b p
 chrStoreUnion cs1 cs2 = mkCHRStore $ chrTrieUnionWith cmbStoredCHRs (chrstoreTrie cs1) (chrstoreTrie cs2)
 {-# INLINE chrStoreUnion #-}
 
-chrStoreUnions :: (Ord (TTKey c)) => [CHRStore c g p] -> CHRStore c g p
+chrStoreUnions :: (Ord (TTKey c)) => [CHRStore c g b p] -> CHRStore c g b p
 chrStoreUnions []  = emptyCHRStore
 chrStoreUnions [s] = s
 chrStoreUnions ss  = foldr1 chrStoreUnion ss
 {-# INLINE chrStoreUnions #-}
 
-chrStoreToList :: (Ord (TTKey c)) => CHRStore c g p -> [(CHRKey c,[Rule c g p])]
+chrStoreToList :: (Ord (TTKey c)) => CHRStore c g b p -> [(CHRKey c,[Rule c g b p])]
 chrStoreToList cs
   = [ (k,chrs)
     | (k,e) <- chrTrieToListByKey $ chrstoreTrie cs
@@ -443,13 +441,13 @@ chrStoreToList cs
     , not $ Prelude.null chrs
     ]
 
-chrStoreElems :: (Ord (TTKey c)) => CHRStore c g p -> [Rule c g p]
+chrStoreElems :: (Ord (TTKey c)) => CHRStore c g b p -> [Rule c g b p]
 chrStoreElems = concatMap snd . chrStoreToList
 
-ppCHRStore :: (PP c, PP g, PP p, Ord (TTKey c), PP (TTKey c)) => CHRStore c g p -> PP_Doc
+ppCHRStore :: (PP c, PP g, PP p, Ord (TTKey c), PP (TTKey c)) => CHRStore c g b p -> PP_Doc
 ppCHRStore = ppCurlysCommasBlock . map (\(k,v) -> ppTreeTrieKey k >-< indent 2 (":" >#< ppBracketsCommasBlock v)) . chrStoreToList
 
-ppCHRStore' :: (PP c, PP g, PP p, Ord (TTKey c), PP (TTKey c)) => CHRStore c g p -> PP_Doc
+ppCHRStore' :: (PP c, PP g, PP p, Ord (TTKey c), PP (TTKey c)) => CHRStore c g b p -> PP_Doc
 ppCHRStore' = ppCurlysCommasBlock . map (\(k,v) -> ppTreeTrieKey k >-< indent 2 (":" >#< ppBracketsCommasBlock v)) . chrTrieToListByKey . chrstoreTrie
 
 -}
@@ -469,7 +467,7 @@ emptySolverResult :: SolverResult
 emptySolverResult = SolverResult [] []
 
 -- | Succesful return, solution is found
-slvSucces :: MonoBacktrackPrio c g p s e m => CHRMonoBacktrackPrioT c g p s e m SolverResult
+slvSucces :: MonoBacktrackPrio c g b p s e m => CHRMonoBacktrackPrioT c g b p s e m SolverResult
 slvSucces = do
     bst <- getl $ sndl
     return $ SolverResult (reverse $ bst ^. chrbstResidualQueue) (reverse $ bst ^. chrbstReductionSteps)
@@ -479,8 +477,8 @@ slvSucces = do
 -------------------------------------------------------------------------------------------
 
 {-
-type SolveStep  c g p s = SolveStep'  c (Rule c g p) s
-type SolveTrace c g p s = SolveTrace' c (Rule c g p) s
+type SolveStep  c g b p s = SolveStep'  c (Rule c g b p) s
+type SolveTrace c g b p s = SolveTrace' c (Rule c g b p) s
 -}
 
 -------------------------------------------------------------------------------------------
@@ -488,9 +486,9 @@ type SolveTrace c g p s = SolveTrace' c (Rule c g p) s
 -------------------------------------------------------------------------------------------
 
 {-
--- type SolveMatchCache c g p s = Map.Map (CHRKey c) [((StoredCHR c g p,([WorkKey c],[Work c])),s)]
--- type SolveMatchCache c g p s = Map.Map (WorkKey c) [((StoredCHR c g p,([WorkKey c],[Work c])),s)]
-type SolveMatchCache c g p s = SolveMatchCache' c (StoredCHR c g p) s
+-- type SolveMatchCache c g b p s = Map.Map (CHRKey c) [((StoredCHR c g b p,([WorkKey c],[Work c])),s)]
+-- type SolveMatchCache c g b p s = Map.Map (WorkKey c) [((StoredCHR c g b p,([WorkKey c],[Work c])),s)]
+type SolveMatchCache c g b p s = SolveMatchCache' c (StoredCHR c g b p) s
 -}
 
 -------------------------------------------------------------------------------------------
@@ -498,21 +496,21 @@ type SolveMatchCache c g p s = SolveMatchCache' c (StoredCHR c g p) s
 -------------------------------------------------------------------------------------------
 
 {-
-type SolveState c g p s = SolveState' c (Rule c g p) (StoredCHR c g p) s
+type SolveState c g b p s = SolveState' c (Rule c g b p) (StoredCHR c g b p) s
 -}
 
 -------------------------------------------------------------------------------------------
 --- Solver utils
 -------------------------------------------------------------------------------------------
 
-lkupWork :: MonoBacktrackPrio c g p s e m => WorkInx -> CHRMonoBacktrackPrioT c g p s e m (Work c)
+lkupWork :: MonoBacktrackPrio c g b p s e m => WorkInx -> CHRMonoBacktrackPrioT c g b p s e m (Work c)
 lkupWork i = fmap (IntMap.findWithDefault (panic "MBP.wkstoreTable.lookup") i) $ getl $ fstl ^* chrgstWorkStore ^* wkstoreTable
 
-lkupChr :: MonoBacktrackPrio c g p s e m => CHRInx -> CHRMonoBacktrackPrioT c g p s e m (StoredCHR c g p)
+lkupChr :: MonoBacktrackPrio c g b p s e m => CHRInx -> CHRMonoBacktrackPrioT c g b p s e m (StoredCHR c g b p)
 lkupChr  i = fmap (IntMap.findWithDefault (panic "MBP.chrSolve.chrstoreTable.lookup") i) $ getl $ fstl ^* chrgstStore ^* chrstoreTable
 
 -- | Convert
-cvtSolverReductionStep :: MonoBacktrackPrio c g p s e m => SolverReductionStep' CHRInx WorkInx -> CHRMonoBacktrackPrioT c g p s e m (SolverReductionStep' (StoredCHR c g p) (Work c))
+cvtSolverReductionStep :: MonoBacktrackPrio c g b p s e m => SolverReductionStep' CHRInx WorkInx -> CHRMonoBacktrackPrioT c g b p s e m (SolverReductionStep' (StoredCHR c g b p) (Work c))
 cvtSolverReductionStep (SolverReductionStep mc nw) = do
     mc <- cvtMC mc
     nw <- forM nw lkupWork
@@ -525,11 +523,10 @@ cvtSolverReductionStep (SolverReductionStep mc nw) = do
 cvtSolverReductionStep (SolverReductionDBG pp) = return (SolverReductionDBG pp)
 
 -- | PP result
-ppSolverResult :: MonoBacktrackPrio c g p s e m => SolverResult -> CHRMonoBacktrackPrioT c g p s e m PP_Doc
+ppSolverResult :: MonoBacktrackPrio c g b p s e m => SolverResult -> CHRMonoBacktrackPrioT c g b p s e m PP_Doc
 ppSolverResult (SolverResult {slvresResidualCnstr = wis, slvresReductionSteps = steps}) = do
     ws <- forM wis $ \wi -> lkupWork wi >>= return . pp . workCnstr
     ss <- forM steps $ \step -> cvtSolverReductionStep step >>= (return . pp)
-    -- $ \stp@(SolverReductionStep {}) -> return $ pp stp
     return $ 
           "Residue" >-< indent 2 (vlist ws)
       >-< "Steps"   >-< indent 2 (vlist ss)
@@ -542,20 +539,21 @@ ppSolverResult (SolverResult {slvresResidualCnstr = wis, slvresReductionSteps = 
 class ( IsCHRConstraint env c s
       , IsCHRGuard env g s
       , IsCHRPrio env p s
+      , IsCHRBuiltin env b s
       , VarLookupCmb s s
       , VarUpdatable s s
       , CHREmptySubstitution s
       , TrTrKey c ~ TTKey c
-      ) => IsCHRSolvable env c g p s
+      ) => IsCHRSolvable env c g b p s
 {-
 -}
 
 -- | (Under dev) solve
 chrSolve
-  :: ( MonoBacktrackPrio c g p s e m
+  :: ( MonoBacktrackPrio c g b p s e m
      , PP s
      ) => e
-       -> CHRMonoBacktrackPrioT c g p s e m SolverResult
+       -> CHRMonoBacktrackPrioT c g b p s e m SolverResult
 chrSolve env = slv
   where
     -- solve
@@ -643,57 +641,57 @@ chrSolve env = slv
     
 {-
 chrSolve
-  :: forall env c g p s .
-     ( IsCHRSolvable env c g p s
+  :: forall env c g b p s .
+     ( IsCHRSolvable env c g b p s
      )
      => env
-     -> CHRStore c g p
+     -> CHRStore c g b p
      -> [c]
      -> [c]
 chrSolve env chrStore cnstrs
   = work ++ done
-  where (work, done, _ :: SolveTrace c g p s) = chrSolve' [] env chrStore cnstrs
+  where (work, done, _ :: SolveTrace c g b p s) = chrSolve' [] env chrStore cnstrs
 -}
 
 {-
 -- | Solve
 chrSolve'
-  :: forall env c g p s .
-     ( IsCHRSolvable env c g p s
+  :: forall env c g b p s .
+     ( IsCHRSolvable env c g b p s
      )
      => [CHRTrOpt]
      -> env
-     -> CHRStore c g p
+     -> CHRStore c g b p
      -> [c]
-     -> ([c],[c],SolveTrace c g p s)
+     -> ([c],[c],SolveTrace c g b p s)
 chrSolve' tropts env chrStore cnstrs
   = (wlToList (stWorkList finalState), stDoneCnstrs finalState, stTrace finalState)
   where finalState = chrSolve'' tropts env chrStore cnstrs emptySolveState
 
 -- | Solve
 chrSolve''
-  :: forall env c g p s .
-     ( IsCHRSolvable env c g p s
+  :: forall env c g b p s .
+     ( IsCHRSolvable env c g b p s
      )
      => [CHRTrOpt]
      -> env
-     -> CHRStore c g p
+     -> CHRStore c g b p
      -> [c]
-     -> SolveState c g p s
-     -> SolveState c g p s
+     -> SolveState c g b p s
+     -> SolveState c g b p s
 chrSolve'' tropts env chrStore cnstrs prevState
   = flip execState prevState $ chrSolveM tropts env chrStore cnstrs
 
 -- | Solve
 chrSolveM
-  :: forall env c g p s .
-     ( IsCHRSolvable env c g p s
+  :: forall env c g b p s .
+     ( IsCHRSolvable env c g b p s
      )
      => [CHRTrOpt]
      -> env
-     -> CHRStore c g p
+     -> CHRStore c g b p
      -> [c]
-     -> State (SolveState c g p s) ()
+     -> State (SolveState c g b p s) ()
 chrSolveM tropts env chrStore cnstrs = do
     modify initState
     iter
@@ -720,7 +718,7 @@ chrSolveM tropts env chrStore cnstrs = do
 -}    
                           stmatch
                       expandMatch matches
-                    where -- expandMatch :: SolveState c g p s -> [((StoredCHR c g p, ([WorkKey c], [Work c])), s)] -> SolveState c g p s
+                    where -- expandMatch :: SolveState c g b p s -> [((StoredCHR c g b p, ([WorkKey c], [Work c])), s)] -> SolveState c g b p s
                           expandMatch ( ( ( schr@(StoredCHR {storedIdent = chrId, storedChrRule = chr@(Rule {ruleBody = b, ruleSimpSz = simpSz})})
                                           , (keys,works)
                                           )
@@ -828,14 +826,14 @@ chrSolveM tropts env chrStore cnstrs = do
                 
                 -- results, stepwise computed for later reference in debugging output
                 -- basic search result
-                r2 :: [StoredCHR c g p]                                       -- CHRs matching workHdKey
+                r2 :: [StoredCHR c g b p]                                       -- CHRs matching workHdKey
                 r2  = concat                                                    -- flatten
                         $ TreeTrie.lookupResultToList                                   -- convert to list
                         $ chrTrieLookup chrLookupHowWildAtTrie workHdKey        -- lookup the store, allowing too many results
                         $ chrstoreTrie chrStore
                 
                 -- lookup further info in wlTrie, in particular to find out what has been done already
-                r23 :: [( StoredCHR c g p                                     -- the CHR
+                r23 :: [( StoredCHR c g b p                                     -- the CHR
                         , ( [( [(CHRKey c, Work c)]                             -- for each CHR the list of constraints, all possible work matches
                              , [(CHRKey c, Work c)]
                              )]
@@ -845,7 +843,7 @@ chrSolveM tropts env chrStore cnstrs = do
                 
                 -- possible matches
                 r3, r4
-                    :: [( StoredCHR c g p                                     -- the matched CHR
+                    :: [( StoredCHR c g b p                                     -- the matched CHR
                         , ( [CHRKey c]                                            -- possible matching constraints (matching with the CHR constraints), as Keys, as Works
                           , [Work c]
                         ) )]
@@ -855,7 +853,7 @@ chrSolveM tropts env chrStore cnstrs = do
                 r4  = filter (not . slvIsUsedByPropPart wlUsedIn) r3
                 
                 -- finally, the 'real' match of the 'real' constraint, yielding (by tupling) substitutions instantiating the found trie matches
-                r5  :: [( ( StoredCHR c g p
+                r5  :: [( ( StoredCHR c g b p
                           , ( [CHRKey c]          
                             , [Work c]
                           ) )
@@ -881,16 +879,16 @@ chrSolveM tropts env chrStore cnstrs = do
 --     each match expressed as the list of constraints (in the form of Work + Key) found in the workList wlTrie, thus giving all combis with constraints as part of a CHR,
 --     partititioned on before or after last query time (to avoid work duplication later)
 slvCandidate
-  :: ( MonoBacktrackPrio c g p s e m
+  :: ( MonoBacktrackPrio c g b p s e m
      -- , Ord (TTKey c), PP (TTKey c)
      ) => Set.Set WorkInx                           -- ^ active in queue
        -> Set.Set MatchedCombi                      -- ^ already matched combis
        -> CHRKey c                                  -- ^ work key
        -- -> LastQuery c
        -- -> WorkTrie c
-       -> StoredCHR c g p                           -- ^ found chr for the work
+       -> StoredCHR c g b p                           -- ^ found chr for the work
        -> Int                                       -- ^ position in the head where work was found
-       -> CHRMonoBacktrackPrioT c g p s e m
+       -> CHRMonoBacktrackPrioT c g b p s e m
             ( [[WorkInx]]                           -- All matches of the head, unfiltered w.r.t. deleted work
             )
        -- -> ( [( [(CHRKey c, Work c)]
@@ -930,7 +928,7 @@ slvCandidate
      => CHRKey c
      -> LastQuery c
      -> WorkTrie c
-     -> StoredCHR c g p
+     -> StoredCHR c g b p
      -> ( [( [(CHRKey c, Work c)]
            , [(CHRKey c, Work c)]
            )]
@@ -950,7 +948,7 @@ slvCandidate workHdKey lastQuery wlTrie (StoredCHR {storedIdent = (ck,_), stored
 slvIsUsedByPropPart
   :: (Ord k, Ord (TTKey c))
      => Map.Map (Set.Set k) (Set.Set (UsedByKey c))
-     -> (StoredCHR c g p, ([k], t))
+     -> (StoredCHR c g b p, ([k], t))
      -> Bool
 slvIsUsedByPropPart wlUsedIn (chr,(keys,_))
   = fnd $ drop (storedSimpSz chr) keys
@@ -965,15 +963,16 @@ slvMatch
        CHREmptySubstitution s
      , VarLookupCmb s s
      , -}
-       MonoBacktrackPrio c g p s e m
+       MonoBacktrackPrio c g b p s e m
      {- these below should not be necessary as they are implied (via superclasses) by MonoBacktrackPrio, but deeper nested superclasses seem not to be picked up...
      -}
      , CHRMatchable env c s
      , CHRCheckable env g s
      , CHRPrioEvaluatable env p s
+     , CHRBuiltinSolvable env b s
      , PP s
      )
-     => env -> StoredCHR c g p -> [c] -> CHRMonoBacktrackPrioT c g p s e m (Maybe (Int,s))
+     => env -> StoredCHR c g b p -> [c] -> CHRMonoBacktrackPrioT c g b p s e m (Maybe (Int,s))
 slvMatch env chr@(StoredCHR {_storedChrRule = Rule {rulePrio = mbpr}}) cnstrs = return $ do
     subst <- foldl cmb (Just chrEmptySubst) $ matches chr cnstrs ++ checks chr
     return (maybe minBound (chrPrioEval env subst) mbpr, subst)
@@ -1008,7 +1007,7 @@ slvMatch
      , CHRCheckable env g s
      , VarLookupCmb s s
      )
-     => env -> StoredCHR c g p -> [c] -> Maybe s
+     => env -> StoredCHR c g b p -> [c] -> Maybe s
 slvMatch env chr cnstrs
   = foldl cmb (Just chrEmptySubst) $ matches chr cnstrs ++ checks chr
   where matches (StoredCHR {storedChrRule = Rule {ruleHead = hc}}) cnstrs
@@ -1028,11 +1027,11 @@ slvMatch env chr cnstrs
 -------------------------------------------------------------------------------------------
 
 {-
-instance (Ord (TTKey c), Serialize (TTKey c), Serialize c, Serialize g, Serialize p) => Serialize (CHRStore c g p) where
+instance (Ord (TTKey c), Serialize (TTKey c), Serialize c, Serialize g, Serialize b, Serialize p) => Serialize (CHRStore c g b p) where
   sput (CHRStore a) = sput a
   sget = liftM CHRStore sget
   
-instance (Serialize c, Serialize g, Serialize p, Serialize (TTKey c)) => Serialize (StoredCHR c g p) where
+instance (Serialize c, Serialize g, Serialize b, Serialize p, Serialize (TTKey c)) => Serialize (StoredCHR c g b p) where
   sput (StoredCHR a b c d) = sput a >> sput b >> sput c >> sput d
   sget = liftM4 StoredCHR sget sget sget sget
 
