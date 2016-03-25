@@ -221,9 +221,9 @@ instance MkRule (CHRRule e s) where
   guardRule g (CHRRule r) = CHRRule $ guardRule g r
   prioritizeRule p (CHRRule r) = CHRRule $ prioritizeRule p r
 
-infix   1 <==>, ==>, <\=>
-infixr  0 |>
-infixr  0 |!
+infix   2 <==>, ==>, <\=>
+infixl  1 |>
+infixl  1 |!
 
 (<==>>), (==>>) :: forall r c1 c2 c3 . (MkRule r, MkSolverConstraint (SolverConstraint r) c1, MkSolverConstraint (SolverConstraint r) c2, MkSolverBuiltin (SolverBuiltin r) c3)
   => [c1] -> ([c2], [c3]) -> r

@@ -5,6 +5,8 @@ module UHC.Util.Substitutable
     VarUpdatable(..)
   , VarExtractable(..)
   
+  , SubstMake(..)
+  
   , SubstVarKey
   , SubstVarVal
   , ExtrValVarKey
@@ -27,6 +29,10 @@ type family SubstVarVal subst :: *
 type family ExtrValVarKey vv :: *
 
 type instance ExtrValVarKey [vv] = ExtrValVarKey vv
+
+class SubstMake subst where
+  substSingleton :: SubstVarKey subst -> SubstVarVal subst -> subst
+  substEmpty     :: subst
 
 class VarUpdatable vv subst where -- skey sval | subst -> skey sval where
   varUpd            ::  subst -> vv -> vv

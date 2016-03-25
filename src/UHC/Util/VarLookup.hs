@@ -1,6 +1,3 @@
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE FunctionalDependencies #-}
-{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE CPP #-}
 #if __GLASGOW_HASKELL__ >= 710
@@ -22,7 +19,6 @@ module UHC.Util.VarLookup
     )
   where
 
--- import EH100.Base.Common
 import Data.Maybe
 
 -- | Level to lookup into

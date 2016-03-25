@@ -140,10 +140,18 @@ str = M.chrStoreFromElems
   ]
 
 type S = Map.Map Var Tm
+
+type instance SubstVarKey S = Var
+type instance SubstVarVal S = Tm
+
 sLkup :: Var -> S -> Maybe Tm
 sLkup v s = Map.lookup v s >>= \t -> case t of
   Tm_Var v -> sLkup v s
   t        -> Just t
+
+instance SubstMake S where
+  substSingleton = Map.singleton
+  substEmpty = Map.empty
 
 instance PP S where
   pp = ppAssocL . Map.toList
@@ -217,13 +225,37 @@ instance CHRCheckable E G S where
       _                                       -> Nothing
 
 instance CHRMatchable E Tm S where
+{-
   chrMatchTo _ s t1 t2 = case (s `varUpd` t1, s `varUpd` t2) of
       (Tm_Str s1, Tm_Str s2) | s1 == s2 -> return chrEmptySubst
       (Tm_Var v1, Tm_Var v2) | v1 == v2 -> return chrEmptySubst
       (Tm_Var v1, t2       )            -> return $ Map.singleton v1 t2
+      -- (t1       , Tm_Var v2)            -> waitForBinding v2 >> return $ Nothing
       _                                 -> Nothing
+-}
+
+  chrMatchToM _ t1 t2 = do
+    t1 <- chrMatchVarUpd t1
+    t2 <- chrMatchVarUpd t2
+    case (t1, t2) of
+      (Tm_Str s1, Tm_Str s2) | s1 == s2 -> return ()
+      (Tm_Var v1, Tm_Var v2) | v1 == v2 -> return ()
+      (Tm_Var v1, t2       )            -> chrMatchBind v1 t2
+      (t1       , Tm_Var v2)            -> chrMatchWait v2
+      _                                 -> chrMatchFail
+
+{-
+instance CHRMatchable E Tm S where
+  chrMatchToM _ s t1 t2 = case (s `varUpd` t1, s `varUpd` t2) of
+      (Tm_Str s1, Tm_Str s2) | s1 == s2 -> return $ return chrEmptySubst
+      (Tm_Var v1, Tm_Var v2) | v1 == v2 -> return $ return chrEmptySubst
+      (Tm_Var v1, t2       )            -> return $ return $ Map.singleton v1 t2
+      -- (t1       , Tm_Var v2)            -> waitForBinding v2 >> return $ Nothing
+      _                                 -> return Nothing
+-}
 
 instance CHRMatchable E C S where
+{-
   chrMatchTo e s c1 c2 = case (s `varUpd` c1, s `varUpd` c2) of
       (C_Leq x1 y1, C_Leq x2 y2) -> m chrEmptySubst x1 y1 x2 y2
       (C_Eq x1 y1, C_Eq x2 y2) -> m chrEmptySubst x1 y1 x2 y2
@@ -235,6 +267,19 @@ instance CHRMatchable E C S where
         s2 <- chrMatchTo e s' y1 y2
         let s'' = s2 |+> s'
         return s''
+-}
+
+  chrMatchToM e c1 c2 = do
+    c1 <- chrMatchVarUpd c1
+    c2 <- chrMatchVarUpd c2
+    case (c1, c2) of
+      (C_Leq x1 y1, C_Leq x2 y2) -> m x1 y1 x2 y2
+      (C_Eq x1 y1 , C_Eq x2 y2 ) -> m x1 y1 x2 y2
+      _ -> chrMatchFail
+    where
+      m x1 y1 x2 y2 = do
+        chrMatchToM e x1 x2
+        chrMatchToM e y1 y2
 
 instance CHRBuiltinSolvable E B S where
   chrBuiltinSolve e s b = case s `varUpd` b of
@@ -312,4 +357,4 @@ mbp3 = do
     MBP.ppSolverResult r >>= (liftIO . putPPLn)
     return r
 
-mainMBP = MBP.runCHRMonoBacktrackPrioT (MBP.emptyCHRGlobState) (MBP.emptyCHRBackState) mbp3
+mainMBP = MBP.runCHRMonoBacktrackPrioT (MBP.emptyCHRGlobState) (MBP.emptyCHRBackState) mbp2

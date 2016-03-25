@@ -27,7 +27,17 @@ module UHC.Util.CHR.Base
   
   , CHREmptySubstitution(..)
   
-  , CHRMatchable(..), CHRMatchableKey
+  , MonadCHRMatchable(..)
+  , CHRMatcher
+  -- , CHRMatcherAPI(..)
+  , chrMatchBind
+  , chrMatchFail
+  , chrMatchWait
+  , chrMatchSucces
+  , chrMatchVarUpd
+  
+  , CHRMatchable(..)
+  , CHRMatchableKey
   
   , CHRCheckable(..)
   
@@ -48,6 +58,9 @@ import qualified Data.Set as Set
 import           UHC.Util.Pretty
 import           UHC.Util.CHR.Key
 import           Control.Monad
+import           Control.Monad.State.Strict
+import           Control.Monad.Except
+import           Control.Monad.Identity
 import           UHC.Util.Utils
 import           UHC.Util.Binary
 import           UHC.Util.Serialize
@@ -135,7 +148,7 @@ instance Ord (CHRConstraint env subst) where
     Just (c2' :: c1) -> c1 `compare` c2'
     _                -> typeOf (undefined :: c1) `compare` typeOf (undefined :: c2)
 
-instance (CHRMatchableKey subst ~ TTKey (CHRConstraint env subst)) => CHRMatchable env (CHRConstraint env subst) subst where
+instance (CHREmptySubstitution subst, CHRMatchableKey subst ~ TTKey (CHRConstraint env subst)) => CHRMatchable env (CHRConstraint env subst) subst where
   chrMatchTo env subst c1 c2
     = case (c1, c2) of
         (CHRConstraint (c1' :: c), CHRConstraint c2') -> case cast c2' of
@@ -252,14 +265,90 @@ class CHREmptySubstitution subst where
   chrEmptySubst :: subst
 
 -------------------------------------------------------------------------------------------
+--- MonadCHRMatchable, call back API used during matching
+-------------------------------------------------------------------------------------------
+
+class Monad m => MonadCHRMatchable var m where
+  chrWaitForBinding :: var -> m ()
+
+instance {-# OVERLAPPABLE #-} MonadCHRMatchable var Identity where
+  chrWaitForBinding _ = return ()
+
+{-
+class (Monad m, MonadError () m) => MonadCHRMatchable var m where
+  chrWaitForBinding :: var -> m ()
+  
+  chrMatchFail :: m a
+  chrMatchFail = throwError ()
+
+instance {-# OVERLAPPABLE #-} MonadCHRMatchable var (Except ()) where
+  chrWaitForBinding _ = return ()
+-}
+
+type CHRMatcher subst = StateT ([subst], Set.Set (SubstVarKey subst)) (Either ())
+
+{-
+class CHRMatcherAPI subst where
+  chrMatchWaitForBinding :: SubstVarKey subst -> CHRMatcher subst ()
+  chrMatchBind :: SubstVarKey subst -> SubstVarVal subst -> CHRMatcher subst ()
+-}
+
+chrMatchBind :: forall subst k v . (VarLookupCmb subst subst, SubstMake subst, k ~ SubstVarKey subst, v ~ SubstVarVal subst) => k -> v -> CHRMatcher subst ()
+chrMatchBind k v = chrMatchModifyBind ((substSingleton k v :: subst) |+>)
+{-# INLINE chrMatchBind #-}
+
+chrMatchWait :: (Ord k, k ~ SubstVarKey subst) => k -> CHRMatcher subst ()
+chrMatchWait k = chrMatchModifyWait (Set.insert k)
+{-# INLINE chrMatchWait #-}
+
+chrMatchFail :: CHRMatcher subst ()
+chrMatchFail = throwError ()
+{-# INLINE chrMatchFail #-}
+
+chrMatchSucces :: CHRMatcher subst ()
+chrMatchSucces = return ()
+{-# INLINE chrMatchSucces #-}
+
+chrMatchVarUpd :: (VarLookupCmb subst subst, VarUpdatable x subst) => x -> CHRMatcher subst x
+chrMatchVarUpd x = gets fst >>= \[sl,sg] -> return $ (sl |+> sg) `varUpd` x
+
+chrMatchModifyBind :: (subst -> subst) -> CHRMatcher subst ()
+chrMatchModifyBind f = modify (\([sl,sg],w) -> ([f sl, sg], w))
+
+chrMatchModifyWait :: (Set.Set (SubstVarKey subst) -> Set.Set (SubstVarKey subst)) -> CHRMatcher subst ()
+chrMatchModifyWait f = modify (\(s,w) -> (s, f w))
+
+-------------------------------------------------------------------------------------------
 --- CHRMatchable
 -------------------------------------------------------------------------------------------
 
 type family CHRMatchableKey subst :: *
 
 -- | A Matchable participates in the reduction process as a reducable constraint.
-class (TTKeyable x, TTKey x ~ CHRMatchableKey subst) => CHRMatchable env x subst where -- skey | subst -> skey where --- | x -> subst env where
+class (TTKeyable x, TTKey x ~ CHRMatchableKey subst, CHREmptySubstitution subst) => CHRMatchable env x subst where
   chrMatchTo :: env -> subst -> x -> x -> Maybe subst
+  chrMatchTo e s x1 x2 = either (const Nothing) (\([s,_],w) -> if Set.null w then Just s else Nothing) $ flip execStateT ([chrEmptySubst,s], Set.empty) $ chrMatchToM e x1 x2
+  
+  -- | Match one directional (from 1st to 2nd arg), under a subst, yielding a subst for the metavars in the 1st arg, waiting for those in the 2nd
+  chrMatchToM :: env -> x -> x -> CHRMatcher subst ()
+  chrMatchToM e x1 x2 = do
+    [sl,sg] <- gets fst
+    maybe (throwError ()) (\s -> chrMatchModifyBind (const s)) $ chrMatchTo e sg x1 x2
+{-
+  chrMatchToM :: (MonadCHRMatchable (SubstVarKey subst) m {-, s ~ subst, SubstVarKey s ~ SubstVarKey subst -}) => env -> subst -> x -> x -> m (Maybe subst)
+  chrMatchToM e s x1 x2 = return $ chrMatchTo e s x1 x2
+-}
+
+{-
+-- | A Matchable participates in the reduction process as a reducable constraint.
+class (TTKeyable x, TTKey x ~ CHRMatchableKey subst) => CHRMatchable env x subst where
+  chrMatchTo :: env -> subst -> x -> x -> Maybe subst
+  chrMatchTo e s x1 x2 = either (const Nothing) Just $ runExcept $ chrMatchToM e s x1 x2
+  
+  -- | Match one directional (from 1st to 2nd arg), under a subst, yielding a subst for the metavars in the 1st arg, waiting for those in the 2nd
+  chrMatchToM :: (MonadCHRMatchable (SubstVarKey subst) m {-, s ~ subst, SubstVarKey s ~ SubstVarKey subst -}) => env -> subst -> x -> x -> m subst
+  chrMatchToM e s x1 x2 = maybe (throwError ()) return $ chrMatchTo e s x1 x2
+-}
 
 -------------------------------------------------------------------------------------------
 --- CHRCheckable

@@ -94,6 +94,7 @@ import           Data.Maybe
 import           UHC.Util.Pretty as Pretty
 import           UHC.Util.Serialize
 import           Control.Monad
+import           Control.Monad.Except
 import           Control.Monad.State.Strict
 import           UHC.Util.Utils
 import           UHC.Util.Lens
@@ -277,8 +278,19 @@ emptyCHRBackState :: CHREmptySubstitution s => CHRBackState c s
 emptyCHRBackState = CHRBackState chrEmptySubst emptyWorkQueue emptyWorkQueue [] Set.empty []
 
 -- | Monad for CHR, taking from 'LogicStateT' the state and backtracking behavior
-type CHRMonoBacktrackPrioT cnstr guard builtin prio subst env m a
-  = LogicStateT (CHRGlobState cnstr guard builtin prio subst) (CHRBackState cnstr subst) m a
+type CHRMonoBacktrackPrioT cnstr guard builtin prio subst env m
+  = LogicStateT (CHRGlobState cnstr guard builtin prio subst) (CHRBackState cnstr subst) m
+
+instance (SubstVarKey subst ~ var) => MonadCHRMatchable var (CHRMonoBacktrackPrioT cnstr guard builtin prio subst env m) where
+  chrWaitForBinding _ = return ()
+
+{-
+instance MonadTrans (CHRMonoBacktrackPrioT cnstr guard builtin prio subst env) where
+  lift m = 
+instance MonadError e m => MonadError e (CHRMonoBacktrackPrioT cnstr guard builtin prio subst env m) where
+  throwError = lift . throwError
+-}
+
 
 -- | All required behavior, as class alias
 class ( IsCHRSolvable env cnstr guard builtin prio subst
