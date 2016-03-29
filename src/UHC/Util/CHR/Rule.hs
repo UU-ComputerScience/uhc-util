@@ -6,26 +6,37 @@
 -------------------------------------------------------------------------------------------
 
 {- |
-Derived from work by Gerrit vd Geest, but with searching structures for predicates
-to avoid explosion of search space during resolution.
+The representation of rules, which should allow an implementation of:
+
+"A Flexible Search Framework for CHR", Leslie De Koninck, Tom Schrijvers, and Bart Demoen.
+http://link.springer.com/10.1007/978-3-540-92243-8_2
+
 -}
 
 module UHC.Util.CHR.Rule
   ( CHRRule(..)
   
+  , RuleBodyAlt(..)
+  
   , Rule(..)
+  , ruleBody, ruleBodyBuiltin
   , ruleSz
   
-  , (<==>>), (==>>), (<\=>>)
-  , (<==>), (==>), (<\=>)
-  , (|>), (|!)
+  , (/\)
+  , (\/)
+  , (\!)
+  , (<=>>), (==>>), (<\>>)
+  , (<==>), (<=>), (==>), (<\>)
+  , (|>), (=|)
+  , (=!), (=!!)
+  , (=@), (@=)
   
   , MkSolverConstraint(..)
   , MkSolverGuard(..)
   , MkSolverBuiltin(..)
   , MkSolverPrio(..)
   
-  , MkRule(prioritizeRule)
+  , MkRule(mkRule)
   )
   where
 
@@ -34,6 +45,7 @@ import           UHC.Util.CHR.Base
 import           UHC.Util.VarMp
 import           UHC.Util.Utils
 import           Data.Monoid
+import           Data.List as List
 import           Data.Typeable
 -- import           Data.Data
 import qualified Data.Set as Set
@@ -48,17 +60,38 @@ import           UHC.Util.Substitutable
 --- CHR, derived structures
 -------------------------------------------------------------------------------------------
 
+data RuleBodyAlt cnstr builtin prio
+  = RuleBodyAlt
+      { rbodyaltBacktrackPrio       :: !(Maybe prio)        -- ^ optional backtrack priority, if absent it is inherited from the active backtrack prio
+      , rbodyaltBody                :: ![cnstr]             -- ^ body constraints to be dealt with by rules
+      , rbodyaltBodyBuiltin         :: ![builtin]           -- ^ builtin constraints to be dealt with by builtin solving
+      }
+  deriving (Typeable)
+
 -- | A CHR (rule) consist of head (simplification + propagation, boundary indicated by an Int), guard, and a body. All may be empty, but not all at the same time.
 data Rule cnstr guard builtin prio
   = Rule
-      { ruleHead         :: ![cnstr]
-      , ruleSimpSz       :: !Int                -- ^ length of the part of the head which is the simplification part
-      , ruleGuard        :: ![guard]            
-      , ruleBody         :: ![cnstr]
-      , ruleBodyBuiltin  :: ![builtin]
-      , rulePrio         :: !(Maybe prio)       -- ^ optional priority, if absent it is considered the lowest possible
+      { ruleHead            :: ![cnstr]
+      , ruleSimpSz          :: !Int                -- ^ length of the part of the head which is the simplification part
+      , ruleGuard           :: ![guard]    
+      , ruleBodyAlts        :: ![RuleBodyAlt cnstr builtin prio]
+{-        
+      , ruleBody            :: ![cnstr]
+      , ruleBodyBuiltin     :: ![builtin]
+-}
+      , ruleBacktrackPrio   :: !(Maybe prio)       -- ^ backtrack priority, should be something which can be substituted with the actual prio, later to be referred to at backtrack prios of alternatives
+      , rulePrio            :: !(Maybe prio)       -- ^ rule priority, to choose between rules with equal backtrack priority
+      , ruleName            :: (Maybe String)
       }
   deriving (Typeable)
+
+-- | Backwards compatibility: if only one alternative, extract it, ignore other alts
+ruleBody :: Rule c g b p -> [c]
+ruleBody (Rule {ruleBodyAlts = (a:_)}) = rbodyaltBody a
+
+-- | Backwards compatibility: if only one alternative, extract it, ignore other alts
+ruleBodyBuiltin :: Rule c g b p -> [b]
+ruleBodyBuiltin (Rule {ruleBodyAlts = (a:_)}) = rbodyaltBodyBuiltin a
 
 -- | Total nr of cnstrs in rule
 ruleSz :: Rule c g b p -> Int
@@ -72,19 +105,24 @@ instance Show (Rule c g b p) where
   show _ = "Rule"
 
 instance (PP c, PP g, PP p, PP b) => PP (Rule c g b p) where
-  pp chr
-    = case chr of
-        (Rule h@(_:_)  sz g b bi p) | sz == 0        -> ppChr ([ppL h, pp  "==>"] ++ ppGB g b)
-        (Rule h@(_:_)  sz g b bi p) | sz == length h -> ppChr ([ppL h, pp "<==>"] ++ ppGB g b)
-        (Rule h@(_:_)  sz g b bi p)                  -> ppChr ([ppL (take sz h), pp "\\", ppL (drop sz h), pp "<\\=>"] ++ ppGB g b)
-        (Rule []       _  g b bi p)                  -> ppChr (ppGB g b)
-    where ppGB g@(_:_) b@(_:_) = [ppL b, "|" >#< ppL g]
-          ppGB g@(_:_) []      = ["|" >#< ppL g]
-          ppGB []      b@(_:_) = [ppL b]
-          ppGB []      []      = []
-          ppL [x] = pp x
-          ppL xs  = ppBracketsCommasBlock xs -- ppParensCommasBlock xs
-          ppChr l = vlist l -- ppCurlysBlock
+  pp chr = ppMbPre (\p -> p >#< "::") rPrio $ ppMbPre (\n -> pp n >#< "@") (ruleName chr) $ base
+    where base = case chr of
+            Rule {} | ruleSimpSz chr == 0                        -> ppChr ([ppL (ruleHead chr), pp  "==>"] ++ ppGB (ruleGuard chr) body)
+                    | ruleSimpSz chr == length (ruleHead chr)    -> ppChr ([ppL (ruleHead chr), pp "<==>"] ++ ppGB (ruleGuard chr) body)
+                    | length (ruleHead chr) == 0                 -> ppChr (ppGB (ruleGuard chr) body)
+                    | otherwise                                  -> ppChr ([ppL (drop (ruleSimpSz chr) (ruleHead chr)), pp "\\", ppL (take (ruleSimpSz chr) (ruleHead chr)), pp "<\\=>"] ++ ppGB (ruleGuard chr) body)
+          rPrio = case (ruleBacktrackPrio chr, rulePrio chr) of
+            (Nothing, Nothing) -> Nothing
+            (Just bp, Just rp) -> Just $ ppParensCommas [   bp ,    rp ]
+            (Just bp, _      ) -> Just $ ppParensCommas [pp bp , pp "_"]
+            (_      , Just rp) -> Just $ ppParensCommas [pp "_", pp rp ]
+          body = ppSpaces $ intersperse (pp "\\/") $ map ppAlt $ ruleBodyAlts chr
+            where ppAlt a = ppMbPre (\p -> ppParens p >#< "::") (rbodyaltBacktrackPrio a) $ ppL $ map pp (rbodyaltBody a) ++ map pp (rbodyaltBodyBuiltin a)
+          ppGB g@(_:_) b = [ppL g, "|" >#< b] -- g b = ppListPre (\g -> ppL g >#< "|") g
+          ppGB []      b = [b]
+          -- ppL [x] = pp x
+          ppL xs  = ppCommas' xs -- ppParensCommasBlock xs
+          ppChr l = ppSpaces l -- vlist l -- ppCurlysBlock
 
 type instance TTKey (Rule cnstr guard builtin prio) = TTKey cnstr
 type instance TreeTrie.TrTrKey (Rule cnstr guard builtin prio) = TTKey cnstr
@@ -117,14 +155,25 @@ instance PP (CHRRule env subst) where
 -------------------------------------------------------------------------------------------
 
 type instance ExtrValVarKey (Rule c g b p) = ExtrValVarKey c
+type instance ExtrValVarKey (RuleBodyAlt c b p) = ExtrValVarKey c
 
+-- TBD: should vars be extracted from prio and builtin as well?
+instance (VarExtractable c) => VarExtractable (RuleBodyAlt c b p) where
+  varFreeSet          (RuleBodyAlt {rbodyaltBody=b})
+    = Set.unions $ concat [map varFreeSet b]
+
+-- TBD: should vars be extracted from prio as well?
 instance (VarExtractable c, VarExtractable g, ExtrValVarKey c ~ ExtrValVarKey g) => VarExtractable (Rule c g b p) where
-  varFreeSet          (Rule {ruleHead=h, ruleGuard=g, ruleBody=b})
+  varFreeSet          (Rule {ruleHead=h, ruleGuard=g, ruleBodyAlts=b})
     = Set.unions $ concat [map varFreeSet h, map varFreeSet g, map varFreeSet b]
 
-instance (VarUpdatable c s, VarUpdatable g s) => VarUpdatable (Rule c g b p) s where
-  varUpd s r@(Rule {ruleHead=h, ruleGuard=g, ruleBody=b})
-    = r {ruleHead = map (varUpd s) h, ruleGuard = map (varUpd s) g, ruleBody = map (varUpd s) b}
+instance (VarUpdatable c s, VarUpdatable b s, VarUpdatable p s) => VarUpdatable (RuleBodyAlt c b p) s where
+  varUpd s r@(RuleBodyAlt {rbodyaltBacktrackPrio=p, rbodyaltBody=b, rbodyaltBodyBuiltin=bi})
+    = r {rbodyaltBacktrackPrio = fmap (varUpd s) p, rbodyaltBody = map (varUpd s) b, rbodyaltBodyBuiltin = map (varUpd s) bi}
+
+instance (VarUpdatable c s, VarUpdatable g s, VarUpdatable b s, VarUpdatable p s) => VarUpdatable (Rule c g b p) s where
+  varUpd s r@(Rule {ruleHead=h, ruleGuard=g, ruleBodyAlts=b})
+    = r {ruleHead = map (varUpd s) h, ruleGuard = map (varUpd s) g, ruleBodyAlts = map (varUpd s) b}
 
 -------------------------------------------------------------------------------------------
 --- Construction: Rule
@@ -202,15 +251,21 @@ class MkRule r where
   guardRule :: [SolverGuard r] -> r -> r
   -- | Add prio to rule
   prioritizeRule :: SolverPrio r -> r -> r
+  -- | Add backtrack prio to rule
+  prioritizeBacktrackRule :: SolverPrio r -> r -> r
+  -- | Add label/name to rule
+  labelRule :: String -> r -> r
 
 instance MkRule (Rule c g b p) where
   type SolverConstraint (Rule c g b p) = c
   type SolverGuard (Rule c g b p) = g
   type SolverBuiltin (Rule c g b p) = b
   type SolverPrio (Rule c g b p) = p
-  mkRule = Rule
+  mkRule h l g b bi p = Rule h l g [RuleBodyAlt Nothing b bi] Nothing p Nothing
   guardRule g r = r {ruleGuard = ruleGuard r ++ g}
   prioritizeRule p r = r {rulePrio = Just p}
+  prioritizeBacktrackRule p r = r {ruleBacktrackPrio = Just p}
+  labelRule l r = r {ruleName = Just l}
 
 instance MkRule (CHRRule e s) where
   type SolverConstraint (CHRRule e s) = (CHRConstraint e s)
@@ -220,50 +275,91 @@ instance MkRule (CHRRule e s) where
   mkRule h l g b bi p = CHRRule $ mkRule h l g b bi p
   guardRule g (CHRRule r) = CHRRule $ guardRule g r
   prioritizeRule p (CHRRule r) = CHRRule $ prioritizeRule p r
+  prioritizeBacktrackRule p (CHRRule r) = CHRRule $ prioritizeBacktrackRule p r
+  labelRule p (CHRRule r) = CHRRule $ labelRule p r
 
-infix   2 <==>, ==>, <\=>
-infixl  1 |>
-infixl  1 |!
+infixl  6 /\
+infixl  5 \!
+infixr  4 \/
+infix   3 <==>, <=>, ==>, <\>
+infixl  2 |>, =|
+infixl  2 =!, =!!
+infixl  2 =@
+infixr  1 @=
 
-(<==>>), (==>>) :: forall r c1 c2 c3 . (MkRule r, MkSolverConstraint (SolverConstraint r) c1, MkSolverConstraint (SolverConstraint r) c2, MkSolverBuiltin (SolverBuiltin r) c3)
+-- | Rule body backtracking alternative
+(/\) :: [c] -> [b] -> RuleBodyAlt c b p
+c /\ b = RuleBodyAlt Nothing c b
+
+-- | Rule body backtracking alternatives
+(\/) :: [RuleBodyAlt c b p] -> [RuleBodyAlt c b p] -> [RuleBodyAlt c b p]
+(\/) = (++)
+
+-- | Add backtrack priority to body alternative
+(\!) :: RuleBodyAlt c b p -> p -> RuleBodyAlt c b p
+r \! p = r {rbodyaltBacktrackPrio = Just p}
+
+(<=>>), (==>>) :: forall r c1 c2 c3 . (MkRule r, MkSolverConstraint (SolverConstraint r) c1, MkSolverConstraint (SolverConstraint r) c2, MkSolverBuiltin (SolverBuiltin r) c3)
   => [c1] -> ([c2], [c3]) -> r
 -- | Construct simplification rule out of head, body, and builtin constraints
-hs <==>>  (bs,bis) = mkRule (map toSolverConstraint hs) (length hs) [] (map toSolverConstraint bs) (map toSolverBuiltin bis) Nothing
+hs <=>>  (bs,bis) = mkRule (map toSolverConstraint hs) (length hs) [] (map toSolverConstraint bs) (map toSolverBuiltin bis) Nothing
 -- | Construct propagation rule out of head, body, and builtin constraints
 hs  ==>>  (bs,bis) = mkRule (map toSolverConstraint hs) 0 [] (map toSolverConstraint bs) (map toSolverBuiltin bis) Nothing
 
-(<\=>>) :: forall r c1 c2 c3 . (MkRule r, MkSolverConstraint (SolverConstraint r) c1, MkSolverConstraint (SolverConstraint r) c2, MkSolverBuiltin (SolverBuiltin r) c3)
+(<\>>) :: forall r c1 c2 c3 . (MkRule r, MkSolverConstraint (SolverConstraint r) c1, MkSolverConstraint (SolverConstraint r) c2, MkSolverBuiltin (SolverBuiltin r) c3)
   => ([c1],[c1]) -> ([c2],[c3]) -> r
 -- | Construct simpagation rule out of head, body, and builtin constraints
-(hsprop,hssimp) <\=>>  (bs,bis) = mkRule (map toSolverConstraint $ hssimp ++ hsprop) (length hssimp) [] (map toSolverConstraint bs) (map toSolverBuiltin bis) Nothing
+(hsprop,hssimp) <\>>  (bs,bis) = mkRule (map toSolverConstraint $ hssimp ++ hsprop) (length hssimp) [] (map toSolverConstraint bs) (map toSolverBuiltin bis) Nothing
 
-(<==>), (==>) :: forall r c1 c2 . (MkRule r, MkSolverConstraint (SolverConstraint r) c1, MkSolverConstraint (SolverConstraint r) c2)
+{-# DEPRECATED (<==>) "Use (<=>)" #-}
+(<==>), (==>), (<=>) :: forall r c1 c2 . (MkRule r, MkSolverConstraint (SolverConstraint r) c1, MkSolverConstraint (SolverConstraint r) c2)
   => [c1] -> [c2] -> r
 -- | Construct simplification rule out of head and body constraints
 hs <==>  bs = mkRule (map toSolverConstraint hs) (length hs) [] (map toSolverConstraint bs) [] Nothing
 -- | Construct propagation rule out of head and body constraints
 hs  ==>  bs = mkRule (map toSolverConstraint hs) 0 [] (map toSolverConstraint bs) [] Nothing
+(<=>) = (<==>)
 
-(<\=>) :: forall r c1 c2 . (MkRule r, MkSolverConstraint (SolverConstraint r) c1, MkSolverConstraint (SolverConstraint r) c2)
+(<\>) :: forall r c1 c2 . (MkRule r, MkSolverConstraint (SolverConstraint r) c1, MkSolverConstraint (SolverConstraint r) c2)
   => ([c1],[c1]) -> [c2] -> r
 -- | Construct simpagation rule out of head and body constraints
-(hsprop,hssimp) <\=>  bs = mkRule (map toSolverConstraint $ hssimp ++ hsprop) (length hssimp) [] (map toSolverConstraint bs) [] Nothing
+(hsprop,hssimp) <\>  bs = mkRule (map toSolverConstraint $ hssimp ++ hsprop) (length hssimp) [] (map toSolverConstraint bs) [] Nothing
 
+{-# DEPRECATED (|>) "Use (=|)" #-}
 -- | Add guards to rule
-(|>) :: (MkRule r, MkSolverGuard (SolverGuard r) g') => r -> [g'] -> r
+(|>), (=|) :: (MkRule r, MkSolverGuard (SolverGuard r) g') => r -> [g'] -> r
 r |> g = guardRule (map toSolverGuard g) r
+(=|) = (|>)
+{-# INLINE (=|) #-}
 
 -- | Add priority to rule
-(|!) :: (MkRule r, MkSolverPrio (SolverPrio r) p') => r -> p' -> r
-r |! p = prioritizeRule (toSolverPrio p) r
+(=!!) :: (MkRule r, MkSolverPrio (SolverPrio r) p') => r -> p' -> r
+r =!! p = prioritizeRule (toSolverPrio p) r
+
+-- | Add backtrack priority to rule
+(=!) :: (MkRule r, MkSolverPrio (SolverPrio r) p') => r -> p' -> r
+r =! p = prioritizeBacktrackRule (toSolverPrio p) r
+
+-- | Add label to rule
+(=@) :: (MkRule r) => r -> String -> r
+r =@ l = labelRule l r
+
+-- | Add label to rule
+(@=) :: (MkRule r) => String -> r -> r
+l @= r = r =@ l
+{-# INLINE (@=) #-}
 
 -------------------------------------------------------------------------------------------
 --- Instances: Serialize
 -------------------------------------------------------------------------------------------
 
+instance (Serialize c,Serialize b,Serialize p) => Serialize (RuleBodyAlt c b p) where
+  sput (RuleBodyAlt a b c) = sput a >> sput b >> sput c
+  sget = liftM3 RuleBodyAlt sget sget sget
+
 instance (Serialize c,Serialize g,Serialize b,Serialize p) => Serialize (Rule c g b p) where
-  sput (Rule a b c d e f) = sput a >> sput b >> sput c >> sput d >> sput e >> sput f
-  sget = liftM6 Rule sget sget sget sget sget sget
+  sput (Rule a b c d e f g) = sput a >> sput b >> sput c >> sput d >> sput e >> sput f >> sput g
+  sget = liftM7 Rule sget sget sget sget sget sget sget
 
 {-
 instance (MkSolverConstraint (CHRConstraint e s) x', Serialize x') => Serialize (CHRConstraint e s) where

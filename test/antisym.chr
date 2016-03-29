@@ -1,0 +1,2 @@
+(p,1) :: antisym @ Eq (x,y), Eq (y,x) <=> p+1 :: x == y.
+

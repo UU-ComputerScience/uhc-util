@@ -56,11 +56,13 @@ module UHC.Util.VarMp
     , varmpAsMap
     , varmpMapMaybe, varmpMap
     , varmpInsertWith
+{-
     , VarMpStk'
     , emptyVarMpStk, varmpstkUnit
     , varmpstkPushEmpty, varmpstkPop
     , varmpstkToAssocL, varmpstkKeysSet
     , varmpstkUnions
+-}
     , varmpSize
     -- , vmiMbImpls, vmiMbScope, vmiMbPred, vmiMbAssNm
     -- , varmpTailAddOcc
@@ -475,6 +477,7 @@ varmpLabelLookup2 m v = varmpLabelLookup v m
 
 -- VarMp stack, for nested/local behavior
 
+{-
 newtype VarMpStk' k v
   = VarMpStk [VarMp' k v]
   deriving (Show)
@@ -507,6 +510,7 @@ instance Ord k => VarLookup (VarMpStk' k v) k v where
 
 instance Ord k => VarLookupCmb (VarMpStk' k v) (VarMpStk' k v) where
   (VarMpStk s1) |+> (VarMpStk s2) = VarMpStk (s1 |+> s2)
+-}
 
 -- Pretty printing
 
@@ -522,8 +526,10 @@ ppVarMp ppL (VarMp mlev ms)
 instance (PP k, PP v) => PP (VarMp' k v) where
   pp = ppVarMp (ppCommas')
 
+{-
 instance (PP k, PP v) => PP (VarMpStk' k v) where
   pp (VarMpStk s) = ppSemis' $ map pp s
+-}
 
 {-
 ppVarMpInfoCfgTy :: CfgPPTy -> VarMpInfo -> PP_Doc

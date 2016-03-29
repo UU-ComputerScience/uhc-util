@@ -1,6 +1,6 @@
 {-# LANGUAGE TypeFamilies, MultiParamTypeClasses, TypeSynonymInstances, FlexibleInstances #-}
 
-module UHC.Util.CHR.Solve.TreeTrie.Examples 
+module UHC.Util.CHR.Solve.TreeTrie.Examples.Misc
   (
   )
   where
@@ -121,7 +121,15 @@ instance TTKeyable C where
 -}
 
 type E = ()
-type P = Tm
+
+data P = P_Tm Tm | P_Const Int
+  deriving (Eq, Ord, Show, Generic)
+
+instance PP P where
+  pp (P_Tm t) = pp t
+  pp (P_Const i) = pp i
+
+instance Serialize P
 
 x = Tm_Var 0
 y = Tm_Var 1
@@ -131,11 +139,13 @@ a = Tm_Str "A"
 b = Tm_Str "B"
 c = Tm_Str "C"
 
+pr1 = P_Const 1
+
 str :: M.CHRStore C G
 str = M.chrStoreFromElems
-  [ [x `leq` y] <==> [x `eq` y] |> [x `geq` y]
-  , [x `leq` y, y `leq` x] <==> [x `eq` y]
-  , ([x `leq` y], [x `leq` y]) <\=> none
+  [ [x `leq` y] <=> [x `eq` y] =| [x `geq` y]
+  , [x `leq` y, y `leq` x] <=> [x `eq` y]
+  , ([x `leq` y], [x `leq` y]) <\> none
   , [x `leq` y, y `leq` z] ==> [x `leq` z]
   ]
 
@@ -161,6 +171,9 @@ type instance ExtrValVarKey C = Var
 type instance ExtrValVarKey Tm = Var
 type instance CHRMatchableKey S = Key
 
+instance VarLookup S Var Tm where
+  varlookupWithMetaLev _ = Map.lookup
+
 instance VarLookupCmb S S where
   (|+>) = Map.union
 
@@ -171,6 +184,11 @@ instance VarUpdatable Tm S where
   s `varUpd` t = case t of
     Tm_Var v -> maybe t id $ sLkup v s
     _ -> t 
+
+instance VarUpdatable P S where
+  s `varUpd` p = case p of
+    P_Tm t -> P_Tm (s `varUpd` t)
+    p -> p
 
 instance VarUpdatable G S where
   s `varUpd` G_Eq x y = G_Eq (s `varUpd` x) (s `varUpd` y)
@@ -225,15 +243,14 @@ instance CHRCheckable E G S where
       _                                       -> Nothing
 
 instance CHRMatchable E Tm S where
-{-
   chrMatchTo _ s t1 t2 = case (s `varUpd` t1, s `varUpd` t2) of
       (Tm_Str s1, Tm_Str s2) | s1 == s2 -> return chrEmptySubst
       (Tm_Var v1, Tm_Var v2) | v1 == v2 -> return chrEmptySubst
       (Tm_Var v1, t2       )            -> return $ Map.singleton v1 t2
       -- (t1       , Tm_Var v2)            -> waitForBinding v2 >> return $ Nothing
       _                                 -> Nothing
--}
 
+{-
   chrMatchToM _ t1 t2 = do
     t1 <- chrMatchVarUpd t1
     t2 <- chrMatchVarUpd t2
@@ -243,6 +260,7 @@ instance CHRMatchable E Tm S where
       (Tm_Var v1, t2       )            -> chrMatchBind v1 t2
       (t1       , Tm_Var v2)            -> chrMatchWait v2
       _                                 -> chrMatchFail
+-}
 
 {-
 instance CHRMatchable E Tm S where
@@ -255,7 +273,6 @@ instance CHRMatchable E Tm S where
 -}
 
 instance CHRMatchable E C S where
-{-
   chrMatchTo e s c1 c2 = case (s `varUpd` c1, s `varUpd` c2) of
       (C_Leq x1 y1, C_Leq x2 y2) -> m chrEmptySubst x1 y1 x2 y2
       (C_Eq x1 y1, C_Eq x2 y2) -> m chrEmptySubst x1 y1 x2 y2
@@ -267,8 +284,8 @@ instance CHRMatchable E C S where
         s2 <- chrMatchTo e s' y1 y2
         let s'' = s2 |+> s'
         return s''
--}
 
+{-
   chrMatchToM e c1 c2 = do
     c1 <- chrMatchVarUpd c1
     c2 <- chrMatchVarUpd c2
@@ -280,15 +297,25 @@ instance CHRMatchable E C S where
       m x1 y1 x2 y2 = do
         chrMatchToM e x1 x2
         chrMatchToM e y1 y2
+-}
 
 instance CHRBuiltinSolvable E B S where
   chrBuiltinSolve e s b = case s `varUpd` b of
     B_Eq x y -> Nothing -- TBD
 
+-- type instance CHRPrioEvaluatableVal Tm = Int
+
 instance CHRPrioEvaluatable E Tm S where
-  chrPrioEval e s p = case s `varUpd` p of
-    Tm_Str s -> sum $ map fromEnum s
-    _ -> minBound
+  chrPrioCompare e (s1,p1) (s2,p2) = case (s1 `varUpd` p1, s2 `varUpd` p2) of
+    (Tm_Str s1, Tm_Str s2) -> (sum $ map fromEnum s1) `compare` (sum $ map fromEnum s2)
+    (t1, t2) -> t1 `compare` t2
+
+-- type instance CHRPrioEvaluatableVal P = Int
+
+instance CHRPrioEvaluatable E P S where
+  chrPrioCompare e (s1,p1) (s2,p2) = case (s1 `varUpd` p1, s2 `varUpd` p2) of
+    (P_Tm t1, P_Tm t2) -> chrPrioCompare e (s1,t1) (s2,t2)
+    (t1, t2) -> t1 `compare` t2
 
 instance M.IsCHRSolvable E C G S where
 
@@ -310,10 +337,10 @@ instance MBP.MonoBacktrackPrio C G B P S E IO
 mbp :: MBP.CHRMonoBacktrackPrioT C G B P S E IO MBP.SolverResult
 mbp = do
     mapM_ MBP.addRule
-      [ [x `leq` y] <==> [x `eq` y] |> [x `geq` y]
-      , [x `leq` y, y `leq` x] <==> [x `eq` y]
-      , ([x `leq` y], [x `leq` y]) <\=> none
-      , [x `leq` y, y `leq` z] ==> [x `leq` z] -- -- |! x
+      [ [x `leq` y] <=> [x `eq` y] =| [x `geq` y]
+      , [x `leq` y, y `leq` x] <=> [x `eq` y]
+      , ([x `leq` y], [x `leq` y]) <\> none
+      , [x `leq` y, y `leq` z] ==> [x `leq` z] -- -- =! x
       ]
     mapM_ MBP.addConstraintAsWork
       [ a `leq` b
@@ -328,7 +355,7 @@ mbp = do
 mbp2 :: MBP.CHRMonoBacktrackPrioT C G B P S E IO MBP.SolverResult
 mbp2 = do
     mapM_ MBP.addRule
-      [ [x `leq` y, y `leq` x] <==> [x `eq` y]
+      [ "antisym" @= [x `leq` y, y `leq` x] <=> [x `eq` y] =! pr1
       ]
     mapM_ MBP.addConstraintAsWork
       [ a `leq` b
@@ -342,10 +369,10 @@ mbp2 = do
 mbp3 :: MBP.CHRMonoBacktrackPrioT C G B P S E IO MBP.SolverResult
 mbp3 = do
     mapM_ MBP.addRule
-      [ [x `leq` y] <==> [x `eq` y] |> [x `geq` y]
-      , [x `leq` y, y `leq` x] <==> [x `eq` y]
-      , ([x `leq` y], [x `leq` y]) <\=> none
-      , [x `leq` y, y `leq` z] ==> [x `leq` z] -- -- |! x
+      [ [x `leq` y] <=> [x `eq` y] =| [x `geq` y]
+      , [x `leq` y, y `leq` x] <=> [x `eq` y]
+      , ([x `leq` y], [x `leq` y]) <\> none
+      , [x `leq` y, y `leq` z] ==> [x `leq` z] -- -- =! x
       ]
     mapM_ MBP.addConstraintAsWork
       [ a `leq` b

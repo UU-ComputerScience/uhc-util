@@ -23,6 +23,7 @@ module UHC.Util.Utils
   , filterMb
   , splitPlaces
   , combineToDistinguishedEltsBy
+  , partitionOnSplit
   
     -- * Tuple
   , tup123to1, tup123to2
@@ -479,6 +480,23 @@ consecutiveBy isConsec (x:xs)  =  ys : consecutiveBy isConsec zs
         consec x []                        = ([x],[])
         consec x yys@(y:ys) | isConsec x y = let (yys',zs) = consec y ys in (x:yys',zs)
                             | otherwise    = ([x],yys)
+
+-- | Partition on part of something, yielding a something else in the partitioning
+partitionOnSplit :: (a -> (x,y)) -> (x -> x') -> (x -> Bool) -> [a] -> ([(x',y)],[y])
+partitionOnSplit split adapt pred xs = foldr sel ([],[]) xs
+  where sel x ~(ts,fs) | pred x'   = ((adapt x',y):ts,   fs)
+                       | otherwise = (             ts, y:fs)
+          where (x',y) = split x
+
+{-
+partition               :: (a -> Bool) -> [a] -> ([a],[a])
+{-# INLINE partition #-}
+partition p xs = foldr (select p) ([],[]) xs
+
+select :: (a -> Bool) -> a -> ([a], [a]) -> ([a], [a])
+select p x ~(ts,fs) | p x       = (x:ts,fs)
+                    | otherwise = (ts, x:fs)
+-}
 
 -------------------------------------------------------------------------
 -- Partitioning with rebuild

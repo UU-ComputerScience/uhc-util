@@ -28,16 +28,23 @@ type family SubstVarKey subst :: *
 type family SubstVarVal subst :: *
 type family ExtrValVarKey vv :: *
 
+type instance SubstVarKey (StackedVarLookup subst) = SubstVarKey subst
+type instance SubstVarVal (StackedVarLookup subst) = SubstVarVal subst
+
 type instance ExtrValVarKey [vv] = ExtrValVarKey vv
 
 class SubstMake subst where
   substSingleton :: SubstVarKey subst -> SubstVarVal subst -> subst
   substEmpty     :: subst
 
-class VarUpdatable vv subst where -- skey sval | subst -> skey sval where
+instance SubstMake subst => SubstMake (StackedVarLookup subst) where
+  substSingleton k v = StackedVarLookup [substSingleton k v]
+  substEmpty         = StackedVarLookup [substEmpty]
+
+class VarUpdatable vv subst where
   varUpd            ::  subst -> vv -> vv
   varUpdCyc         ::  subst -> vv -> (vv, VarMp' (SubstVarKey subst) (SubstVarVal subst))
-  s `varUpdCyc` x = (s `varUpd` x,emptyVarMp)
+  s `varUpdCyc` x = (s `varUpd` x, emptyVarMp)
 
 class Ord (ExtrValVarKey vv) => VarExtractable vv where -- k | vv -> k where
   varFree           ::  vv -> [ExtrValVarKey vv]

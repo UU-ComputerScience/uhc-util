@@ -286,12 +286,13 @@ chrSolveM tropts env chrStore cnstrs = do
                           stmatch
                       expandMatch matches
                     where -- expandMatch :: SolveState e s -> [((StoredCHR e s, ([WorkKey c], [Work c])), s)] -> SolveState e s
-                          expandMatch ( ( ( schr@(StoredCHR {storedIdent = chrId, storedChr = chr@(CHRRule {chrRule = Rule {ruleBody = b, ruleSimpSz = simpSz}})})
+                          expandMatch ( ( ( schr@(StoredCHR {storedIdent = chrId, storedChr = chr@(CHRRule {chrRule = rul@(Rule {ruleSimpSz = simpSz})})})
                                           , (keys,works)
                                           )
                                         , subst
                                         ) : tlMatch
                                       ) = do
+                              let b = ruleBody rul
                               st@(SolveState {stWorkList = wl, stHistoryCount = histCount}) <- get
                               let (tlMatchY,tlMatchN) = partition (\(r@(_,(ks,_)),_) -> not (any (`elem` keysSimp) ks || slvIsUsedByPropPart (wlUsedIn wl') r)) tlMatch
                                   (keysSimp,keysProp) = splitAt simpSz keys

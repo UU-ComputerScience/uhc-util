@@ -12,6 +12,11 @@ Solver is:
 - Knows about variables for which substitutions can be found, substitutions are part of found solutions.
 - Backtracking (on variable bindings/substitutions), multiple solution alternatives are explored.
 - Found rules are applied in an order described by priorities associated with rules. Priorities can be dynamic, i.e. depend on terms in rules.
+
+See
+
+"A Flexible Search Framework for CHR", Leslie De Koninck, Tom Schrijvers, and Bart Demoen.
+http://link.springer.com/10.1007/978-3-540-92243-8_2
 -}
 
 module UHC.Util.CHR.Solve.TreeTrie.MonoBacktrackPrio
@@ -296,6 +301,7 @@ instance MonadError e m => MonadError e (CHRMonoBacktrackPrioT cnstr guard built
 class ( IsCHRSolvable env cnstr guard builtin prio subst
       , Monad m
       , Ord (TTKey cnstr)
+      , Ord prio
       , TTKeyable cnstr
       -- , CHREmptySubstitution subst
       -- , CHRMatchable env cnstr subst
@@ -596,9 +602,9 @@ chrSolve env = slv
                 forM wis $ \wi -> do
                   w <- forM wi lkupWork
                   fmap ((,) (ci,c,wi)) $ slvMatch env c (map workCnstr w)
-              -- which we group by priority, highest to lowest
-              let foundWorkMatchesFilteredPriod = map assocLElts $ groupSortByOn (flip compare) fst
-                    [ (pr,(ci,c,wi,s)) | ((ci,c,wi),Just (pr,s)) <- foundWorkMatches ]
+              -- which we group by priority, highest to lowest with the ones which cannot be compared at the end
+              let foundWorkMatchesFilteredPriod = map assocLElts (groupSortByOn (chrPrioCompare env) fst forCmp) ++ (if List.null noCmp then [] else [noCmp])
+                    where (forCmp, noCmp) = partitionOnSplit id fromJust isJust [ (fmap ((,) s) pr,(ci,c,wi,s)) | ((ci,c,wi),Just (pr,s)) <- foundWorkMatches ]
 
               -- debug info
               sndl ^* chrbstReductionSteps =$: (SolverReductionDBG
@@ -631,7 +637,8 @@ chrSolve env = slv
 -}
 
     -- solve one step further, allowing a backtrack point here
-    slv1 (CHRConstraintInx {chrciInx = ci}, StoredCHR {_storedChrRule = rul@(Rule {ruleBody = body, ruleSimpSz = simpSz})}, workInxs, matchSubst) = {- join $ backtrack $ -} do
+    slv1 (CHRConstraintInx {chrciInx = ci}, StoredCHR {_storedChrRule = rul@(Rule {ruleSimpSz = simpSz})}, workInxs, matchSubst) = {- join $ backtrack $ -} do
+        let body = ruleBody rul
         -- remove the simplification part from the work queue
         deleteWorkFromQueue $ take simpSz workInxs
         -- add each constraint from the body, applying the meta var subst
@@ -731,12 +738,13 @@ chrSolveM tropts env chrStore cnstrs = do
                           stmatch
                       expandMatch matches
                     where -- expandMatch :: SolveState c g b p s -> [((StoredCHR c g b p, ([WorkKey c], [Work c])), s)] -> SolveState c g b p s
-                          expandMatch ( ( ( schr@(StoredCHR {storedIdent = chrId, storedChrRule = chr@(Rule {ruleBody = b, ruleSimpSz = simpSz})})
+                          expandMatch ( ( ( schr@(StoredCHR {storedIdent = chrId, storedChrRule = chr@(Rule {ruleSimpSz = simpSz})})
                                           , (keys,works)
                                           )
                                         , subst
                                         ) : tlMatch
                                       ) = do
+                              let b = ruleBody chr
                               st@(SolveState {stWorkList = wl, stHistoryCount = histCount}) <- get
                               let (tlMatchY,tlMatchN) = partition (\(r@(_,(ks,_)),_) -> not (any (`elem` keysSimp) ks || slvIsUsedByPropPart (wlUsedIn wl') r)) tlMatch
                                   (keysSimp,keysProp) = splitAt simpSz keys
@@ -984,10 +992,10 @@ slvMatch
      , CHRBuiltinSolvable env b s
      , PP s
      )
-     => env -> StoredCHR c g b p -> [c] -> CHRMonoBacktrackPrioT c g b p s e m (Maybe (Int,s))
+     => env -> StoredCHR c g b p -> [c] -> CHRMonoBacktrackPrioT c g b p s e m (Maybe (Maybe p,s))
 slvMatch env chr@(StoredCHR {_storedChrRule = Rule {rulePrio = mbpr}}) cnstrs = return $ do
     subst <- foldl cmb (Just chrEmptySubst) $ matches chr cnstrs ++ checks chr
-    return (maybe minBound (chrPrioEval env subst) mbpr, subst)
+    return ({- maybe minBound (chrPrioEval env subst) -} mbpr, subst)
   where
     matches (StoredCHR {_storedChrRule = Rule {ruleHead = hc}}) cnstrs
       = zipWith mt hc cnstrs
@@ -1003,7 +1011,7 @@ slvMatch env chr@(StoredCHR {_storedChrRule = Rule {rulePrio = mbpr}}) cnstrs = 
       sequence_ (matches chr cnstrs ++ checks chr)
       subst <- get
       -- liftIO (putPPLn (pp subst))
-      return $ maybe minBound (chrPrioEval env subst) mbpr
+      return $ maybe maxBound (chrPrioEval env subst) mbpr
   where
     wrap f = get >>= \subst -> lift (f subst) >>= \s -> return (trp "slvMatch.lift.f" s s) >>= \s -> return (trp "slvMatch.s" s s |+> trp "slvMatch.subst" subst subst)
     matches (StoredCHR {_storedChrRule = Rule {ruleHead = hc}}) cnstrs
