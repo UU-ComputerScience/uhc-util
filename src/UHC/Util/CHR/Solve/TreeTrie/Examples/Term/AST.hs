@@ -11,6 +11,7 @@ module UHC.Util.CHR.Solve.TreeTrie.Examples.Term.AST
   , P(..)
   , POp(..)
   , E
+  , S
   
   , Var
   )
@@ -60,7 +61,7 @@ tmIsVar :: Tm -> Maybe Var
 tmIsVar = \t -> case t of {Tm_Var v -> Just v; _ -> Nothing}
 
 instance PP Tm where
-  pp (Tm_Var v   ) = "v" >|< v
+  pp (Tm_Var v   ) = pp v -- "v" >|< v
   pp (Tm_Con c as) = c >#< ppParensCommas as
   pp (Tm_Int i   ) = pp i
 
@@ -69,10 +70,12 @@ instance Serialize Tm
 -- | Constraint
 data C
   = C_Con String [Tm]
+  | CB_Eq Tm Tm          -- ^ builtin: unification
   deriving (Show, Eq, Ord, Typeable, Generic)
 
 instance PP C where
   pp (C_Con c as) = c >#< ppParensCommas as
+  pp (CB_Eq x y) = "unify" >#< ppParensCommas [x,y]
 
 instance Serialize C
 
@@ -82,7 +85,7 @@ data B
   deriving (Show, Eq, Ord, Typeable, Generic)
 
 instance PP B where
-  pp (B_Eq x y) = "eq" >#< ppParensCommas [x,y]
+  pp (B_Eq x y) = "unify" >#< ppParensCommas [x,y]
 
 instance Serialize B
 
@@ -92,7 +95,7 @@ data G
   deriving (Show, Typeable, Generic)
 
 instance PP G where
-  pp (G_Eq x y) = "eq" >#< ppParensCommas [x,y]
+  pp (G_Eq x y) = "is-eq" >#< ppParensCommas [x,y]
 
 instance Serialize G
 
@@ -112,6 +115,7 @@ instance TTKeyable Tm where
   toTTKeyParentChildren' o (Tm_Con c as) = (TT1K_One $ Key_Str c, ttkChildren $ map (toTTKey' o) as)
 
 instance TTKeyable C where
+  -- Not necessary for builtin constraints
   toTTKeyParentChildren' o (C_Con c as) = (TT1K_One $ Key_Str c, ttkChildren $ map (toTTKey' o) as)
 
 type E = ()
@@ -187,6 +191,7 @@ instance VarUpdatable G S where
 instance VarUpdatable C S where
   s `varUpd` c = case c of
     C_Con c as -> C_Con c $ map (s `varUpd`) as
+    CB_Eq x y  -> CB_Eq (s `varUpd` x) (s `varUpd` y)
 
 instance VarUpdatable B S where
   s `varUpd` c = case c of
@@ -202,12 +207,14 @@ instance VarExtractable G where
 
 instance VarExtractable C where
   varFreeSet (C_Con _ as) = Set.unions $ map varFreeSet as
+  varFreeSet (CB_Eq x y ) = Set.unions [varFreeSet x, varFreeSet y]
 
 instance CHREmptySubstitution S where
   chrEmptySubst = Map.empty
 
 instance IsConstraint C where
   cnstrSolvesVia (C_Con _ _) = ConstraintSolvesVia_Rule
+  cnstrSolvesVia (CB_Eq _ _) = ConstraintSolvesVia_Solve
 
 instance IsCHRGuard E G S where
 
@@ -224,76 +231,51 @@ instance CHRCheckable E G S where
       _                     -> Nothing
 
 instance CHRMatchable E Tm S where
-  chrMatchTo _ s t1 t2 = case (s `varUpd` t1, s `varUpd` t2) of
-      (Tm_Con c1 as1, Tm_Con c2 as2) | c1 == c2 -> panic "CHRMatchable E Tm S" -- return chrEmptySubst -- TBD
-      (Tm_Int i1    , Tm_Int i2    ) | i1 == i2 -> return chrEmptySubst
-      (Tm_Var v1    , Tm_Var v2    ) | v1 == v2 -> return chrEmptySubst
-      (Tm_Var v1    , t2           )            -> return $ Map.singleton v1 t2
-      -- (t1       , Tm_Var v2)            -> waitForBinding v2 >> return $ Nothing
-      _                                 -> Nothing
-
-{-
-  chrMatchToM _ t1 t2 = do
-    t1 <- chrMatchVarUpd t1
-    t2 <- chrMatchVarUpd t2
+  chrUnifyM onlyMatch e t1 t2 = do
     case (t1, t2) of
-      (Tm_Str s1, Tm_Str s2) | s1 == s2 -> return ()
-      (Tm_Var v1, Tm_Var v2) | v1 == v2 -> return ()
-      (Tm_Var v1, t2       )            -> chrMatchBind v1 t2
-      (t1       , Tm_Var v2)            -> chrMatchWait v2
-      _                                 -> chrMatchFail
--}
-
-{-
-instance CHRMatchable E Tm S where
-  chrMatchToM _ s t1 t2 = case (s `varUpd` t1, s `varUpd` t2) of
-      (Tm_Str s1, Tm_Str s2) | s1 == s2 -> return $ return chrEmptySubst
-      (Tm_Var v1, Tm_Var v2) | v1 == v2 -> return $ return chrEmptySubst
-      (Tm_Var v1, t2       )            -> return $ return $ Map.singleton v1 t2
-      -- (t1       , Tm_Var v2)            -> waitForBinding v2 >> return $ Nothing
-      _                                 -> return Nothing
--}
+      (Tm_Con c1 as1, Tm_Con c2 as2) | c1 == c2 && length as1 == length as2 
+                                                 -> sequence_ (zipWith (chrMatchToM e) as1 as2)
+      (Tm_Int i1    , Tm_Int i2    ) | i1 == i2  -> chrMatchSuccess
+      (Tm_Var v1    , Tm_Var v2    ) | v1 == v2  -> chrMatchSuccess
+      (Tm_Var v1    , t2           )             -> chrMatchSubst >>= \s -> maybe (chrMatchBind v1 t2) (\t1 -> chrMatchToM e t1 t2) $ varlookupResolveVar tmIsVar v1 s
+      (t1           , Tm_Var v2    ) | onlyMatch -> chrMatchWait v2
+                                     | otherwise -> chrMatchSubst >>= \s -> maybe (chrMatchBind v2 t1) (\t2 -> chrMatchToM e t1 t2) $ varlookupResolveVar tmIsVar v2 s
+      _                                          -> chrMatchFail
 
 instance CHRMatchable E C S where
-  chrMatchTo e s c1 c2 = case (s `varUpd` c1, s `varUpd` c2) of
-      (C_Con c1 as1, C_Con c2 as2) | c1 == c2 -> panic "CHRMatchable E C S" -- return chrEmptySubst -- TBD
-
-{-
   chrMatchToM e c1 c2 = do
-    c1 <- chrMatchVarUpd c1
-    c2 <- chrMatchVarUpd c2
     case (c1, c2) of
-      (C_Leq x1 y1, C_Leq x2 y2) -> m x1 y1 x2 y2
-      (C_Eq x1 y1 , C_Eq x2 y2 ) -> m x1 y1 x2 y2
-      _ -> chrMatchFail
-    where
-      m x1 y1 x2 y2 = do
-        chrMatchToM e x1 x2
-        chrMatchToM e y1 y2
--}
+      (C_Con c1 as1, C_Con c2 as2) | c1 == c2 && length as1 == length as2 
+                                                 -> sequence_ (zipWith (chrMatchToM e) as1 as2)
+      _                                          -> chrMatchFail
+
+instance CHRBuiltinSolvable E C S where
+  chrBuiltinSolveM e b = case b of
+    CB_Eq x y -> chrUnifyM False e x y
 
 instance CHRBuiltinSolvable E B S where
-  chrBuiltinSolve e s b = case s `varUpd` b of
-    B_Eq x y -> panic "CHRBuiltinSolvable E B S" -- Nothing -- TBD
+  chrBuiltinSolveM e b = case b of
+    B_Eq x y -> chrUnifyM False e x y
 
--- type instance CHRPrioEvaluatableVal Tm = Int
+type instance CHRPrioEvaluatableVal Tm = Prio
 
-{-
 instance CHRPrioEvaluatable E Tm S where
-  chrPrioCompare e (s1,p1) (s2,p2) = case (s1 `varUpd` p1, s2 `varUpd` p2) of
-    (Tm_Str s1, Tm_Str s2) -> (sum $ map fromEnum s1) `compare` (sum $ map fromEnum s2)
-    (t1, t2) -> t1 `compare` t2
--}
+  chrPrioEval e s t = case t of
+    Tm_Int i -> fromIntegral i
+    Tm_Var v -> maybe minBound (chrPrioEval e s) $ varlookupResolveVar tmIsVar v s
+    _        -> minBound
 
--- type instance CHRPrioEvaluatableVal P = Int
+type instance CHRPrioEvaluatableVal P = Prio
 
 instance CHRPrioEvaluatable E P S where
-  chrPrioCompare e (s1,p1) (s2,p2) = panic "CHRPrioEvaluatable E P S"
-{-
-  chrPrioCompare e (s1,p1) (s2,p2) = case (s1 `varUpd` p1, s2 `varUpd` p2) of
-    (P_Tm t1, P_Tm t2) -> chrPrioCompare e (s1,t1) (s2,t2)
-    (t1, t2) -> t1 `compare` t2
--}
+  chrPrioEval e s p = case p of
+    P_Tm t -> chrPrioEval e s t
+    P_Op o p1 p2 -> case o of
+        POp_Add -> p1' + p2'
+        POp_Sub -> p1' - p2'
+        POp_Mul -> p1' * p2'
+      where p1' = chrPrioEval e s p1
+            p2' = chrPrioEval e s p2
 
 instance M.IsCHRSolvable E C G S where
 

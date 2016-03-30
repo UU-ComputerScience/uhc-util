@@ -1,4 +1,4 @@
-{-# LANGUAGE MultiParamTypeClasses, FlexibleInstances, FunctionalDependencies, UndecidableInstances, ExistentialQuantification, ScopedTypeVariables, StandaloneDeriving #-}
+{-# LANGUAGE MultiParamTypeClasses, FlexibleInstances, FunctionalDependencies, UndecidableInstances, ExistentialQuantification, ScopedTypeVariables, StandaloneDeriving, GeneralizedNewtypeDeriving #-}
 
 -------------------------------------------------------------------------------------------
 --- Constraint Handling Rules
@@ -14,24 +14,28 @@ module UHC.Util.CHR.Base
   , ConstraintSolvesVia(..)
 
   , IsCHRConstraint(..)
-  , CHRConstraint(..)
+  -- , CHRConstraint(..)
   
   , IsCHRGuard(..)
-  , CHRGuard(..)
+  -- , CHRGuard(..)
   
   , IsCHRBuiltin(..)
-  , CHRBuiltin(..)
+  -- , CHRBuiltin(..)
   
   , IsCHRPrio(..)
-  , CHRPrio(..)
+  -- , CHRPrio(..)
   
   , CHREmptySubstitution(..)
   
-  , MonadCHRMatchable(..)
   , CHRMatcher
-  -- , CHRMatcherAPI(..)
+  , chrmatcherRun
+  -- , chrmatcherLift
+  -- , chrmatcherUnlift
+  
+  , chrMatchSubst
   , chrMatchBind
   , chrMatchFail
+  , chrMatchSuccess
   , chrMatchWait
   , chrMatchSucces
   -- , chrMatchVarUpd
@@ -41,8 +45,9 @@ module UHC.Util.CHR.Base
   
   , CHRCheckable(..)
   
+  , Prio
   , CHRPrioEvaluatable(..)
-  -- , CHRPrioEvaluatableVal
+  , CHRPrioEvaluatableVal
   
   , CHRBuiltinSolvable(..)
   
@@ -54,6 +59,7 @@ import qualified UHC.Util.TreeTrie as TreeTrie
 import           UHC.Util.VarMp
 import           Data.Monoid
 import           Data.Typeable
+import           Data.Function
 import           Unsafe.Coerce
 import qualified Data.Set as Set
 import           UHC.Util.Pretty
@@ -73,6 +79,7 @@ import           UHC.Util.Substitutable
 
 -- | (Class alias) API for constraint requirements
 class ( CHRMatchable env c subst
+      , CHRBuiltinSolvable env c subst
       , VarExtractable c
       , VarUpdatable c subst
       , Typeable c
@@ -99,7 +106,7 @@ class ( CHRBuiltinSolvable env b subst
       , PP b
       ) => IsCHRBuiltin env b subst
 
-instance {-# OVERLAPPABLE #-} IsCHRBuiltin env () subst
+instance {-# OVERLAPPABLE #-} (CHREmptySubstitution subst, VarLookupCmb subst subst) => IsCHRBuiltin env () subst
 
 -- | (Class alias) API for priority requirements
 class ( CHRPrioEvaluatable env p subst
@@ -114,6 +121,7 @@ instance {-# OVERLAPPABLE #-} IsCHRPrio env () subst
 --- Existentially quantified Constraint representations to allow for mix of arbitrary universes
 -------------------------------------------------------------------------------------------
 
+{-
 data CHRConstraint env subst
   = forall c . 
     ( IsCHRConstraint env c subst
@@ -164,11 +172,13 @@ instance VarUpdatable (CHRConstraint env subst) subst where
     where c'        = s `varUpd`    c
   s `varUpdCyc` CHRConstraint c = (CHRConstraint c', cyc)
     where (c', cyc) = s `varUpdCyc` c
+-}
 
 -------------------------------------------------------------------------------------------
 --- Existentially quantified Guard representations to allow for mix of arbitrary universes
 -------------------------------------------------------------------------------------------
 
+{-
 data CHRGuard env subst
   = forall g . 
     ( IsCHRGuard env g subst
@@ -198,11 +208,13 @@ instance VarUpdatable (CHRGuard env subst) subst where
 
 instance CHRCheckable env (CHRGuard env subst) subst where
   chrCheck env subst (CHRGuard g) = chrCheck env subst g
+-}
 
 -------------------------------------------------------------------------------------------
 --- Existentially quantified Prio representations to allow for mix of arbitrary universes
 -------------------------------------------------------------------------------------------
 
+{-
 data CHRPrio env subst
   = forall p . 
     ( IsCHRPrio env p subst
@@ -233,15 +245,19 @@ instance VarUpdatable (CHRGuard env subst) subst where
 -}
 
 instance {- (Ord (CHRPrioEvaluatableVal (CHRPrio env subst))) => -} CHRPrioEvaluatable env (CHRPrio env subst) subst where
-  -- chrPrioEval env subst (CHRPrio p) = chrPrioEval env subst p
+  chrPrioEval env subst (CHRPrio p) = chrPrioEval env subst p
+{-
   chrPrioCompare env (subst1, CHRPrio p1) (subst2, CHRPrio p2) = case cast p1 of
     Just p1' -> chrPrioCompare env (subst1,p1') (subst2,p2)
     _        -> panic "CHR.Base.instance CHRPrioEvaluatable env (CHRPrio env subst) subst.chrPrioCompare"
+-}
+-}
 
 -------------------------------------------------------------------------------------------
 --- Existentially quantified Builtin representations to allow for mix of arbitrary universes
 -------------------------------------------------------------------------------------------
 
+{-
 data CHRBuiltin env subst
   = forall b . 
     ( IsCHRBuiltin env b subst
@@ -260,6 +276,7 @@ instance PP (CHRBuiltin env subst) where
 
 instance CHRBuiltinSolvable env (CHRBuiltin env subst) subst where
   chrBuiltinSolve env subst (CHRBuiltin b) = chrBuiltinSolve env subst b
+-}
 
 -------------------------------------------------------------------------------------------
 --- CHREmptySubstitution
@@ -270,41 +287,27 @@ class CHREmptySubstitution subst where
   chrEmptySubst :: subst
 
 -------------------------------------------------------------------------------------------
---- MonadCHRMatchable, call back API used during matching
+--- CHRMatcher, call back API used during matching
 -------------------------------------------------------------------------------------------
 
-class Monad m => MonadCHRMatchable var m where
-  chrWaitForBinding :: var -> m ()
-
-instance {-# OVERLAPPABLE #-} MonadCHRMatchable var Identity where
-  chrWaitForBinding _ = return ()
-
-{-
-class (Monad m, MonadError () m) => MonadCHRMatchable var m where
-  chrWaitForBinding :: var -> m ()
-  
-  chrMatchFail :: m a
-  chrMatchFail = throwError ()
-
-instance {-# OVERLAPPABLE #-} MonadCHRMatchable var (Except ()) where
-  chrWaitForBinding _ = return ()
--}
-
+-- | Matching monad, keeping a stacked (pair) of subst (local + global), and a set of global variables upon which the solver has to wait in order to (possibly) match further/again
 type CHRMatcher subst = StateT (StackedVarLookup subst, Set.Set (SubstVarKey subst)) (Either ())
 
-{-
-class CHRMatcherAPI subst where
-  chrMatchWaitForBinding :: SubstVarKey subst -> CHRMatcher subst ()
-  chrMatchBind :: SubstVarKey subst -> SubstVarVal subst -> CHRMatcher subst ()
--}
+chrMatchSubst :: CHRMatcher subst (StackedVarLookup subst)
+chrMatchSubst = gets fst
+{-# INLINE chrMatchSubst #-}
 
 chrMatchBind :: forall subst k v . (VarLookupCmb subst subst, SubstMake subst, k ~ SubstVarKey subst, v ~ SubstVarVal subst) => k -> v -> CHRMatcher subst ()
-chrMatchBind k v = modify (\(s,w) -> ((substSingleton k v :: subst) |+> s,w)) -- chrMatchModifyBind ((substSingleton k v :: subst) |+>)
-{-# INLINE chrMatchBind #-}
+chrMatchBind k v = modify (\(s,w) -> ((substSingleton k v :: subst) |+> s,w))
+-- {-# INLINE chrMatchBind #-}
 
 chrMatchWait :: (Ord k, k ~ SubstVarKey subst) => k -> CHRMatcher subst ()
 chrMatchWait k = chrMatchModifyWait (Set.insert k)
 {-# INLINE chrMatchWait #-}
+
+chrMatchSuccess :: CHRMatcher subst ()
+chrMatchSuccess = return ()
+{-# INLINE chrMatchSuccess #-}
 
 chrMatchFail :: CHRMatcher subst ()
 chrMatchFail = throwError ()
@@ -314,18 +317,29 @@ chrMatchSucces :: CHRMatcher subst ()
 chrMatchSucces = return ()
 {-# INLINE chrMatchSucces #-}
 
-{-
-chrMatchVarUpd :: (VarUpdatable x subst) => x -> CHRMatcher subst x
-chrMatchVarUpd x = gets fst >>= \s -> return $ s `varUpd` x
--}
-
-{-
-chrMatchModifyBind :: (subst -> subst) -> CHRMatcher subst ()
-chrMatchModifyBind f = modify (\([sl,sg],w) -> ([f sl, sg], w))
--}
-
 chrMatchModifyWait :: (Set.Set (SubstVarKey subst) -> Set.Set (SubstVarKey subst)) -> CHRMatcher subst ()
 chrMatchModifyWait f = modify (\(s,w) -> (s, f w))
+{-# INLINE chrMatchModifyWait #-}
+
+-- | Lift into CHRMatcher
+chrmatcherLift :: (VarLookupCmb subst subst) => (subst -> Maybe subst) -> CHRMatcher subst ()
+chrmatcherLift f = do
+    [sl,sg] <- gets (unStackedVarLookup . fst)
+    maybe (throwError ()) (\snew -> modify (\(s,w) -> (snew |+> s,w))) $ f sg
+
+-- | Run a CHRMatcher
+chrmatcherRun :: (CHREmptySubstitution subst) => CHRMatcher subst () -> subst -> Maybe (subst, Set.Set (SubstVarKey subst))
+chrmatcherRun mtch s = either
+    (const Nothing)
+    (\(StackedVarLookup [s,_],w) -> Just (s,w))
+      $ flip execStateT (StackedVarLookup [chrEmptySubst,s], Set.empty)
+      $ mtch
+
+-- | Unlift/observe (or run) a CHRMatcher
+chrmatcherUnlift :: (CHREmptySubstitution subst) => CHRMatcher subst () -> (subst -> Maybe subst)
+chrmatcherUnlift mtch s = do
+    (s,w) <- chrmatcherRun mtch s
+    if Set.null w then Just s else Nothing
 
 -------------------------------------------------------------------------------------------
 --- CHRMatchable
@@ -338,70 +352,91 @@ type instance CHRMatchableKey (StackedVarLookup subst) = CHRMatchableKey subst
 
 
 -- | A Matchable participates in the reduction process as a reducable constraint.
+-- Unification may be incorporated as well, allowing matching to be expressed in terms of unification.
+-- This facilitates implementations of 'CHRBuiltinSolvable'.
 class (CHREmptySubstitution subst, VarLookupCmb subst subst) => CHRMatchable env x subst where
+  -- | One-directional (1st to 2nd 'x') unify
   chrMatchTo :: env -> subst -> x -> x -> Maybe subst
-  chrMatchTo e s x1 x2 = either
-    (const Nothing)
-    (\(StackedVarLookup [s,_],w) -> if Set.null w then Just s else Nothing)
-      $ flip execStateT (StackedVarLookup [chrEmptySubst,s], Set.empty)
-      $ chrMatchToM e x1 x2
+  chrMatchTo = chrUnify True
   
-  -- | Match one directional (from 1st to 2nd arg), under a subst, yielding a subst for the metavars in the 1st arg, waiting for those in the 2nd
+  -- | One-directional (1st to 2nd 'x') unify
+  chrUnify :: Bool -> env -> subst -> x -> x -> Maybe subst
+  chrUnify onlyMatch e s x1 x2 = chrmatcherUnlift (chrUnifyM onlyMatch e x1 x2) s
+  
+  -- | Match one-directional (from 1st to 2nd arg), under a subst, yielding a subst for the metavars in the 1st arg, waiting for those in the 2nd
   chrMatchToM :: env -> x -> x -> CHRMatcher subst ()
-  chrMatchToM e x1 x2 = do
-    [sl,sg] <- gets (unStackedVarLookup . fst)
-    maybe (throwError ()) (\snew -> modify (\(s,w) -> (snew |+> s,w))) $ chrMatchTo e sg x1 x2
-{-
-  chrMatchToM :: (MonadCHRMatchable (SubstVarKey subst) m {-, s ~ subst, SubstVarKey s ~ SubstVarKey subst -}) => env -> subst -> x -> x -> m (Maybe subst)
-  chrMatchToM e s x1 x2 = return $ chrMatchTo e s x1 x2
--}
+  chrMatchToM = chrUnifyM True
 
-{-
--- | A Matchable participates in the reduction process as a reducable constraint.
-class (TTKeyable x, TTKey x ~ CHRMatchableKey subst) => CHRMatchable env x subst where
-  chrMatchTo :: env -> subst -> x -> x -> Maybe subst
-  chrMatchTo e s x1 x2 = either (const Nothing) Just $ runExcept $ chrMatchToM e s x1 x2
-  
-  -- | Match one directional (from 1st to 2nd arg), under a subst, yielding a subst for the metavars in the 1st arg, waiting for those in the 2nd
-  chrMatchToM :: (MonadCHRMatchable (SubstVarKey subst) m {-, s ~ subst, SubstVarKey s ~ SubstVarKey subst -}) => env -> subst -> x -> x -> m subst
-  chrMatchToM e s x1 x2 = maybe (throwError ()) return $ chrMatchTo e s x1 x2
--}
+  -- | Unify bi-directional or match one-directional (from 1st to 2nd arg), under a subst, yielding a subst for the metavars in the 1st arg, waiting for those in the 2nd
+  chrUnifyM :: Bool -> env -> x -> x -> CHRMatcher subst ()
+  chrUnifyM onlyMatch e x1 x2 = chrmatcherLift $ \sg -> chrUnify onlyMatch e sg x1 x2
 
 -------------------------------------------------------------------------------------------
 --- CHRCheckable
 -------------------------------------------------------------------------------------------
 
 -- | A Checkable participates in the reduction process as a guard, to be checked.
-class CHRCheckable env x subst where
+-- Checking is allowed to find/return substitutions for meta variables (not for global variables).
+class (CHREmptySubstitution subst, VarLookupCmb subst subst) => CHRCheckable env x subst where
   chrCheck :: env -> subst -> x -> Maybe subst
+  chrCheck e s x = chrmatcherUnlift (chrCheckM e x) s
+
+  chrCheckM :: env -> x -> CHRMatcher subst ()
+  chrCheckM e x = chrmatcherLift $ \sg -> chrCheck e sg x
 
 -------------------------------------------------------------------------------------------
 --- CHRBuiltinSolvable
 -------------------------------------------------------------------------------------------
 
 -- | A BuiltinSolvable can result from reduction to a CHR body, representing something which the solver domain specifically solves
-class CHRBuiltinSolvable env x subst where
+class (CHREmptySubstitution subst, VarLookupCmb subst subst) => CHRBuiltinSolvable env x subst where
   chrBuiltinSolve :: env -> subst -> x -> Maybe subst
+  chrBuiltinSolve e s x = chrmatcherUnlift (chrBuiltinSolveM e x) s
 
-instance {-# OVERLAPPABLE #-} CHRBuiltinSolvable env () subst where
-  chrBuiltinSolve _ _ _ = Nothing
+  chrBuiltinSolveM :: env -> x -> CHRMatcher subst ()
+  chrBuiltinSolveM e x = chrmatcherLift $ \sg -> chrBuiltinSolve e sg x
 
+instance {-# OVERLAPPABLE #-} (CHREmptySubstitution subst, VarLookupCmb subst subst) => CHRBuiltinSolvable env () subst where
+  chrBuiltinSolveM _ _ = chrMatchFail
+
+
+-------------------------------------------------------------------------------------------
+--- Prio
+-------------------------------------------------------------------------------------------
+
+-- | Separate priority type, where minBound represents lowest prio, and compare sorts from high to low prio (i.e. high `compare` low == LT)
+newtype Prio = Prio {unPrio :: Int}
+  deriving (Eq, Bounded, Num, Enum)
+
+instance Show Prio where
+  show = show . unPrio
+
+instance PP Prio where
+  pp = pp . unPrio
+
+instance Ord Prio where
+  -- Prio p1 `compare` Prio p2 = p2 `compare` p1
+  compare = flip compare `on` unPrio
+  {-# INLINE compare #-}
+  
 -------------------------------------------------------------------------------------------
 --- CHRPrioEvaluatable
 -------------------------------------------------------------------------------------------
 
 -- | The type of value a prio representation evaluates to, must be Ord instance
--- type family CHRPrioEvaluatableVal p :: *
+type family CHRPrioEvaluatableVal p :: *
 
 -- | A PrioEvaluatable participates in the reduction process to indicate the rule priority, higher prio takes precedence
-class {- (Ord (CHRPrioEvaluatableVal x)) => -} CHRPrioEvaluatable env x subst where
-  -- chrPrioEval      :: env -> subst -> x -> CHRPrioEvaluatableVal x
+class (Ord (CHRPrioEvaluatableVal x), Bounded (CHRPrioEvaluatableVal x)) => CHRPrioEvaluatable env x subst where
+  -- | Reduce to a prio representation
+  chrPrioEval :: env -> subst -> x -> CHRPrioEvaluatableVal x
+  chrPrioEval _ _ _ = minBound
 
   -- | Compare priorities
-  chrPrioCompare   :: env -> (subst,x) -> (subst,x) -> Ordering
-  -- chrPrioCompare e s x1 x2 = chrPrioEval e s x1 `compare` chrPrioEval e s x2
+  chrPrioCompare :: env -> (subst,x) -> (subst,x) -> Ordering
+  chrPrioCompare e (s1,x1) (s2,x2) = chrPrioEval e s1 x1 `compare` chrPrioEval e s2 x2
 
--- type instance CHRPrioEvaluatableVal () = Int
+type instance CHRPrioEvaluatableVal () = Prio
 
 {-
 instance {-# OVERLAPPABLE #-} Ord x => CHRPrioEvaluatable env x subst where
@@ -410,8 +445,10 @@ instance {-# OVERLAPPABLE #-} Ord x => CHRPrioEvaluatable env x subst where
 -}
 
 instance {-# OVERLAPPABLE #-} CHRPrioEvaluatable env () subst where
-  -- chrPrioEval _ _ _ = minBound
+{-
+  chrPrioEval _ _ _ = minBound
   chrPrioCompare _ _ _ = EQ
+-}
 
 -------------------------------------------------------------------------------------------
 --- What a constraint must be capable of
@@ -423,6 +460,9 @@ data ConstraintSolvesVia
   | ConstraintSolvesVia_Solve       -- ^ solving involving finding of variable bindings (e.g. unification)
   | ConstraintSolvesVia_Residual    -- ^ a leftover, residue
   deriving (Show, Enum, Eq, Ord)
+
+instance PP ConstraintSolvesVia where
+  pp = pp . show
 
 -- | The things a constraints needs to be capable of in order to participate in solving
 class IsConstraint c where

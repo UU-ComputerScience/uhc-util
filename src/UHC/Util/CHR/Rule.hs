@@ -14,13 +14,14 @@ http://link.springer.com/10.1007/978-3-540-92243-8_2
 -}
 
 module UHC.Util.CHR.Rule
-  ( CHRRule(..)
-  
-  , RuleBodyAlt(..)
+  ( RuleBodyAlt(..)
   
   , Rule(..)
-  , ruleBody, ruleBodyBuiltin
+  , ruleBody, ruleBody'
+  , ruleBodyBuiltin
   , ruleSz
+  
+  -- , CHRRule(..)
   
   , (/\)
   , (\/)
@@ -86,12 +87,19 @@ data Rule cnstr guard builtin prio
   deriving (Typeable)
 
 -- | Backwards compatibility: if only one alternative, extract it, ignore other alts
+ruleBody' :: Rule c g b p -> ([c],[b])
+ruleBody' (Rule {ruleBodyAlts = (a:_)}) = (rbodyaltBody a, rbodyaltBodyBuiltin a)
+ruleBody' (Rule {ruleBodyAlts = []   }) = ([], [])
+
+-- | Backwards compatibility: if only one alternative, extract it, ignore other alts
 ruleBody :: Rule c g b p -> [c]
-ruleBody (Rule {ruleBodyAlts = (a:_)}) = rbodyaltBody a
+ruleBody = fst . ruleBody'
+{-# INLINE ruleBody #-}
 
 -- | Backwards compatibility: if only one alternative, extract it, ignore other alts
 ruleBodyBuiltin :: Rule c g b p -> [b]
-ruleBodyBuiltin (Rule {ruleBodyAlts = (a:_)}) = rbodyaltBodyBuiltin a
+ruleBodyBuiltin = snd . ruleBody'
+{-# INLINE ruleBodyBuiltin #-}
 
 -- | Total nr of cnstrs in rule
 ruleSz :: Rule c g b p -> Int
@@ -134,6 +142,7 @@ instance (TTKeyable cnstr) => TTKeyable (Rule cnstr guard builtin prio) where
 --- Existentially quantified Rule representations to allow for mix of arbitrary universes
 -------------------------------------------------------------------------------------------
 
+{-
 data CHRRule env subst
   = CHRRule
       { chrRule :: Rule (CHRConstraint env subst) (CHRGuard env subst) () ()
@@ -149,6 +158,7 @@ instance Show (CHRRule env subst) where
 
 instance PP (CHRRule env subst) where
   pp (CHRRule r) = pp r
+-}
 
 -------------------------------------------------------------------------------------------
 --- Var instances
@@ -186,7 +196,8 @@ class MkSolverConstraint c c' where
 instance {-# INCOHERENT #-} MkSolverConstraint c c where
   toSolverConstraint = id
   fromSolverConstraint = Just
-  
+
+{-  
 instance {-# OVERLAPS #-}
          ( IsCHRConstraint e c s
          , TTKey (CHRConstraint e s) ~ TTKey c
@@ -194,6 +205,7 @@ instance {-# OVERLAPS #-}
          ) => MkSolverConstraint (CHRConstraint e s) c where
   toSolverConstraint = CHRConstraint
   fromSolverConstraint (CHRConstraint c) = cast c
+-}
 
 class MkSolverGuard g g' where
   toSolverGuard :: g' -> g
@@ -203,12 +215,14 @@ instance {-# INCOHERENT #-} MkSolverGuard g g where
   toSolverGuard = id
   fromSolverGuard = Just
 
+{-
 instance {-# OVERLAPS #-}
          ( IsCHRGuard e g s
          , ExtrValVarKey (CHRGuard e s) ~ ExtrValVarKey g
          ) => MkSolverGuard (CHRGuard e s) g where
   toSolverGuard = CHRGuard
   fromSolverGuard (CHRGuard g) = cast g
+-}
 
 class MkSolverBuiltin b b' where
   toSolverBuiltin :: b' -> b
@@ -218,12 +232,14 @@ instance {-# INCOHERENT #-} MkSolverBuiltin b b where
   toSolverBuiltin = id
   fromSolverBuiltin = Just
 
+{-
 instance {-# OVERLAPS #-}
          ( IsCHRBuiltin e b s
          -- , ExtrValVarKey (CHRBuiltin e s) ~ ExtrValVarKey b
          ) => MkSolverBuiltin (CHRBuiltin e s) b where
   toSolverBuiltin = CHRBuiltin
   fromSolverBuiltin (CHRBuiltin b) = cast b
+-}
 
 class MkSolverPrio p p' where
   toSolverPrio :: p' -> p
@@ -233,12 +249,14 @@ instance {-# INCOHERENT #-} MkSolverPrio p p where
   toSolverPrio = id
   fromSolverPrio = Just
 
+{-
 instance {-# OVERLAPS #-}
          ( IsCHRPrio e p s
          -- , ExtrValVarKey (CHRPrio e s) ~ ExtrValVarKey p
          ) => MkSolverPrio (CHRPrio e s) p where
   toSolverPrio = CHRPrio
   fromSolverPrio (CHRPrio p) = cast p
+-}
 
 class MkRule r where
   type SolverConstraint r :: *
@@ -267,6 +285,7 @@ instance MkRule (Rule c g b p) where
   prioritizeBacktrackRule p r = r {ruleBacktrackPrio = Just p}
   labelRule l r = r {ruleName = Just l}
 
+{-
 instance MkRule (CHRRule e s) where
   type SolverConstraint (CHRRule e s) = (CHRConstraint e s)
   type SolverGuard (CHRRule e s) = (CHRGuard e s)
@@ -277,6 +296,7 @@ instance MkRule (CHRRule e s) where
   prioritizeRule p (CHRRule r) = CHRRule $ prioritizeRule p r
   prioritizeBacktrackRule p (CHRRule r) = CHRRule $ prioritizeBacktrackRule p r
   labelRule p (CHRRule r) = CHRRule $ labelRule p r
+-}
 
 infixl  6 /\
 infixl  5 \!

@@ -334,7 +334,7 @@ instance MBP.IsCHRSolvable E C G B P S where
 
 instance MBP.MonoBacktrackPrio C G B P S E IO
 
-mbp :: MBP.CHRMonoBacktrackPrioT C G B P S E IO MBP.SolverResult
+mbp :: MBP.CHRMonoBacktrackPrioT C G B P S E IO (MBP.SolverResult S)
 mbp = do
     mapM_ MBP.addRule
       [ [x `leq` y] <=> [x `eq` y] =| [x `geq` y]
@@ -352,7 +352,7 @@ mbp = do
     MBP.ppSolverResult r >>= (liftIO . putPPLn)
     return r
 
-mbp2 :: MBP.CHRMonoBacktrackPrioT C G B P S E IO MBP.SolverResult
+mbp2 :: MBP.CHRMonoBacktrackPrioT C G B P S E IO (MBP.SolverResult S)
 mbp2 = do
     mapM_ MBP.addRule
       [ "antisym" @= [x `leq` y, y `leq` x] <=> [x `eq` y] =! pr1
@@ -366,7 +366,7 @@ mbp2 = do
     MBP.ppSolverResult r >>= (liftIO . putPPLn)
     return r
 
-mbp3 :: MBP.CHRMonoBacktrackPrioT C G B P S E IO MBP.SolverResult
+mbp3 :: MBP.CHRMonoBacktrackPrioT C G B P S E IO (MBP.SolverResult S)
 mbp3 = do
     mapM_ MBP.addRule
       [ [x `leq` y] <=> [x `eq` y] =| [x `geq` y]

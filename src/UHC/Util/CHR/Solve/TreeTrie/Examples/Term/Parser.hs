@@ -1,7 +1,7 @@
 {-# LANGUAGE RankNTypes #-}
 
 module UHC.Util.CHR.Solve.TreeTrie.Examples.Term.Parser
-  ( pRules
+  ( pProg
   )
   where
 
@@ -17,22 +17,28 @@ import           UHC.Util.CHR.Rule
 
 type Pr p = PlainParser Token p
 
+-- | Program = rules + optional query
+pProg :: Pr ([Rule C G B P], [C])
+pProg = pRules <+> pQuery
+
 pTm_Var :: Pr Tm
 pTm_Var = Tm_Var <$> pVarid
 
 pTm :: Pr Tm
-pTm =   (Tm_Int . read) <$> pInteger
-    <|> pTm_Var
-    <|> Tm_Con <$> pConid <*> pParens (pList pTm)
+pTm =   pB
+    where pB =   (Tm_Int . read) <$> pInteger
+             <|> pTm_Var
+             <|> pParens pT
+          pT = Tm_Con <$> pConid <*> pList pB
 
-pB :: Pr B
-pB = B_Eq <$> pTm <* pKey "==" <*> pTm
+pB :: Pr C
+pB = CB_Eq <$> pTm <* pKey "==" <*> pTm
 
 pG :: Pr G
 pG = G_Eq <$> pTm <* pKey "==" <*> pTm
 
 pC :: Pr C
-pC = C_Con <$> pConid <*> pParens (pList1Sep pComma pTm)
+pC = C_Con <$> pConid <*> pList pTm
 
 pP_Var :: Pr P
 pP_Var = P_Tm <$> pTm_Var
@@ -67,7 +73,7 @@ pR = pPre <**>
          pBody = pGrd <+> pBodyAlts
          pBodyAlts = pListSep (pKey "\\/") pBodyAlt
          pBodyAlt
-           = (\pre (c,b) -> pre $ c /\ b)
+           = (\pre (c,b) -> pre $ (c ++ b) /\ [])
              <$> (flip (\!) <$> pP <* pKey "::" <|> pSucceed id)
              <*> (foldr ($) ([],[]) <$> pList1Sep pComma ((\c (cs,bs) -> (c:cs,bs)) <$> pC <|> (\b (cs,bs) -> (cs,b:bs)) <$> pB))
          mkR h len b = Rule h len [] b Nothing Nothing Nothing
@@ -75,14 +81,6 @@ pR = pPre <**>
 pRules :: Pr [Rule C G B P]
 pRules = pList (pR <* pKey ".")
 
-{-
-data Rule cnstr guard builtin prio
-  = Rule
-      { ruleHead            :: ![cnstr]
-      , ruleSimpSz          :: !Int                -- ^ length of the part of the head which is the simplification part
-      , ruleGuard           :: ![guard]    
-      , ruleBodyAlts        :: ![RuleBodyAlt cnstr builtin prio]
-      , ruleBacktrackPrio   :: !(Maybe prio)       -- ^ backtrack priority, should be something which can be substituted with the actual prio, later to be referred to at backtrack prios of alternatives
-      , rulePrio            :: !(Maybe prio)       -- ^ rule priority, to choose between rules with equal backtrack priority
-      , ruleName            :: (Maybe String)
--}
+pQuery :: Pr [C]
+pQuery = concat <$> pList (pKey "?" *> pList1Sep pComma pC <* pKey ".")
+

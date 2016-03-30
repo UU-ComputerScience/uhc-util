@@ -1,35 +1,51 @@
 module UHC.Util.CHR.Solve.TreeTrie.Examples.Term.Main where
 
-import           UHC.Util.CHR.Solve.TreeTrie.Examples.Term.Parser
+import           System.IO
+import           Control.Monad
+import           Control.Monad.IO.Class
 
--- import UHC.Util.ScanUtils
 import           UU.Parsing
 import           UU.Scanner
 
 import           UHC.Util.Pretty
+import qualified UHC.Util.CHR.Solve.TreeTrie.MonoBacktrackPrio as MBP
+import           UHC.Util.CHR.Solve.TreeTrie.Examples.Term.AST
+import           UHC.Util.CHR.Solve.TreeTrie.Examples.Term.Parser
 
-import           System.IO
-import           Control.Monad
 
 
 runFile f = do
-  toks <- scanFile
-    []
-    ["==", "\\", "=>", "<=>", ".", "+", "*", "-", "::", "@", "|", "\\/"]
-    "(),"
-    "=/\\><.+*-@:|"
-    f
-  res <- parseIOMessage show pRules toks
-  putPPLn $ vlist $ map pp res
+    msg $ "READ " ++ f
+    toks <- scanFile
+      []
+      ["==", "\\", "=>", "<=>", ".", "+", "*", "-", "::", "@", "|", "\\/", "?"]
+      "(),"
+      "=/\\><.+*-@:|?"
+      f
+    (prog, query) <- parseIOMessage show pProg toks
+    putPPLn $ "Rules" >-< indent 2 (vlist $ map pp prog)
+    putPPLn $ "Query" >-< indent 2 (vlist $ map pp query)
+    msg $ "SOLVE " ++ f
+    let mbp :: MBP.CHRMonoBacktrackPrioT C G B P S E IO (MBP.SolverResult S)
+        mbp = do
+          mapM_ MBP.addRule prog
+          mapM_ MBP.addConstraintAsWork query
+          r <- MBP.chrSolve ()
+          MBP.ppSolverResult r >>= (liftIO . putPPLn)
+          return r
+    MBP.runCHRMonoBacktrackPrioT (MBP.emptyCHRGlobState) (MBP.emptyCHRBackState) mbp
+    msg $ "DONE " ++ f
+  where
+    msg m = putStrLn $ "---------------- " ++ m ++ " ----------------"
 
 mainTerm = do
-  forM_ ["antisym"] $ \f -> do
-    runFile $ "test/" ++ f ++ ".chr"
+  forM_
+      [ "unify"
+      -- , "antisym"
+      ] $ \f -> do
+    let f' = "test/" ++ f ++ ".chr"
+    runFile f'
   
 
 {-
-scanFile :: [String] -> [String] -> String -> String -> FilePath -> IO [Token]
-scanFile keywordstxt keywordsops specchars opchars fn =
-        do txt <- readFile fn
-           return (scan keywordstxt keywordsops specchars opchars (initPos fn) txt)
 -}

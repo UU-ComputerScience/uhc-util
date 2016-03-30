@@ -1,0 +1,8 @@
+unify @ Eq (Var x) y <=> x == y.
+ints  @ Eq (Int x) (Int y) <=> x == y | Eq x y .
+
+? Eq (Int 1) (Int 1).
+-- ? Eq (Int 1) (Int 2).
+-- ? Eq 1 a.
+-- ? Eq a a.
+
