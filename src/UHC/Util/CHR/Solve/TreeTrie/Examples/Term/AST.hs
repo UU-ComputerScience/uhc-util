@@ -7,7 +7,7 @@ module UHC.Util.CHR.Solve.TreeTrie.Examples.Term.AST
   ( Tm(..)
   , C(..)
   , G(..)
-  , B(..)
+  -- , B(..)
   , P(..)
   , POp(..)
   , E
@@ -36,7 +36,7 @@ import           Control.Applicative
 import qualified UHC.Util.CHR.Solve.TreeTrie.Mono as M
 import qualified UHC.Util.CHR.Solve.TreeTrie.MonoBacktrackPrio as MBP
 
-import           UHC.Util.Debug
+-- import           UHC.Util.Debug
 
 
 type Var = String -- Int
@@ -82,6 +82,7 @@ instance PP C where
 
 instance Serialize C
 
+{-
 -- | Builtin
 data B
   = B_Eq Tm Tm          -- ^ unification
@@ -91,6 +92,7 @@ instance PP B where
   pp (B_Eq x y) = "unify" >#< ppParensCommas [x,y]
 
 instance Serialize B
+-}
 
 -- | Guard
 data G
@@ -118,7 +120,7 @@ instance TTKeyable Tm where
   toTTKeyParentChildren' o (Tm_Con c as) = (TT1K_One $ Key_Str c, ttkChildren $ map (toTTKey' o) as)
 
 instance TTKeyable C where
-  -- Not necessary for builtin constraints
+  -- Only necessary for non-builtin constraints
   toTTKeyParentChildren' o (C_Con c as) = (TT1K_One $ Key_Str c, ttkChildren $ map (toTTKey' o) as)
 
 type E = ()
@@ -167,6 +169,7 @@ instance PP S where
 type instance ExtrValVarKey G = Var
 type instance ExtrValVarKey C = Var
 type instance ExtrValVarKey Tm = Var
+
 type instance CHRMatchableKey S = Key
 
 instance VarLookup S Var Tm where
@@ -196,9 +199,11 @@ instance VarUpdatable C S where
     C_Con c as -> C_Con c $ map (s `varUpd`) as
     CB_Eq x y  -> CB_Eq (s `varUpd` x) (s `varUpd` y)
 
+{-
 instance VarUpdatable B S where
   s `varUpd` c = case c of
     B_Eq x y -> B_Eq (s `varUpd` x) (s `varUpd` y)
+-}
 
 instance VarExtractable Tm where
   varFreeSet (Tm_Var v) = Set.singleton v
@@ -225,12 +230,12 @@ instance IsCHRConstraint E C S where
 
 instance IsCHRPrio E P S where
 
-instance IsCHRBuiltin E B S where
+-- instance IsCHRBuiltin E B S where
 
 instance CHRCheckable E G S where
   chrCheckM e g =
-    case {- s `varUpd` -} g of
-      G_Eq t1 t2 -> {- chrMatchSubst >>= \s@(StackedVarLookup (s':_)) -> trp "CHRCheckable E G S.chrCheckM" (g >#< varUpd s' g >#< s) s `seq` -} chrUnifyM CHRMatchHow_Equal e t1 t2
+    case g of
+      G_Eq t1 t2 -> chrUnifyM CHRMatchHow_Equal e t1 t2
 
 instance CHRMatchable E Tm S where
   chrUnifyM how e t1 t2 = do
@@ -253,6 +258,10 @@ instance CHRMatchable E C S where
                                                  -> sequence_ (zipWith (chrMatchToM e) as1 as2)
       _                                          -> chrMatchFail
 
+  chrBuiltinSolveM e b = case b of
+    CB_Eq x y -> chrUnifyM CHRMatchHow_Unify e x y
+
+{-
 instance CHRBuiltinSolvable E C S where
   chrBuiltinSolveM e b = case b of
     CB_Eq x y -> chrUnifyM CHRMatchHow_Unify e x y
@@ -260,6 +269,7 @@ instance CHRBuiltinSolvable E C S where
 instance CHRBuiltinSolvable E B S where
   chrBuiltinSolveM e b = case b of
     B_Eq x y -> chrUnifyM CHRMatchHow_Unify e x y
+-}
 
 type instance CHRPrioEvaluatableVal Tm = Prio
 
@@ -281,14 +291,14 @@ instance CHRPrioEvaluatable E P S where
       where p1' = chrPrioEval e s p1
             p2' = chrPrioEval e s p2
 
-instance M.IsCHRSolvable E C G S where
+-- instance M.IsCHRSolvable E C G S where
 
 --------------------------------------------------------
 -- leq example, backtrack prio specific
 
-instance MBP.IsCHRSolvable E C G B P S where
+instance MBP.IsCHRSolvable E C G P P S where
 
-instance MBP.MonoBacktrackPrio C G B P S E IO
+instance MBP.MonoBacktrackPrio C G P P S E IO
 
 
 -- mainMBP = MBP.runCHRMonoBacktrackPrioT (MBP.emptyCHRGlobState) (MBP.emptyCHRBackState) mbp2

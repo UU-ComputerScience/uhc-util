@@ -229,7 +229,7 @@ instance IsCHRConstraint E C S where
 
 instance IsCHRPrio E P S where
 
-instance IsCHRBuiltin E B S where
+-- instance IsCHRBuiltin E B S where
 
 instance CHRCheckable E G S where
   chrCheck _ s g =
@@ -299,9 +299,11 @@ instance CHRMatchable E C S where
         chrMatchToM e y1 y2
 -}
 
+{-
 instance CHRBuiltinSolvable E B S where
   chrBuiltinSolve e s b = case s `varUpd` b of
     B_Eq x y -> Nothing -- TBD
+-}
 
 -- type instance CHRPrioEvaluatableVal Tm = Int
 

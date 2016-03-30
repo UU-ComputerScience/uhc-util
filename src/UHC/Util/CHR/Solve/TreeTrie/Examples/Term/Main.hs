@@ -26,7 +26,7 @@ runFile f = do
     putPPLn $ "Rules" >-< indent 2 (vlist $ map pp prog)
     putPPLn $ "Query" >-< indent 2 (vlist $ map pp query)
     msg $ "SOLVE " ++ f
-    let mbp :: MBP.CHRMonoBacktrackPrioT C G B P S E IO (MBP.SolverResult S)
+    let mbp :: MBP.CHRMonoBacktrackPrioT C G P P S E IO (MBP.SolverResult S)
         mbp = do
           mapM_ MBP.addRule prog
           mapM_ MBP.addConstraintAsWork query

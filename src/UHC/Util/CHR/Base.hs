@@ -19,7 +19,7 @@ module UHC.Util.CHR.Base
   , IsCHRGuard(..)
   -- , CHRGuard(..)
   
-  , IsCHRBuiltin(..)
+  -- , IsCHRBuiltin(..)
   -- , CHRBuiltin(..)
   
   , IsCHRPrio(..)
@@ -50,7 +50,7 @@ module UHC.Util.CHR.Base
   , CHRPrioEvaluatable(..)
   , CHRPrioEvaluatableVal
   
-  , CHRBuiltinSolvable(..)
+  -- , CHRBuiltinSolvable(..)
   
   , CHRTrOpt(..)
   )
@@ -80,7 +80,7 @@ import           UHC.Util.Substitutable
 
 -- | (Class alias) API for constraint requirements
 class ( CHRMatchable env c subst
-      , CHRBuiltinSolvable env c subst
+      -- , CHRBuiltinSolvable env c subst
       , VarExtractable c
       , VarUpdatable c subst
       , Typeable c
@@ -100,6 +100,7 @@ class ( CHRCheckable env g subst
       , PP g
       ) => IsCHRGuard env g subst
 
+{-
 -- | (Class alias) API for builtin solvable requirements
 class ( CHRBuiltinSolvable env b subst
       , Typeable b
@@ -108,6 +109,7 @@ class ( CHRBuiltinSolvable env b subst
       ) => IsCHRBuiltin env b subst
 
 instance {-# OVERLAPPABLE #-} (CHREmptySubstitution subst, VarLookupCmb subst subst) => IsCHRBuiltin env () subst
+-}
 
 -- | (Class alias) API for priority requirements
 class ( CHRPrioEvaluatable env p subst
@@ -378,6 +380,14 @@ class (CHREmptySubstitution subst, VarLookupCmb subst subst) => CHRMatchable env
   chrUnifyM :: CHRMatchHow -> env -> x -> x -> CHRMatcher subst ()
   chrUnifyM how e x1 x2 = chrmatcherLift $ \sg -> chrUnify how e sg x1 x2
 
+  -- | Solve a constraint which is categorized as 'ConstraintSolvesVia_Solve'
+  chrBuiltinSolve :: env -> subst -> x -> Maybe subst
+  chrBuiltinSolve e s x = chrmatcherUnlift (chrBuiltinSolveM e x) s
+
+  -- | Solve a constraint which is categorized as 'ConstraintSolvesVia_Solve'
+  chrBuiltinSolveM :: env -> x -> CHRMatcher subst ()
+  chrBuiltinSolveM e x = chrmatcherLift $ \sg -> chrBuiltinSolve e sg x
+
 -------------------------------------------------------------------------------------------
 --- CHRCheckable
 -------------------------------------------------------------------------------------------
@@ -395,6 +405,7 @@ class (CHREmptySubstitution subst, VarLookupCmb subst subst) => CHRCheckable env
 --- CHRBuiltinSolvable
 -------------------------------------------------------------------------------------------
 
+{-
 -- | A BuiltinSolvable can result from reduction to a CHR body, representing something which the solver domain specifically solves
 class (CHREmptySubstitution subst, VarLookupCmb subst subst) => CHRBuiltinSolvable env x subst where
   chrBuiltinSolve :: env -> subst -> x -> Maybe subst
@@ -405,7 +416,7 @@ class (CHREmptySubstitution subst, VarLookupCmb subst subst) => CHRBuiltinSolvab
 
 instance {-# OVERLAPPABLE #-} (CHREmptySubstitution subst, VarLookupCmb subst subst) => CHRBuiltinSolvable env () subst where
   chrBuiltinSolveM _ _ = chrMatchFail
-
+-}
 
 -------------------------------------------------------------------------------------------
 --- Prio

@@ -18,7 +18,7 @@ import           UHC.Util.CHR.Rule
 type Pr p = PlainParser Token p
 
 -- | Program = rules + optional query
-pProg :: Pr ([Rule C G B P], [C])
+pProg :: Pr ([Rule C G P P], [C])
 pProg = pRules <+> pQuery
 
 pTm_Var :: Pr Tm
@@ -50,7 +50,7 @@ pP = pP
               $ pChainr (P_Op <$> (POp_Mul <$ pKey "*"))
               $ pB
 
-pR :: Pr (Rule C G B P)
+pR :: Pr (Rule C G P P)
 pR = pPre <**>
        ( pHead <**>
            (   (   (\(g,b) h pre -> pre $ g $ mkR h (length h) b) <$ pKey "<=>"
@@ -78,7 +78,7 @@ pR = pPre <**>
              <*> (foldr ($) ([],[]) <$> pList1Sep pComma ((\c (cs,bs) -> (c:cs,bs)) <$> pC <|> (\b (cs,bs) -> (cs,b:bs)) <$> pB))
          mkR h len b = Rule h len [] b Nothing Nothing Nothing
 
-pRules :: Pr [Rule C G B P]
+pRules :: Pr [Rule C G P P]
 pRules = pList (pR <* pKey ".")
 
 pQuery :: Pr [C]
