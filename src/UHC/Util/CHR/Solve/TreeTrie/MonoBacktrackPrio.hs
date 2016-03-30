@@ -272,6 +272,7 @@ data CHRBackState cnstr subst
       , _chrbstRuleWorkQueue         :: !WorkQueue                       -- ^ work queue for rule matching
       , _chrbstSolveQueue            :: !WorkQueue                       -- ^ solve queue, constraints which are not solved by rule matching but with some domain specific solver, yielding variable subst constributing to backtrackable bindings
       , _chrbstResidualQueue         :: [WorkInx]                        -- ^ residual queue, constraints which are residual, no need to solve, etc
+      , _chrbstLeftWorkQueue         :: [WorkInx]                        -- ^ left over work queue, constraints which could not be solved
       , _chrbstMatchedCombis         :: !(Set.Set MatchedCombi)          -- ^ all combis of chr + work which were reduced, to prevent this from happening a second time (when propagating)
       , _chrbstReductionSteps        :: [SolverReductionStep]
       }
@@ -279,8 +280,8 @@ data CHRBackState cnstr subst
 
 mkLabel ''CHRBackState
 
-emptyCHRBackState :: CHREmptySubstitution s => CHRBackState c s
-emptyCHRBackState = CHRBackState chrEmptySubst emptyWorkQueue emptyWorkQueue [] Set.empty []
+emptyCHRBackState :: (CHREmptySubstitution s) => CHRBackState c s
+emptyCHRBackState = CHRBackState chrEmptySubst emptyWorkQueue emptyWorkQueue [] [] Set.empty []
 
 -- | Monad for CHR, taking from 'LogicStateT' the state and backtracking behavior
 type CHRMonoBacktrackPrioT cnstr guard builtin prio subst env m
@@ -496,7 +497,7 @@ slvSucces = do
     return $ SolverResult
       { slvresSubst = bst ^. chrbstSolveSubst
       , slvresResidualCnstr = reverse $ bst ^. chrbstResidualQueue
-      , slvresWorkCnstr = []
+      , slvresWorkCnstr = reverse $ bst ^. chrbstLeftWorkQueue
       , slvresReductionSteps = reverse $ bst ^. chrbstReductionSteps
       }
 
@@ -657,10 +658,24 @@ chrSolve env = slv
                        >-< "prio'd" >#< (vlist $ zipWith (\g ms -> g >|< ":" >#< vlist [ ci >|< ":" >#< ppBracketsCommas wi >#< ":" >#< s | (ci,_,wi,s) <- ms ]) [0::Int ..] foundWorkMatchesFilteredPriod)
                       ) :)
 
+                    {-
                     -- actual solving, backtracking etc
                     addWorkToRuleWorkQueue workInx
+                    -- for now, leave out the backtracking part
                     slvPrios foundWorkMatchesFilteredPriod
+                    -}
+                    -- instead, pick one, if any
+                    case foundWorkMatchesFilteredPriod of
+                      -- at least one solution to follow up
+                      ((a:_):_) -> do
+                          addWorkToRuleWorkQueue workInx
+                          slv1 a
+                      -- no chr applies for this work, so consider it to be residual
+                      _ -> do
+                          sndl ^* chrbstLeftWorkQueue =$: (workInx :)
+                          slv
 
+{-
     -- solve a group of matches with same prio, cutting of alternatives from other lower priorities if this priority has a solution
     slvPrios foundWorkMatchesFilteredPriod = case foundWorkMatchesFilteredPriod of
         (ms:mss) -> ifte (slvMatches ms) return (slvPrios mss)
@@ -670,6 +685,7 @@ chrSolve env = slv
     slvMatches matches = do
       alts <- forM matches $ backtrack . slv1
       msum alts
+-}
 
     -- solve one step further, allowing a backtrack point here
     slv1 (CHRConstraintInx {chrciInx = ci}, StoredCHR {_storedChrRule = rul@(Rule {ruleSimpSz = simpSz})}, workInxs, matchSubst) = do

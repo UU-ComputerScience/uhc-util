@@ -33,6 +33,7 @@ module UHC.Util.VarLookup
 
 import Control.Applicative
 import Data.Maybe
+import UHC.Util.Pretty
 
 -- | Level to lookup into
 type MetaLev = Int
@@ -44,6 +45,12 @@ metaLevVal = 0
 -- | Stacked VarLookup derived from a base one, to allow a use of multiple lookups but update on top only
 newtype StackedVarLookup s = StackedVarLookup {unStackedVarLookup :: [s]}
   deriving Foldable
+
+instance Show (StackedVarLookup s) where
+  show _ = "StackedVarLookup"
+
+instance PP s => PP (StackedVarLookup s) where
+  pp (StackedVarLookup xs) = ppCurlysCommas $ map pp xs
 
 {- |
 VarLookup abstracts from a Map.

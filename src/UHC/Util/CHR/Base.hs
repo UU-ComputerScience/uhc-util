@@ -42,6 +42,7 @@ module UHC.Util.CHR.Base
   
   , CHRMatchable(..)
   , CHRMatchableKey
+  , CHRMatchHow(..)
   
   , CHRCheckable(..)
   
@@ -350,6 +351,12 @@ type family CHRMatchableKey subst :: *
 
 type instance CHRMatchableKey (StackedVarLookup subst) = CHRMatchableKey subst
 
+-- | How to match, increasingly more binding is allowed
+data CHRMatchHow
+  = CHRMatchHow_Equal
+  | CHRMatchHow_Match
+  | CHRMatchHow_Unify
+  deriving (Ord, Eq)
 
 -- | A Matchable participates in the reduction process as a reducable constraint.
 -- Unification may be incorporated as well, allowing matching to be expressed in terms of unification.
@@ -357,19 +364,19 @@ type instance CHRMatchableKey (StackedVarLookup subst) = CHRMatchableKey subst
 class (CHREmptySubstitution subst, VarLookupCmb subst subst) => CHRMatchable env x subst where
   -- | One-directional (1st to 2nd 'x') unify
   chrMatchTo :: env -> subst -> x -> x -> Maybe subst
-  chrMatchTo = chrUnify True
+  chrMatchTo = chrUnify CHRMatchHow_Match
   
   -- | One-directional (1st to 2nd 'x') unify
-  chrUnify :: Bool -> env -> subst -> x -> x -> Maybe subst
-  chrUnify onlyMatch e s x1 x2 = chrmatcherUnlift (chrUnifyM onlyMatch e x1 x2) s
+  chrUnify :: CHRMatchHow -> env -> subst -> x -> x -> Maybe subst
+  chrUnify how e s x1 x2 = chrmatcherUnlift (chrUnifyM how e x1 x2) s
   
   -- | Match one-directional (from 1st to 2nd arg), under a subst, yielding a subst for the metavars in the 1st arg, waiting for those in the 2nd
   chrMatchToM :: env -> x -> x -> CHRMatcher subst ()
-  chrMatchToM = chrUnifyM True
+  chrMatchToM = chrUnifyM CHRMatchHow_Match
 
   -- | Unify bi-directional or match one-directional (from 1st to 2nd arg), under a subst, yielding a subst for the metavars in the 1st arg, waiting for those in the 2nd
-  chrUnifyM :: Bool -> env -> x -> x -> CHRMatcher subst ()
-  chrUnifyM onlyMatch e x1 x2 = chrmatcherLift $ \sg -> chrUnify onlyMatch e sg x1 x2
+  chrUnifyM :: CHRMatchHow -> env -> x -> x -> CHRMatcher subst ()
+  chrUnifyM how e x1 x2 = chrmatcherLift $ \sg -> chrUnify how e sg x1 x2
 
 -------------------------------------------------------------------------------------------
 --- CHRCheckable

@@ -36,6 +36,8 @@ import           Control.Applicative
 import qualified UHC.Util.CHR.Solve.TreeTrie.Mono as M
 import qualified UHC.Util.CHR.Solve.TreeTrie.MonoBacktrackPrio as MBP
 
+import           UHC.Util.Debug
+
 
 type Var = String -- Int
 
@@ -58,7 +60,8 @@ data Tm
   deriving (Show, Eq, Ord, Typeable, Generic)
 
 tmIsVar :: Tm -> Maybe Var
-tmIsVar = \t -> case t of {Tm_Var v -> Just v; _ -> Nothing}
+tmIsVar (Tm_Var v) = Just v
+tmIsVar _          = Nothing
 
 instance PP Tm where
   pp (Tm_Var v   ) = pp v -- "v" >|< v
@@ -225,22 +228,23 @@ instance IsCHRPrio E P S where
 instance IsCHRBuiltin E B S where
 
 instance CHRCheckable E G S where
-  chrCheck _ s g =
-    case s `varUpd` g of
-      G_Eq t1 t2 | t1 == t2 -> return chrEmptySubst
-      _                     -> Nothing
+  chrCheckM e g =
+    case {- s `varUpd` -} g of
+      G_Eq t1 t2 -> {- chrMatchSubst >>= \s@(StackedVarLookup (s':_)) -> trp "CHRCheckable E G S.chrCheckM" (g >#< varUpd s' g >#< s) s `seq` -} chrUnifyM CHRMatchHow_Equal e t1 t2
 
 instance CHRMatchable E Tm S where
-  chrUnifyM onlyMatch e t1 t2 = do
+  chrUnifyM how e t1 t2 = do
     case (t1, t2) of
       (Tm_Con c1 as1, Tm_Con c2 as2) | c1 == c2 && length as1 == length as2 
-                                                 -> sequence_ (zipWith (chrMatchToM e) as1 as2)
-      (Tm_Int i1    , Tm_Int i2    ) | i1 == i2  -> chrMatchSuccess
-      (Tm_Var v1    , Tm_Var v2    ) | v1 == v2  -> chrMatchSuccess
-      (Tm_Var v1    , t2           )             -> chrMatchSubst >>= \s -> maybe (chrMatchBind v1 t2) (\t1 -> chrMatchToM e t1 t2) $ varlookupResolveVar tmIsVar v1 s
-      (t1           , Tm_Var v2    ) | onlyMatch -> chrMatchWait v2
-                                     | otherwise -> chrMatchSubst >>= \s -> maybe (chrMatchBind v2 t1) (\t2 -> chrMatchToM e t1 t2) $ varlookupResolveVar tmIsVar v2 s
-      _                                          -> chrMatchFail
+                                                                 -> sequence_ (zipWith (chrMatchToM e) as1 as2)
+      (Tm_Int i1    , Tm_Int i2    ) | i1 == i2                  -> chrMatchSuccess
+      (Tm_Var v1    , Tm_Var v2    ) | v1 == v2                  -> chrMatchSuccess
+      (Tm_Var v1    , t2           ) | how == CHRMatchHow_Equal  -> chrMatchSubst >>= \s -> maybe chrMatchFail (\t1 -> chrUnifyM how e t1 t2) $ varlookupResolveVar tmIsVar v1 s
+                                     | how >= CHRMatchHow_Match  -> chrMatchSubst >>= \s -> maybe (chrMatchBind v1 t2) (\t1 -> chrUnifyM how e t1 t2) $ varlookupResolveVar tmIsVar v1 s
+      (t1           , Tm_Var v2    ) | how == CHRMatchHow_Equal  -> chrMatchSubst >>= \s -> maybe chrMatchFail (\t2 -> chrUnifyM how e t1 t2) $ varlookupResolveVar tmIsVar v2 s
+                                     | how == CHRMatchHow_Match  -> chrMatchWait v2
+                                     | otherwise                 -> chrMatchSubst >>= \s -> maybe (chrMatchBind v2 t1) (\t2 -> chrUnifyM how e t1 t2) $ varlookupResolveVar tmIsVar v2 s
+      _                                                          -> chrMatchFail
 
 instance CHRMatchable E C S where
   chrMatchToM e c1 c2 = do
@@ -251,11 +255,11 @@ instance CHRMatchable E C S where
 
 instance CHRBuiltinSolvable E C S where
   chrBuiltinSolveM e b = case b of
-    CB_Eq x y -> chrUnifyM False e x y
+    CB_Eq x y -> chrUnifyM CHRMatchHow_Unify e x y
 
 instance CHRBuiltinSolvable E B S where
   chrBuiltinSolveM e b = case b of
-    B_Eq x y -> chrUnifyM False e x y
+    B_Eq x y -> chrUnifyM CHRMatchHow_Unify e x y
 
 type instance CHRPrioEvaluatableVal Tm = Prio
 
