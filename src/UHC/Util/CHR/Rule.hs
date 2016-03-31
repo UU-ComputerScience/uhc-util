@@ -69,6 +69,12 @@ data RuleBodyAlt cnstr bprio
       }
   deriving (Typeable)
 
+instance Show (RuleBodyAlt c bp) where
+  show _ = "RuleBodyAlt"
+
+instance (PP bp, PP c) => PP (RuleBodyAlt c bp) where
+  pp a = ppParens (rbodyaltBacktrackPrio a) >#< ppCommas' (rbodyaltBody a)
+
 -- | A CHR (rule) consist of head (simplification + propagation, boundary indicated by an Int), guard, and a body. All may be empty, but not all at the same time.
 data Rule cnstr guard bprio prio
   = Rule

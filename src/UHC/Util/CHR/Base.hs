@@ -25,6 +25,8 @@ module UHC.Util.CHR.Base
   , IsCHRPrio(..)
   -- , CHRPrio(..)
   
+  , IsCHRBacktrackPrio(..)
+  
   , CHREmptySubstitution(..)
   
   , CHRMatcher
@@ -119,6 +121,15 @@ class ( CHRPrioEvaluatable env p subst
       ) => IsCHRPrio env p subst
 
 instance {-# OVERLAPPABLE #-} IsCHRPrio env () subst
+
+-- | (Class alias) API for backtrack priority requirements
+class ( IsCHRPrio env bp subst
+      , CHRMatchable env bp subst
+      , PP (CHRPrioEvaluatableVal bp)
+      , Num (CHRPrioEvaluatableVal bp)
+      ) => IsCHRBacktrackPrio env bp subst
+
+instance {-# OVERLAPPABLE #-} (CHREmptySubstitution subst, VarLookupCmb subst subst) => IsCHRBacktrackPrio env () subst
 
 -------------------------------------------------------------------------------------------
 --- Existentially quantified Constraint representations to allow for mix of arbitrary universes
@@ -388,6 +399,9 @@ class (CHREmptySubstitution subst, VarLookupCmb subst subst) => CHRMatchable env
   chrBuiltinSolveM :: env -> x -> CHRMatcher subst ()
   chrBuiltinSolveM e x = chrmatcherLift $ \sg -> chrBuiltinSolve e sg x
 
+instance {-# OVERLAPPABLE #-} (CHREmptySubstitution subst, VarLookupCmb subst subst) => CHRMatchable env () subst where
+  chrUnifyM _ _ _ _ = chrMatchFail
+
 -------------------------------------------------------------------------------------------
 --- CHRCheckable
 -------------------------------------------------------------------------------------------
@@ -477,6 +491,7 @@ data ConstraintSolvesVia
   = ConstraintSolvesVia_Rule        -- ^ rewrite/CHR rules apply
   | ConstraintSolvesVia_Solve       -- ^ solving involving finding of variable bindings (e.g. unification)
   | ConstraintSolvesVia_Residual    -- ^ a leftover, residue
+  | ConstraintSolvesVia_Fail        -- ^ triggers explicit fail
   deriving (Show, Enum, Eq, Ord)
 
 instance PP ConstraintSolvesVia where

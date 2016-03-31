@@ -436,6 +436,9 @@ addConstraintAsWork c = do
            ConstraintSolvesVia_Residual -> do
                sndl ^* chrbstResidualQueue =$: (i :)
                return $ Work_Residue c
+           ConstraintSolvesVia_Fail -> do
+               addWorkToSolveQueue i
+               return $ Work_Fail
     fstl ^* chrgstWorkStore ^* wkstoreTable =$: IntMap.insert i w
     return (via,i)
 
@@ -574,26 +577,75 @@ ppSolverResult inclSteps (SolverResult {slvresSubst = s, slvresResidualCnstr = r
       >-< "Steps"   >-< indent 2 (vlist ss)
 
 -------------------------------------------------------------------------------------------
---- Solver
+--- Solver: required instances
 -------------------------------------------------------------------------------------------
 
 -- | (Class alias) API for solving requirements
 class ( IsCHRConstraint env c s
       , IsCHRGuard env g s
-      , IsCHRPrio env bp s
+      , IsCHRBacktrackPrio env bp s
       , IsCHRPrio env p s
-      , Bounded bp
+      -- , Bounded bp
       -- , IsCHRBuiltin env b s
-      , VarLookupCmb s s
-      , VarUpdatable s s
-      , CHREmptySubstitution s
+      -- , VarLookupCmb s s
+      -- , VarUpdatable s s
+      -- , CHREmptySubstitution s
       , TrTrKey c ~ TTKey c
       , PP (SubstVarKey s)
       ) => IsCHRSolvable env c g bp p s
 
+-------------------------------------------------------------------------------------------
+--- Solver: Intermediate structures
+-------------------------------------------------------------------------------------------
+
+-- | Intermediate Solver structure
+data FoundChr c g bp p
+  = FoundChr
+      { foundChrInx             :: !CHRInx
+      , foundChrChr             :: !(StoredCHR c g bp p)
+      , foundChrCnstr           :: ![WorkInx]
+      }
+
+-- | Intermediate Solver structure
+data FoundWorkInx c g bp p
+  = FoundWorkInx
+      { foundWorkInxInx         :: !CHRConstraintInx
+      , foundWorkInxChr         :: !(StoredCHR c g bp p)
+      , foundWorkInxWorkInxs    :: ![[WorkInx]]
+      }
+
+-- | Intermediate Solver structure: all matched combis with their body alternatives + backtrack priorities
+data FoundSlvMatch c g bp p s
+  = FoundSlvMatch
+      { foundSlvMatchMbPrio         :: !(Maybe p)
+      , foundSlvMatchSubst          :: !s
+      , foundSlvMatchWaitForVars    :: !(Set.Set (SubstVarKey s))
+      , foundSlvMatchBodyAlts       :: ![(CHRPrioEvaluatableVal bp, RuleBodyAlt c bp)]
+      }
+
+instance Show (FoundSlvMatch c g bp p s) where
+  show _ = "FoundSlvMatch"
+
+instance (PP s, PP p, PP c, PP bp, PP (SubstVarKey s), PP (CHRPrioEvaluatableVal bp)) => PP (FoundSlvMatch c g bp p s) where
+  pp (FoundSlvMatch {foundSlvMatchMbPrio=p, foundSlvMatchSubst=s, foundSlvMatchWaitForVars=ws, foundSlvMatchBodyAlts=as}) = "@" >|< p >#< ws >#< s >-< vlist as
+
+-- | Intermediate Solver structure: all matched combis with their backtrack prioritized body alternatives
+data FoundWorkMatch c g bp p s
+  = FoundWorkMatch
+      { foundWorkMatchInx       :: !CHRConstraintInx
+      , foundWorkMatchChr       :: !(StoredCHR c g bp p)
+      , foundWorkMatchWorkInx   :: ![WorkInx]
+      , foundWorkMatchSlvMatch  :: !(Maybe (FoundSlvMatch c g bp p s))
+      }
+
+-------------------------------------------------------------------------------------------
+--- Solver
+-------------------------------------------------------------------------------------------
+
 -- | (Under dev) solve
 chrSolve
-  :: ( MonoBacktrackPrio c g bp p s e m
+  :: -- forall c g bp p s e m .
+     ( MonoBacktrackPrio c g bp p s e m
      , PP s
      ) => e
        -> CHRMonoBacktrackPrioT c g bp p s e m (SolverResult s)
@@ -606,20 +658,23 @@ chrSolve env = slv
           -- There is work in the solve work queue
           Just (workInx) -> do
               work <- lkupWork workInx
-              subst <- getl $ sndl ^* chrbstSolveSubst
-              let mbSlv = flip chrmatcherRun subst $ chrBuiltinSolveM env $ workCnstr work
-              case mbSlv of
-                Just (s,_) -> sndl ^* chrbstSolveSubst =$: (s |+>)
-                _          -> sndl ^* chrbstResidualQueue =$: (workInx :)
+              case work of
+                Work_Fail -> mzero
+                _ -> do
+                  subst <- getl $ sndl ^* chrbstSolveSubst
+                  let mbSlv = flip chrmatcherRun subst $ chrBuiltinSolveM env $ workCnstr work
+                  case mbSlv of
+                    Just (s,_) -> sndl ^* chrbstSolveSubst =$: (s |+>)
+                    _          -> sndl ^* chrbstResidualQueue =$: (workInx :)
 
-              -- debug info
-              sndl ^* chrbstReductionSteps =$: (SolverReductionDBG
-                (    "solve wk" >#< work
-                 >-< "match" >#< mbSlv
-                ) :)
+                  -- debug info
+                  sndl ^* chrbstReductionSteps =$: (SolverReductionDBG
+                    (    "solve wk" >#< work
+                     >-< "match" >#< mbSlv
+                    ) :)
 
-              -- just continue with next work
-              slv
+                  -- just continue with next work
+                  slv
 
           -- If no more solve work, continue with normal work
           Nothing -> do
@@ -639,28 +694,29 @@ chrSolve env = slv
                     foundChrInxs <- fmap (concat . TreeTrie.lookupResultToList . TreeTrie.lookupPartialByKey TTL_WildInTrie (workKey work))
                       $ getl $ fstl ^* chrgstStore ^* chrstoreTrie
                     let foundChrGroupedInxs = Map.unionsWith (++) $ map (\(CHRConstraintInx i j) -> Map.singleton i [j]) foundChrInxs
-                    foundChrs <- forM (Map.toList foundChrGroupedInxs) $ \(chrInx,rlInxs) -> lkupChr chrInx >>= \chr -> return (chrInx, chr, rlInxs)
+                    foundChrs <- forM (Map.toList foundChrGroupedInxs) $ \(chrInx,rlInxs) -> lkupChr chrInx >>= \chr -> return $ FoundChr chrInx chr rlInxs
 
                     -- found chrs for the work correspond to 1 single position in the head, find all combinations with work in the queue
-                    foundWorkInxs <- sequence [ fmap ((,,) (CHRConstraintInx ci i) c) $ slvCandidate activeWk visitedChrWkCombis (workKey work) c i | (ci,c,is) <- foundChrs, i <- is ]
+                    foundWorkInxs <- sequence [ fmap (FoundWorkInx (CHRConstraintInx ci i) c) $ slvCandidate activeWk visitedChrWkCombis (workKey work) c i | FoundChr ci c is <- foundChrs, i <- is ]
           
                     -- each found combi has to match
-                    foundWorkMatches <- fmap concat $ forM foundWorkInxs $ \(ci,c,wis) -> do
+                    foundWorkMatches <- fmap concat $ forM foundWorkInxs $ \(FoundWorkInx ci c wis) -> do
                       forM wis $ \wi -> do
                         w <- forM wi lkupWork
-                        fmap ((,) (ci,c,wi)) $ slvMatch env c (map workCnstr w)
-                    -- which we group by priority, highest to lowest with the ones which cannot be compared at the end
+                        fmap (FoundWorkMatch ci c wi) $ slvMatch env c (map workCnstr w)
+
+                    -- which we group by backtrack priority (on numerical value) and then rule priority (directly comparing), highest to lowest with the ones which cannot be compared at the end
                     let foundWorkMatchesFilteredPriod = map assocLElts (groupSortByOn (chrPrioCompare env) fst forCmp) ++ (if List.null noCmp then [] else [noCmp])
-                          where (forCmp, noCmp) = partitionOnSplit id fromJust isJust [ (fmap ((,) s) pr,(ci,c,wi,s)) | ((ci,c,wi),Just (pr,(s,_))) <- foundWorkMatches ]
+                          where (forCmp, noCmp) = partitionOnSplit id fromJust isJust [ (fmap ((,) s) pr,(ci,c,wi,s)) | FoundWorkMatch ci c wi (Just (FoundSlvMatch pr s _ _)) <- foundWorkMatches ]
 
                     -- debug info
                     sndl ^* chrbstReductionSteps =$: (SolverReductionDBG
                       (    "wk" >#< work
                        >-< "que" >#< ppBracketsCommas (Set.toList activeWk)
                        >-< "visited" >#< ppBracketsCommas (Set.toList visitedChrWkCombis)
-                       >-< "chrs" >#< vlist [ ci >|< ppParensCommas is >|< ":" >#< c | (ci,c,is) <- foundChrs ]
-                       >-< "works" >#< vlist [ ci >|< ":" >#< vlist (map ppBracketsCommas ws) | (ci,c,ws) <- foundWorkInxs ]
-                       >-< "matches" >#< vlist [ ci >|< ":" >#< ppBracketsCommas wi >#< ":" >#< mbm | ((ci,_,wi),mbm) <- foundWorkMatches ]
+                       >-< "chrs" >#< vlist [ ci >|< ppParensCommas is >|< ":" >#< c | FoundChr ci c is <- foundChrs ]
+                       >-< "works" >#< vlist [ ci >|< ":" >#< vlist (map ppBracketsCommas ws) | FoundWorkInx ci c ws <- foundWorkInxs ]
+                       >-< "matches" >#< vlist [ ci >|< ":" >#< ppBracketsCommas wi >#< ":" >#< mbm | FoundWorkMatch ci _ wi mbm <- foundWorkMatches ]
                        >-< "prio'd" >#< (vlist $ zipWith (\g ms -> g >|< ":" >#< vlist [ ci >|< ":" >#< ppBracketsCommas wi >#< ":" >#< s | (ci,_,wi,s) <- ms ]) [0::Int ..] foundWorkMatchesFilteredPriod)
                       ) :)
 
@@ -695,7 +751,7 @@ chrSolve env = slv
 
     -- solve one step further, allowing a backtrack point here
     slv1 (CHRConstraintInx {chrciInx = ci}, StoredCHR {_storedChrRule = rul@(Rule {ruleSimpSz = simpSz})}, workInxs, matchSubst) = do
-        let (body, bodybuiltin) = ruleBody' rul
+        let body = ruleBody rul
         -- remove the simplification part from the work queue
         deleteWorkFromQueue $ take simpSz workInxs
         -- add each constraint from the body, applying the meta var subst
@@ -1041,17 +1097,27 @@ slvMatch
      -}
      , CHRMatchable env c s
      , CHRCheckable env g s
-     , CHRPrioEvaluatable env p s
+     , CHRMatchable env bp s
+     -- , CHRPrioEvaluatable env p s
+     , CHRPrioEvaluatable env bp s
      -- , CHRBuiltinSolvable env b s
-     , PP s
+     -- , PP s
      )
-     => env -> StoredCHR c g bp p -> [c] -> CHRMonoBacktrackPrioT c g bp p s e m (Maybe (Maybe p,(s, Set.Set (SubstVarKey s))))
-slvMatch env chr@(StoredCHR {_storedChrRule = Rule {rulePrio = mbpr}}) cnstrs = do
+     => env
+     -> StoredCHR c g bp p
+     -> [c]
+     -> CHRMonoBacktrackPrioT c g bp p s e m (Maybe (FoundSlvMatch c g bp p s))
+slvMatch env chr@(StoredCHR {_storedChrRule = Rule {rulePrio = mbpr, ruleHead = hc, ruleGuard = gd, ruleBacktrackPrio = mbbpr, ruleBodyAlts = alts}}) cnstrs = do
     subst <- getl $ sndl ^* chrbstSolveSubst
-    return $ fmap ((,) mbpr) $ flip chrmatcherRun subst $ sequence_ $ matches chr cnstrs ++ checks chr
+    curbprio <- getl $ sndl ^* chrbstBacktrackPrio
+    return $ fmap (\(s,ws) -> FoundSlvMatch mbpr s ws [(maybe minBound (chrPrioEval env s) $ rbodyaltBacktrackPrio a, a) | a <- alts])
+           $ flip chrmatcherRun subst
+           $ sequence_
+           $ prio curbprio ++ matches ++ checks
   where
-    matches (StoredCHR {_storedChrRule = Rule {ruleHead = hc}}) cnstrs = zipWith (chrMatchToM env) hc cnstrs
-    checks  (StoredCHR {_storedChrRule = Rule {ruleGuard = gd}}) = map (chrCheckM env) gd
+    prio curbprio = maybe [] (\bpr -> [chrMatchToM env bpr curbprio]) mbbpr
+    matches = zipWith (chrMatchToM env) hc cnstrs
+    checks  = map (chrCheckM env) gd
 {-
 slvMatch env chr@(StoredCHR {_storedChrRule = Rule {rulePrio = mbpr}}) cnstrs = return $ do
     subst <- foldl cmb (Just chrEmptySubst) $ matches chr cnstrs ++ checks chr

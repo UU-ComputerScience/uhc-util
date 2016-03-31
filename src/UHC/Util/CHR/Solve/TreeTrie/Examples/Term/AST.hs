@@ -74,11 +74,13 @@ instance Serialize Tm
 data C
   = C_Con String [Tm]
   | CB_Eq Tm Tm          -- ^ builtin: unification
+  | C_Fail               -- ^ explicit fail
   deriving (Show, Eq, Ord, Typeable, Generic)
 
 instance PP C where
   pp (C_Con c as) = c >#< ppParensCommas as
-  pp (CB_Eq x y) = "unify" >#< ppParensCommas [x,y]
+  pp (CB_Eq x y ) = "unify" >#< ppParensCommas [x,y]
+  pp (C_Fail    ) = pp "fail"
 
 instance Serialize C
 
@@ -204,6 +206,7 @@ instance VarUpdatable C S where
   s `varUpd` c = case c of
     C_Con c as -> C_Con c $ map (s `varUpd`) as
     CB_Eq x y  -> CB_Eq (s `varUpd` x) (s `varUpd` y)
+    c          -> c
 
 {-
 instance VarUpdatable B S where
@@ -222,6 +225,7 @@ instance VarExtractable G where
 instance VarExtractable C where
   varFreeSet (C_Con _ as) = Set.unions $ map varFreeSet as
   varFreeSet (CB_Eq x y ) = Set.unions [varFreeSet x, varFreeSet y]
+  varFreeSet _            = Set.empty
 
 instance CHREmptySubstitution S where
   chrEmptySubst = Map.empty
@@ -229,12 +233,15 @@ instance CHREmptySubstitution S where
 instance IsConstraint C where
   cnstrSolvesVia (C_Con _ _) = ConstraintSolvesVia_Rule
   cnstrSolvesVia (CB_Eq _ _) = ConstraintSolvesVia_Solve
+  cnstrSolvesVia (C_Fail   ) = ConstraintSolvesVia_Fail
 
 instance IsCHRGuard E G S where
 
 instance IsCHRConstraint E C S where
 
 instance IsCHRPrio E P S where
+
+instance IsCHRBacktrackPrio E P S where
 
 -- instance IsCHRBuiltin E B S where
 
@@ -265,9 +272,15 @@ instance CHRMatchable E C S where
       (C_Con c1 as1, C_Con c2 as2) | c1 == c2 && length as1 == length as2 
                                                  -> sequence_ (zipWith (chrMatchToM e) as1 as2)
       _                                          -> chrMatchFail
-
   chrBuiltinSolveM e b = case b of
     CB_Eq x y -> chrUnifyM CHRMatchHow_Unify e x y
+
+instance CHRMatchable E P S where
+  chrMatchToM e p1 p2 = do
+    case (p1, p2) of
+      (P_Tm   t1     , P_Tm   t2     ) -> chrMatchToM e t1  t2
+      (P_Op _ p11 p12, P_Op _ p21 p22) -> chrMatchToM e p11 p21 >> chrMatchToM e p12 p22
+      _                                -> chrMatchFail
 
 {-
 instance CHRBuiltinSolvable E C S where

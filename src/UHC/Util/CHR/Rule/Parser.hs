@@ -24,12 +24,25 @@ import           UHC.Util.CHR.Rule
 
 -- | API of parser for constraints etc, to be used by rule parser
 class CHRParsable cnstr guard bprio rprio rule | cnstr -> rule, guard -> rule, bprio -> rule, rprio -> rule, rule -> cnstr guard bprio rprio where
-  pChrConstraint :: Pr cnstr
-  pChrBuiltinConstraint :: Pr cnstr
-  pChrGuard :: Pr guard
-  pChrBacktrackPrioVar :: Pr bprio
-  pChrBacktrackPrio :: Pr bprio
-  pChrRulePrio :: Pr rprio
+  pChrConstraint            :: Pr cnstr
+  pChrBuiltinConstraint     :: Pr cnstr
+  pChrGuard                 :: Pr guard
+  pChrBacktrackPrioVar      :: Pr bprio
+  pChrBacktrackPrio         :: Pr bprio
+  pChrRulePrio              :: Pr rprio
+ 
+{-
+-}
+  scanChrExtraKeywordsTxt   :: rule -> [String]
+  scanChrExtraKeywordsOps   :: rule -> [String]
+  scanChrExtraSpecialChars  :: rule ->  String 
+  scanChrExtraOpChars       :: rule ->  String 
+ 
+  -- defaults
+  scanChrExtraKeywordsTxt   _ = []
+  scanChrExtraKeywordsOps   _ = []
+  scanChrExtraSpecialChars  _ = ""
+  scanChrExtraOpChars       _ = ""
 
 -------------------------------------------------------------------------------------------
 --- Program is set of rules + optional queries
