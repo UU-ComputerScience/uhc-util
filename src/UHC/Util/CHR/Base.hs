@@ -46,7 +46,7 @@ module UHC.Util.CHR.Base
   
   , CHRCheckable(..)
   
-  , Prio
+  , Prio(..)
   , CHRPrioEvaluatable(..)
   , CHRPrioEvaluatableVal
   

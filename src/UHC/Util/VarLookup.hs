@@ -5,6 +5,8 @@
 {-# LANGUAGE OverlappingInstances #-}
 #endif
 
+-- | Abstractions for looking up (type) variables in structures
+
 module UHC.Util.VarLookup
     ( VarLookup(..)
     , varlookupResolveVarWithMetaLev
@@ -35,6 +37,10 @@ import Control.Applicative
 import Data.Maybe
 import UHC.Util.Pretty
 
+-------------------------------------------------------------------------------------------
+--- Level of lookup
+-------------------------------------------------------------------------------------------
+
 -- | Level to lookup into
 type MetaLev = Int
 
@@ -42,15 +48,9 @@ type MetaLev = Int
 metaLevVal :: MetaLev
 metaLevVal = 0
 
--- | Stacked VarLookup derived from a base one, to allow a use of multiple lookups but update on top only
-newtype StackedVarLookup s = StackedVarLookup {unStackedVarLookup :: [s]}
-  deriving Foldable
-
-instance Show (StackedVarLookup s) where
-  show _ = "StackedVarLookup"
-
-instance PP s => PP (StackedVarLookup s) where
-  pp (StackedVarLookup xs) = ppCurlysCommas $ map pp xs
+-------------------------------------------------------------------------------------------
+--- VarLookup: something which can lookup a value 'v' given a key 'k'.
+-------------------------------------------------------------------------------------------
 
 {- |
 VarLookup abstracts from a Map.
@@ -97,14 +97,15 @@ instance VarLookup m k v => VarLookup [m] k v where
   varlookupWithMetaLev l k ms = listToMaybe $ catMaybes $ map (varlookupWithMetaLev l k) ms
 -}
 
-instance VarLookup m k v => VarLookup (StackedVarLookup m) k v where
-  varlookupWithMetaLev l k (StackedVarLookup ms) = listToMaybe $ catMaybes $ map (varlookupWithMetaLev l k) ms
-
 varlookupMap :: VarLookup m k v => (v -> Maybe res) -> k -> m -> Maybe res
 varlookupMap get k m
   = do { v <- varlookup k m
        ; get v
        }
+
+-------------------------------------------------------------------------------------------
+--- VarLookupFix
+-------------------------------------------------------------------------------------------
 
 type VarLookupFix k v = k -> Maybe v
 
@@ -116,6 +117,10 @@ varlookupFix m = \k -> varlookup k m
 varlookupFixDel :: Ord k => [k] -> VarLookupFix k v -> VarLookupFix k v
 varlookupFixDel ks f = \k -> if k `elem` ks then Nothing else f k
 
+-------------------------------------------------------------------------------------------
+--- VarLookupCmb: combine VarLookups
+-------------------------------------------------------------------------------------------
+
 {- |
 VarLookupCmb abstracts the 'combining' of/from a substitution.
 The interface goes along with VarLookup but is split off to avoid functional dependency restrictions.
@@ -123,10 +128,10 @@ The purpose is to be able to combine maps only for the purpose of searching with
 This then avoids the later need to unmerge such mergings.
 -}
 
-infixr 7 |+>
-
 class VarLookupCmb m1 m2 where
   (|+>) :: m1 -> m2 -> m2
+
+infixr 7 |+>
 
 {-
 #if __GLASGOW_HASKELL__ >= 710
@@ -137,10 +142,6 @@ instance
   VarLookupCmb m1 m2 => VarLookupCmb m1 [m2] where
     m1 |+> (m2:m2s) = (m1 |+> m2) : m2s
 -}
-
-instance
-  VarLookupCmb m1 m2 => VarLookupCmb m1 (StackedVarLookup m2) where
-    m1 |+> StackedVarLookup (m2:m2s) = StackedVarLookup $ (m1 |+> m2) : m2s
 
 {-
 #if __GLASGOW_HASKELL__ >= 710
@@ -158,16 +159,51 @@ instance
     m1 |+> StackedVarLookup (m2:m2s) = StackedVarLookup $ (foldr1 (|+>) m1 |+> m2) : m2s
 -}
 
+-------------------------------------------------------------------------------------------
+--- VarLookupBase
+-------------------------------------------------------------------------------------------
+
 class VarLookupBase m k v | m -> k v where
   varlookupEmpty :: m
-  -- varlookupTyUnit :: k -> v -> m
+  varlookupSingletonWithMetaLev :: MetaLev -> k -> v -> m
+  
+  varlookupSingleton :: k -> v -> m
+  varlookupSingleton = varlookupSingletonWithMetaLev metaLevVal
+  {-# INLINE varlookupSingleton #-}
 
-instance VarLookupBase m k v => VarLookupBase (StackedVarLookup m) k v where
-  varlookupEmpty = StackedVarLookup [varlookupEmpty]
+-------------------------------------------------------------------------------------------
+--- VarLookupCmbFix
+-------------------------------------------------------------------------------------------
 
 type VarLookupCmbFix m1 m2 = m1 -> m2 -> m2
 
 -- | fix combining up to be for a certain var mapping
 varlookupcmbFix :: VarLookupCmb m1 m2 => VarLookupCmbFix m1 m2
 varlookupcmbFix m1 m2 = m1 |+> m2
+
+-------------------------------------------------------------------------------------------
+--- Stack of things in which we can lookup, but which is updated only at the top
+-------------------------------------------------------------------------------------------
+
+-- | Stacked VarLookup derived from a base one, to allow a use of multiple lookups but update on top only
+newtype StackedVarLookup s = StackedVarLookup {unStackedVarLookup :: [s]}
+  deriving Foldable
+
+instance Show (StackedVarLookup s) where
+  show _ = "StackedVarLookup"
+
+instance PP s => PP (StackedVarLookup s) where
+  pp (StackedVarLookup xs) = ppCurlysCommas $ map pp xs
+
+instance VarLookup m k v => VarLookup (StackedVarLookup m) k v where
+  varlookupWithMetaLev l k (StackedVarLookup ms) = listToMaybe $ catMaybes $ map (varlookupWithMetaLev l k) ms
+
+instance VarLookupBase m k v => VarLookupBase (StackedVarLookup m) k v where
+  varlookupEmpty = StackedVarLookup [varlookupEmpty]
+  {-# INLINE varlookupEmpty #-}
+  varlookupSingletonWithMetaLev l k v = StackedVarLookup [varlookupSingletonWithMetaLev l k v]
+  {-# INLINE varlookupSingletonWithMetaLev #-}
+
+instance VarLookupCmb m1 m2 => VarLookupCmb m1 (StackedVarLookup m2) where
+  m1 |+> StackedVarLookup (m2:m2s) = StackedVarLookup $ (m1 |+> m2) : m2s
 

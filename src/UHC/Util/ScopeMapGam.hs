@@ -180,7 +180,7 @@ sgamMap f g = sgamMapEltWithKey (\k e -> let (k',v') = f (k,sgeVal e) in (k',e {
 
 -- | Construct singleton gam, on a particular meta level
 sgamMetaLevSingleton :: MetaLev -> k -> v -> SGam k v
-sgamMetaLevSingleton mlev k v = mkSGam (varmpMetaLevSingleton mlev k [SGamElt 0 v])
+sgamMetaLevSingleton mlev k v = mkSGam (varlookupSingletonWithMetaLev mlev k [SGamElt 0 v])
 
 -- | Construct singleton gam
 sgamSingleton :: k -> v -> SGam k v

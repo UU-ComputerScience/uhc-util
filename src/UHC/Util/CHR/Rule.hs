@@ -130,10 +130,10 @@ instance (PP c, PP g, PP p, PP bp) => PP (Rule c g bp p) where
           ppL xs  = ppCommas' xs -- ppParensCommasBlock xs
           ppChr l = ppSpaces l -- vlist l -- ppCurlysBlock
 
-type instance TTKey (Rule cnstr guard builtin prio) = TTKey cnstr
-type instance TreeTrie.TrTrKey (Rule cnstr guard builtin prio) = TTKey cnstr
+type instance TTKey (Rule cnstr guard bprio prio) = TTKey cnstr
+type instance TreeTrie.TrTrKey (Rule cnstr guard bprio prio) = TTKey cnstr
 
-instance (TTKeyable cnstr) => TTKeyable (Rule cnstr guard builtin prio) where
+instance (TTKeyable cnstr) => TTKeyable (Rule cnstr guard bprio prio) where
   toTTKey' o chr = toTTKey' o $ head $ ruleHead chr
 
 -------------------------------------------------------------------------------------------

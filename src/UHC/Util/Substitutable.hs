@@ -1,4 +1,4 @@
-{-# LANGUAGE MultiParamTypeClasses, FunctionalDependencies #-}
+{-# LANGUAGE MultiParamTypeClasses, FunctionalDependencies, UndecidableInstances #-}
 
 module UHC.Util.Substitutable
   (
@@ -37,9 +37,22 @@ class SubstMake subst where
   substSingleton :: SubstVarKey subst -> SubstVarVal subst -> subst
   substEmpty     :: subst
 
+instance {-# OVERLAPPABLE #-}
+         ( VarLookupBase subst k v
+         , k ~ SubstVarKey subst
+         , v ~ SubstVarVal subst
+         )
+    => SubstMake subst where
+  substSingleton     = varlookupSingleton
+  {-# INLINE substSingleton #-}
+  substEmpty         = varlookupEmpty
+  {-# INLINE substEmpty #-}
+
 instance SubstMake subst => SubstMake (StackedVarLookup subst) where
   substSingleton k v = StackedVarLookup [substSingleton k v]
+  {-# INLINE substSingleton #-}
   substEmpty         = StackedVarLookup [substEmpty]
+  {-# INLINE substEmpty #-}
 
 class VarUpdatable vv subst where
   varUpd            ::  subst -> vv -> vv

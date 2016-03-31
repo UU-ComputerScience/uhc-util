@@ -147,6 +147,10 @@ instance Serialize POp
 
 instance Serialize P
 
+instance Bounded P where
+  minBound = P_Tm $ Tm_Int $ unPrio $ minBound
+  maxBound = P_Tm $ Tm_Int $ unPrio $ maxBound
+
 type S = Map.Map Var Tm
 
 type instance SubstVarKey S = Var
@@ -159,9 +163,9 @@ sLkup v s = Map.lookup v s >>= \t -> case t of
   t        -> Just t
 -}
 
-instance SubstMake S where
-  substSingleton = Map.singleton
-  substEmpty = Map.empty
+instance VarLookupBase S Var Tm where
+  varlookupSingletonWithMetaLev _ = Map.singleton
+  varlookupEmpty = Map.empty
 
 instance PP S where
   pp = ppAssocL . Map.toList
@@ -239,17 +243,19 @@ instance CHRCheckable E G S where
 
 instance CHRMatchable E Tm S where
   chrUnifyM how e t1 t2 = do
-    case (t1, t2) of
-      (Tm_Con c1 as1, Tm_Con c2 as2) | c1 == c2 && length as1 == length as2 
-                                                                 -> sequence_ (zipWith (chrMatchToM e) as1 as2)
-      (Tm_Int i1    , Tm_Int i2    ) | i1 == i2                  -> chrMatchSuccess
-      (Tm_Var v1    , Tm_Var v2    ) | v1 == v2                  -> chrMatchSuccess
-      (Tm_Var v1    , t2           ) | how == CHRMatchHow_Equal  -> chrMatchSubst >>= \s -> maybe chrMatchFail (\t1 -> chrUnifyM how e t1 t2) $ varlookupResolveVar tmIsVar v1 s
-                                     | how >= CHRMatchHow_Match  -> chrMatchSubst >>= \s -> maybe (chrMatchBind v1 t2) (\t1 -> chrUnifyM how e t1 t2) $ varlookupResolveVar tmIsVar v1 s
-      (t1           , Tm_Var v2    ) | how == CHRMatchHow_Equal  -> chrMatchSubst >>= \s -> maybe chrMatchFail (\t2 -> chrUnifyM how e t1 t2) $ varlookupResolveVar tmIsVar v2 s
-                                     | how == CHRMatchHow_Match  -> chrMatchWait v2
-                                     | otherwise                 -> chrMatchSubst >>= \s -> maybe (chrMatchBind v2 t1) (\t2 -> chrUnifyM how e t1 t2) $ varlookupResolveVar tmIsVar v2 s
-      _                                                          -> chrMatchFail
+      case (t1, t2) of
+        (Tm_Con c1 as1, Tm_Con c2 as2) | c1 == c2 && length as1 == length as2 
+                                                                   -> sequence_ (zipWith (chrMatchToM e) as1 as2)
+        (Tm_Int i1    , Tm_Int i2    ) | i1 == i2                  -> chrMatchSuccess
+        (Tm_Var v1    , Tm_Var v2    ) | v1 == v2                  -> chrMatchSuccess
+        (Tm_Var v1    , t2           ) | how == CHRMatchHow_Equal  -> varContinue chrMatchFail (\t1 -> chrUnifyM how e t1 t2) v1
+                                       | how >= CHRMatchHow_Match  -> varContinue (chrMatchBind v1 t2) (\t1 -> chrUnifyM how e t1 t2) v1
+        (t1           , Tm_Var v2    ) | how == CHRMatchHow_Equal  -> varContinue chrMatchFail (chrUnifyM how e t1) v2
+                                       | how == CHRMatchHow_Match  -> chrMatchWait v2
+                                       | otherwise {- unify -}     -> varContinue (chrMatchBind v2 t1) (chrUnifyM how e t1) v2
+        _                                                          -> chrMatchFail
+    where
+      varContinue failFind okFind v = chrMatchSubst >>= \s -> maybe failFind okFind $ varlookupResolveVar tmIsVar v s
 
 instance CHRMatchable E C S where
   chrMatchToM e c1 c2 = do

@@ -151,16 +151,16 @@ storedSimpSz = ruleSimpSz . storedChrRule
 -}
 
 -- | A CHR store is a trie structure
-data CHRStore cnstr guard builtin prio
+data CHRStore cnstr guard bprio prio
   = CHRStore
       { _chrstoreTrie    :: CHRTrie' cnstr [CHRConstraintInx]                       -- ^ map from the search key of a rule to the index into tabl
-      , _chrstoreTable   :: IntMap.IntMap (StoredCHR cnstr guard builtin prio)      -- ^ (possibly multiple) rules for a key
+      , _chrstoreTable   :: IntMap.IntMap (StoredCHR cnstr guard bprio prio)      -- ^ (possibly multiple) rules for a key
       }
   deriving (Typeable)
 
 mkLabel ''CHRStore
 
-emptyCHRStore :: CHRStore cnstr guard builtin prio
+emptyCHRStore :: CHRStore cnstr guard bprio prio
 emptyCHRStore = CHRStore TreeTrie.empty IntMap.empty
 
 -------------------------------------------------------------------------------------------
@@ -248,15 +248,15 @@ instance (PP w) => PP (SolverReductionStep' Int w) where
 -------------------------------------------------------------------------------------------
 
 -- | Global state
-data CHRGlobState cnstr guard builtin prio subst
+data CHRGlobState cnstr guard bprio prio subst
   = CHRGlobState
-      { _chrgstStore                 :: !(CHRStore cnstr guard builtin prio)                     -- ^ Actual database of rules, to be searched
+      { _chrgstStore                 :: !(CHRStore cnstr guard bprio prio)                     -- ^ Actual database of rules, to be searched
       , _chrgstNextFreeRuleInx       :: !CHRInx                                          -- ^ Next free rule identification, used by solving to identify whether a rule has been used for a constraint.
                                                                                          --   The numbering is applied to constraints inside a rule which can be matched.
-      -- , _chrgstNextFreshVarId        :: !(ExtrValVarKey (Rule cnstr guard builtin prio))         -- ^ The next free id used for a fresh variable
+      -- , _chrgstNextFreshVarId        :: !(ExtrValVarKey (Rule cnstr guard bprio prio))         -- ^ The next free id used for a fresh variable
       , _chrgstWorkStore             :: !(WorkStore cnstr)                               -- ^ Actual database of solvable constraints
       , _chrgstNextFreeWorkInx       :: !WorkTime                                        -- ^ Next free work/constraint identification, used by solving to identify whether a rule has been used for a constraint.
-      , _chrgstTrace                 :: SolveTrace' cnstr (StoredCHR cnstr guard builtin prio) subst
+      , _chrgstTrace                 :: SolveTrace' cnstr (StoredCHR cnstr guard bprio prio) subst
       }
   deriving (Typeable)
 
@@ -266,9 +266,10 @@ emptyCHRGlobState :: {- Num (ExtrValVarKey c) => -} CHRGlobState c g b p s
 emptyCHRGlobState = CHRGlobState emptyCHRStore 0 emptyWorkStore initWorkTime emptySolveTrace
 
 -- | Backtrackable state
-data CHRBackState cnstr subst
+data CHRBackState cnstr bprio subst
   = CHRBackState
-      { _chrbstSolveSubst            :: !subst                           -- ^ subst for variable bindings found during solving, not for the ones binding rule metavars during matching but for the user ones (in to be solved constraints)
+      { _chrbstBacktrackPrio         :: !bprio                           -- ^ the current backtrack prio the solver runs on
+      , _chrbstSolveSubst            :: !subst                           -- ^ subst for variable bindings found during solving, not for the ones binding rule metavars during matching but for the user ones (in to be solved constraints)
       , _chrbstRuleWorkQueue         :: !WorkQueue                       -- ^ work queue for rule matching
       , _chrbstSolveQueue            :: !WorkQueue                       -- ^ solve queue, constraints which are not solved by rule matching but with some domain specific solver, yielding variable subst constributing to backtrackable bindings
       , _chrbstResidualQueue         :: [WorkInx]                        -- ^ residual queue, constraints which are residual, no need to solve, etc
@@ -280,12 +281,12 @@ data CHRBackState cnstr subst
 
 mkLabel ''CHRBackState
 
-emptyCHRBackState :: (CHREmptySubstitution s) => CHRBackState c s
-emptyCHRBackState = CHRBackState chrEmptySubst emptyWorkQueue emptyWorkQueue [] [] Set.empty []
+emptyCHRBackState :: (CHREmptySubstitution s, Bounded bp) => CHRBackState c bp s
+emptyCHRBackState = CHRBackState minBound chrEmptySubst emptyWorkQueue emptyWorkQueue [] [] Set.empty []
 
 -- | Monad for CHR, taking from 'LogicStateT' the state and backtracking behavior
-type CHRMonoBacktrackPrioT cnstr guard builtin prio subst env m
-  = LogicStateT (CHRGlobState cnstr guard builtin prio subst) (CHRBackState cnstr subst) m
+type CHRMonoBacktrackPrioT cnstr guard bprio prio subst env m
+  = LogicStateT (CHRGlobState cnstr guard bprio prio subst) (CHRBackState cnstr bprio subst) m
 
 -- | All required behavior, as class alias
 class ( IsCHRSolvable env cnstr guard bprio prio subst
@@ -302,7 +303,7 @@ class ( IsCHRSolvable env cnstr guard bprio prio subst
       ) => MonoBacktrackPrio cnstr guard bprio prio subst env m
          | cnstr guard bprio prio subst -> env
 
-runCHRMonoBacktrackPrioT :: Monad m => CHRGlobState cnstr guard builtin prio subst -> CHRBackState cnstr subst -> CHRMonoBacktrackPrioT cnstr guard builtin prio subst env m a -> m [a]
+runCHRMonoBacktrackPrioT :: Monad m => CHRGlobState cnstr guard bprio prio subst -> CHRBackState cnstr bprio subst -> CHRMonoBacktrackPrioT cnstr guard bprio prio subst env m a -> m [a]
 runCHRMonoBacktrackPrioT gs bs m = observeAllT (gs,bs) m
 
 getSolveTrace :: (PP c, PP g, PP bp, MonoBacktrackPrio c g bp p s e m) => CHRMonoBacktrackPrioT c g bp p s e m PP_Doc
@@ -578,6 +579,7 @@ class ( IsCHRConstraint env c s
       , IsCHRGuard env g s
       , IsCHRPrio env bp s
       , IsCHRPrio env p s
+      , Bounded bp
       -- , IsCHRBuiltin env b s
       , VarLookupCmb s s
       , VarUpdatable s s

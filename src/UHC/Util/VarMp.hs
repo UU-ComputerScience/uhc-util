@@ -133,6 +133,9 @@ varmpIsEmpty (VarMp {varmpMpL=l}) = all Map.null l
 
 instance VarLookupBase (VarMp' k v) k v where
   varlookupEmpty = emptyVarMp
+  {-# INLINE varlookupEmpty #-}
+  varlookupSingletonWithMetaLev l k v = VarMp l [Map.singleton k v]
+  {-# INLINE varlookupSingletonWithMetaLev #-}
 
 varmpFilter :: Ord k => (k -> v -> Bool) -> VarMp' k v -> VarMp' k v
 varmpFilter f (VarMp l c) = VarMp l (map (Map.filterWithKey f) c)
@@ -185,16 +188,20 @@ varmpKeys (VarMp _ fm) = Map.keys $ Map.unions fm
 varmpKeysSet :: Ord k => VarMp' k v -> Set.Set k
 varmpKeysSet (VarMp _ fm) = Set.unions $ map Map.keysSet fm
 
--- VarMp construction
-
+{-# DEPRECATED varmpMetaLevSingleton "Use varlookupSingletonWithMetaLev" #-}
+-- | VarMp singleton
 varmpMetaLevSingleton :: MetaLev -> k -> v -> VarMp' k v
-varmpMetaLevSingleton mlev k v = VarMp mlev [Map.singleton k v]
+varmpMetaLevSingleton = varlookupSingletonWithMetaLev
+{-# INLINE varmpMetaLevSingleton #-}
 
+-- (not yet) {-# DEPRECATED varmpSingleton "Use varlookupSingleton" #-}
+-- | VarMp singleton
 varmpSingleton :: k -> v -> VarMp' k v
-varmpSingleton = varmpMetaLevSingleton metaLevVal
+varmpSingleton = varlookupSingleton
+{-# INLINE varmpSingleton #-}
 
 assocMetaLevLToVarMp :: Ord k => AssocL k (MetaLev,v) -> VarMp' k v
-assocMetaLevLToVarMp l = varmpUnions [ varmpMetaLevSingleton lev k v | (k,(lev,v)) <- l ]
+assocMetaLevLToVarMp l = varmpUnions [ varlookupSingletonWithMetaLev lev k v | (k,(lev,v)) <- l ]
 
 assocLToVarMp :: Ord k => AssocL k v -> VarMp' k v
 assocLToVarMp = mkVarMp . Map.fromList
@@ -357,7 +364,7 @@ varmpinfoMkVar v i
       _             -> mkTyVar v                    -- rest incomplete
 
 varmpMetaLevTyUnit :: Ord k => MetaLev -> k -> Ty -> VarMp' k VarMpInfo
-varmpMetaLevTyUnit mlev v t = varmpMetaLevSingleton mlev v (VMITy t)
+varmpMetaLevTyUnit mlev v t = varlookupSingletonWithMetaLev mlev v (VMITy t)
 
 varmpTyUnit :: Ord k => k -> Ty -> VarMp' k VarMpInfo
 varmpTyUnit = varmpMetaLevTyUnit metaLevVal
