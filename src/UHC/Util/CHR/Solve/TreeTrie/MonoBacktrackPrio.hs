@@ -558,12 +558,15 @@ cvtSolverReductionStep (SolverReductionDBG pp) = return (SolverReductionDBG pp)
 ppSolverResult
   :: ( MonoBacktrackPrio c g bp p s e m
      , PP s
-     ) => SolverResult s
+     ) => Bool
+       -> SolverResult s
        -> CHRMonoBacktrackPrioT c g bp p s e m PP_Doc
-ppSolverResult (SolverResult {slvresSubst = s, slvresResidualCnstr = ris, slvresWorkCnstr = wis, slvresReductionSteps = steps}) = do
+ppSolverResult inclSteps (SolverResult {slvresSubst = s, slvresResidualCnstr = ris, slvresWorkCnstr = wis, slvresReductionSteps = steps}) = do
     rs <- forM ris $ \i -> lkupWork i >>= return . pp . workCnstr
     ws <- forM wis $ \i -> lkupWork i >>= return . pp . workCnstr
-    ss <- forM steps $ \step -> cvtSolverReductionStep step >>= (return . pp)
+    ss <- if inclSteps
+      then forM steps $ \step -> cvtSolverReductionStep step >>= (return . pp)
+      else return [pp "Only included when asked for"]
     return $ 
           "Subst"   >-< indent 2 s
       >-< "Residue" >-< indent 2 (vlist rs)

@@ -1,4 +1,9 @@
-module UHC.Util.CHR.Solve.TreeTrie.Examples.Term.Main where
+module UHC.Util.CHR.Solve.TreeTrie.Examples.Term.Main
+  ( RunOpt(..)
+
+  , runFile
+  )
+  where
 
 import           System.IO
 import           Control.Monad
@@ -12,9 +17,12 @@ import qualified UHC.Util.CHR.Solve.TreeTrie.MonoBacktrackPrio as MBP
 import           UHC.Util.CHR.Solve.TreeTrie.Examples.Term.AST
 import           UHC.Util.CHR.Solve.TreeTrie.Examples.Term.Parser
 
+data RunOpt
+  = RunOpt_DebugTrace       -- ^ include debugging trace in output
+  deriving (Eq)
 
-
-runFile f = do
+runFile :: [RunOpt] -> FilePath -> IO ()
+runFile runopts f = do
     msg $ "READ " ++ f
     toks <- scanFile
       []
@@ -31,7 +39,7 @@ runFile f = do
           mapM_ MBP.addRule prog
           mapM_ MBP.addConstraintAsWork query
           r <- MBP.chrSolve ()
-          MBP.ppSolverResult r >>= (liftIO . putPPLn)
+          MBP.ppSolverResult (RunOpt_DebugTrace `elem` runopts) r >>= (liftIO . putPPLn)
           return r
     MBP.runCHRMonoBacktrackPrioT (MBP.emptyCHRGlobState) (MBP.emptyCHRBackState) mbp
     msg $ "DONE " ++ f
@@ -44,7 +52,7 @@ mainTerm = do
       -- , "antisym"
       ] $ \f -> do
     let f' = "test/" ++ f ++ ".chr"
-    runFile f'
+    runFile [RunOpt_DebugTrace] f'
   
 
 {-
