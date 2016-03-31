@@ -16,6 +16,8 @@ module UHC.Util.VarLookup
     
     , varlookupMap
     
+    , varlookupResolveAndContinueM
+    
     , VarLookupFix, varlookupFix
     , varlookupFixDel
     
@@ -68,6 +70,12 @@ class VarLookup m k v where
   varlookup = varlookupWithMetaLev metaLevVal
   -- varlookupValIsVar _ = Nothing
 
+instance (VarLookup m1 k v,VarLookup m2 k v) => VarLookup (m1,m2) k v where
+  varlookupWithMetaLev l k (m1,m2)
+    = case varlookupWithMetaLev l k m1 of
+        r@(Just _) -> r
+        _          -> varlookupWithMetaLev l k m2
+
 -- | Fully resolve lookup
 varlookupResolveVarWithMetaLev :: VarLookup m k v => MetaLev -> (v -> Maybe k) -> k -> m -> Maybe v
 varlookupResolveVarWithMetaLev l isVar k m =
@@ -86,11 +94,9 @@ varlookupResolveVal :: VarLookup m k v => (v -> Maybe k) -> v -> m -> Maybe v
 varlookupResolveVal = varlookupResolveValWithMetaLev metaLevVal
 {-# INLINE varlookupResolveVal #-}
 
-instance (VarLookup m1 k v,VarLookup m2 k v) => VarLookup (m1,m2) k v where
-  varlookupWithMetaLev l k (m1,m2)
-    = case varlookupWithMetaLev l k m1 of
-        r@(Just _) -> r
-        _          -> varlookupWithMetaLev l k m2
+-- | Monadically lookup a variable, resolve it, continue with either a fail or success monad continuation
+varlookupResolveAndContinueM :: (Monad m, VarLookup s k v) => (v -> Maybe k) -> (m s) -> (m a) -> (v -> m a) -> k -> m a
+varlookupResolveAndContinueM tmIsVar gets failFind okFind k = gets >>= \s -> maybe failFind okFind $ varlookupResolveVar tmIsVar k s
 
 {-
 instance VarLookup m k v => VarLookup [m] k v where
@@ -106,6 +112,8 @@ varlookupMap get k m
 -------------------------------------------------------------------------------------------
 --- VarLookupFix
 -------------------------------------------------------------------------------------------
+
+-- (not yet, still in use in UHC) {-# DEPRECATED VarLookupFix, varlookupFix, varlookupFixDel "As of 20160331: don't use these anymore" #-}
 
 type VarLookupFix k v = k -> Maybe v
 
@@ -175,6 +183,7 @@ class VarLookupBase m k v | m -> k v where
 --- VarLookupCmbFix
 -------------------------------------------------------------------------------------------
 
+{-# DEPRECATED VarLookupCmbFix, varlookupcmbFix "As of 20160331: don't use these anymore" #-}
 type VarLookupCmbFix m1 m2 = m1 -> m2 -> m2
 
 -- | fix combining up to be for a certain var mapping

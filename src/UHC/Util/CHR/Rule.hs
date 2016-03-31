@@ -32,12 +32,12 @@ module UHC.Util.CHR.Rule
   , (=!), (=!!)
   , (=@), (@=)
   
-  , MkSolverConstraint(..)
-  , MkSolverGuard(..)
-  , MkSolverBacktrackPrio(..)
-  , MkSolverPrio(..)
-  
-  , MkRule(mkRule)
+  -- , MkSolverConstraint(..)
+  -- , MkSolverGuard(..)
+  -- , MkSolverBacktrackPrio(..)
+  -- , MkSolverPrio(..)
+  -- 
+  -- , MkRule(mkRule)
   )
   where
 
@@ -266,6 +266,7 @@ instance {-# INCOHERENT #-} MkSolverBacktrackPrio p p where
   toSolverBacktrackPrio = id
   fromSolverBacktrackPrio = Just
 
+{-
 class MkRule r where
   type SolverConstraint r :: *
   type SolverGuard r :: *
@@ -292,6 +293,13 @@ instance MkRule (Rule c g bp p) where
   prioritizeRule p r = r {rulePrio = Just p}
   prioritizeBacktrackRule p r = r {ruleBacktrackPrio = Just p}
   labelRule l r = r {ruleName = Just l}
+-}
+
+mkRule h l g b bi p = Rule h l g [RuleBodyAlt Nothing b] Nothing p Nothing
+guardRule g r = r {ruleGuard = ruleGuard r ++ g}
+prioritizeRule p r = r {rulePrio = Just p}
+prioritizeBacktrackRule p r = r {ruleBacktrackPrio = Just p}
+labelRule l r = r {ruleName = Just l}
 
 {-
 instance MkRule (CHRRule e s) where
@@ -327,18 +335,31 @@ c /\ b = RuleBodyAlt Nothing (c ++ b)
 (\!) :: RuleBodyAlt c p -> p -> RuleBodyAlt c p
 r \! p = r {rbodyaltBacktrackPrio = Just p}
 
+{-
 (<=>>), (==>>) :: forall r c1 c2 c3 . (MkRule r, MkSolverConstraint (SolverConstraint r) c1, MkSolverConstraint (SolverConstraint r) c2, MkSolverConstraint (SolverConstraint r) c3)
   => [c1] -> ([c2], [c3]) -> r
 -- | Construct simplification rule out of head, body, and builtin constraints
 hs <=>>  (bs,bis) = mkRule (map toSolverConstraint hs) (length hs) [] (map toSolverConstraint bs) (map toSolverConstraint bis) Nothing
 -- | Construct propagation rule out of head, body, and builtin constraints
 hs  ==>>  (bs,bis) = mkRule (map toSolverConstraint hs) 0 [] (map toSolverConstraint bs) (map toSolverConstraint bis) Nothing
+-}
 
+-- | Construct simplification rule out of head, body, and builtin constraints
+hs <=>>  (bs,bis) = mkRule hs (length hs) [] bs bis Nothing
+-- | Construct propagation rule out of head, body, and builtin constraints
+hs  ==>>  (bs,bis) = mkRule hs 0 [] bs bis Nothing
+
+{-
 (<\>>) :: forall r c1 c2 c3 . (MkRule r, MkSolverConstraint (SolverConstraint r) c1, MkSolverConstraint (SolverConstraint r) c2, MkSolverConstraint (SolverConstraint r) c3)
   => ([c1],[c1]) -> ([c2],[c3]) -> r
 -- | Construct simpagation rule out of head, body, and builtin constraints
 (hsprop,hssimp) <\>>  (bs,bis) = mkRule (map toSolverConstraint $ hssimp ++ hsprop) (length hssimp) [] (map toSolverConstraint bs) (map toSolverConstraint bis) Nothing
+-}
 
+-- | Construct simpagation rule out of head, body, and builtin constraints
+(hsprop,hssimp) <\>>  (bs,bis) = mkRule (hssimp ++ hsprop) (length hssimp) [] (bs) (bis) Nothing
+
+{-
 {-# DEPRECATED (<==>) "Use (<=>)" #-}
 (<==>), (==>), (<=>) :: forall r c1 c2 . (MkRule r, MkSolverConstraint (SolverConstraint r) c1, MkSolverConstraint (SolverConstraint r) c2)
   => [c1] -> [c2] -> r
@@ -347,33 +368,74 @@ hs <==>  bs = mkRule (map toSolverConstraint hs) (length hs) [] (map toSolverCon
 -- | Construct propagation rule out of head and body constraints
 hs  ==>  bs = mkRule (map toSolverConstraint hs) 0 [] (map toSolverConstraint bs) [] Nothing
 (<=>) = (<==>)
+-}
 
+-- | Construct simplification rule out of head and body constraints
+hs <==>  bs = mkRule (hs) (length hs) [] (bs) [] Nothing
+-- | Construct propagation rule out of head and body constraints
+hs  ==>  bs = mkRule (hs) 0 [] (bs) [] Nothing
+(<=>) = (<==>)
+
+{-
 (<\>) :: forall r c1 c2 . (MkRule r, MkSolverConstraint (SolverConstraint r) c1, MkSolverConstraint (SolverConstraint r) c2)
   => ([c1],[c1]) -> [c2] -> r
 -- | Construct simpagation rule out of head and body constraints
 (hsprop,hssimp) <\>  bs = mkRule (map toSolverConstraint $ hssimp ++ hsprop) (length hssimp) [] (map toSolverConstraint bs) [] Nothing
+-}
 
+-- | Construct simpagation rule out of head and body constraints
+(hsprop,hssimp) <\>  bs = mkRule (hssimp ++ hsprop) (length hssimp) [] (bs) [] Nothing
+
+{-
 {-# DEPRECATED (|>) "Use (=|)" #-}
 -- | Add guards to rule
 (|>), (=|) :: (MkRule r, MkSolverGuard (SolverGuard r) g') => r -> [g'] -> r
 r |> g = guardRule (map toSolverGuard g) r
 (=|) = (|>)
 {-# INLINE (=|) #-}
+-}
 
+{-# DEPRECATED (|>) "Use (=|)" #-}
+-- | Add guards to rule
+r |> g = guardRule (g) r
+(=|) = (|>)
+{-# INLINE (=|) #-}
+
+{-
 -- | Add priority to rule
 (=!!) :: (MkRule r, MkSolverPrio (SolverPrio r) p') => r -> p' -> r
 r =!! p = prioritizeRule (toSolverPrio p) r
+-}
 
+-- | Add priority to rule
+r =!! p = prioritizeRule (p) r
+
+{-
 -- | Add backtrack priority to rule
 (=!) :: (MkRule r, MkSolverBacktrackPrio (SolverBacktrackPrio r) p') => r -> p' -> r
 r =! p = prioritizeBacktrackRule (toSolverBacktrackPrio p) r
+-}
 
+-- | Add backtrack priority to rule
+r =! p = prioritizeBacktrackRule (p) r
+
+{-
 -- | Add label to rule
 (=@) :: (MkRule r) => r -> String -> r
 r =@ l = labelRule l r
+-}
 
 -- | Add label to rule
+r =@ l = labelRule l r
+
+{-
+-- | Add label to rule
 (@=) :: (MkRule r) => String -> r -> r
+l @= r = r =@ l
+{-# INLINE (@=) #-}
+-}
+
+-- | Add label to rule
 l @= r = r =@ l
 {-# INLINE (@=) #-}
 

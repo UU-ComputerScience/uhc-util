@@ -109,9 +109,11 @@ type instance TrTrKey C = Key
 type instance TTKey Tm = Key
 type instance TTKey C = Key
 
+{-
 instance MkSolverConstraint C C where
   toSolverConstraint = id
   fromSolverConstraint = Just
+-}
 
 instance TTKeyable Tm where
   toTTKeyParentChildren' o (Tm_Var v) | ttkoptsVarsAsWild o = (TT1K_Any, ttkChildren [])
@@ -255,7 +257,7 @@ instance CHRMatchable E Tm S where
                                        | otherwise {- unify -}     -> varContinue (chrMatchBind v2 t1) (chrUnifyM how e t1) v2
         _                                                          -> chrMatchFail
     where
-      varContinue failFind okFind v = chrMatchSubst >>= \s -> maybe failFind okFind $ varlookupResolveVar tmIsVar v s
+      varContinue = varlookupResolveAndContinueM tmIsVar chrMatchSubst
 
 instance CHRMatchable E C S where
   chrMatchToM e c1 c2 = do
