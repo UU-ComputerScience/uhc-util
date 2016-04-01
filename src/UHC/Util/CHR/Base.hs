@@ -126,7 +126,7 @@ instance {-# OVERLAPPABLE #-} IsCHRPrio env () subst
 class ( IsCHRPrio env bp subst
       , CHRMatchable env bp subst
       , PP (CHRPrioEvaluatableVal bp)
-      , Num (CHRPrioEvaluatableVal bp)
+      -- , Num (CHRPrioEvaluatableVal bp)
       ) => IsCHRBacktrackPrio env bp subst
 
 instance {-# OVERLAPPABLE #-} (CHREmptySubstitution subst, VarLookupCmb subst subst) => IsCHRBacktrackPrio env () subst

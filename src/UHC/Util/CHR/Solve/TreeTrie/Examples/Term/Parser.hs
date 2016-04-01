@@ -15,15 +15,18 @@ import           UHC.Util.CHR.Rule
 import           UHC.Util.CHR.Rule.Parser
 
 instance CHRParsable C G P P (Rule C G P P) where
-  pChrConstraint            =   C_Con <$> pConid <*> pList pTm
-  pChrBuiltinConstraint     =   CB_Eq <$> pTm <* pKey "==" <*> pTm
-                            <|> C_Fail <$ pKey "fail"
-  pChrGuard                 =   G_Eq <$> pTm <* pKey "==" <*> pTm
-  pChrBacktrackPrioVar      =   P_Tm <$> pTm_Var
-  pChrBacktrackPrio         =   pP
-  pChrRulePrio              =   pP
+  pChrConstraint              =   C_Con <$> pConid <*> pList pTm
+  pChrBuiltinConstraint       =   CB_Eq <$> pTm <* pKey "==" <*> pTm
+                              <|> CB_Fail <$ pKey "fail"
+  pChrGuard                   =   G_Eq <$> pTm <* pKey "==" <*> pTm
+  pChrBacktrackPrioVar        =   P_Tm <$> pTm_Var
+  pChrBacktrackPrio           =   pP
+  pChrRulePrio                =   pP
   
-  scanChrExtraKeywordsTxt _ = ["fail"]
+  scanChrExtraKeywordsTxt   _ = ["fail"]
+  scanChrExtraKeywordsOps   _ = ["=="]
+  scanChrExtraSpecialChars  _ =  ""
+  scanChrExtraOpChars       _ =  ""
 
 pTm_Var :: Pr Tm
 pTm_Var = Tm_Var <$> pVarid

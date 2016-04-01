@@ -39,6 +39,9 @@ module UHC.Util.CHR.Solve.TreeTrie.MonoBacktrackPrio
   , SolverResult(..)
   , ppSolverResult
   
+  , CHRSolveOpts(..)
+  , defaultCHRSolveOpts
+  
   , chrSolve
   
   , getSolveTrace
@@ -236,11 +239,11 @@ instance Show (SolverReductionStep' c w) where
   show _ = "SolverReductionStep"
 
 instance {-# OVERLAPPABLE #-} (PP c, PP w) => PP (SolverReductionStep' c w) where
-  pp (SolverReductionStep (MatchedCombi ci ws) wns) = "STEP" >#< ci >-< indent 2 ("+" >#< ppBracketsCommas ws >-< "(new) ->" >#< (ppAssocL $ Map.toList $ Map.map ppBracketsCommas wns)) -- (ppBracketsCommas wns >-< ppBracketsCommas wnbs)
+  pp (SolverReductionStep (MatchedCombi ci ws) wns) = "STEP" >#< ci >-< indent 2 ("+" >#< ppBracketsCommas ws >-< "-> (new)" >#< (ppAssocL $ Map.toList $ Map.map ppBracketsCommas wns)) -- (ppBracketsCommas wns >-< ppBracketsCommas wnbs)
   pp (SolverReductionDBG p) = "DBG" >#< p
 
 instance (PP w) => PP (SolverReductionStep' Int w) where
-  pp (SolverReductionStep (MatchedCombi ci ws) wns) = ci >#< "+" >#< ppBracketsCommas ws >#< "(new) ->" >#< (ppAssocL $ Map.toList $ Map.map ppBracketsCommas wns) -- (ppBracketsCommas wns >-< ppBracketsCommas wnbs)
+  pp (SolverReductionStep (MatchedCombi ci ws) wns) = ci >#< "+" >#< ppBracketsCommas ws >#< "-> (new)" >#< (ppAssocL $ Map.toList $ Map.map ppBracketsCommas wns) -- (ppBracketsCommas wns >-< ppBracketsCommas wnbs)
   pp (SolverReductionDBG p) = "DBG" >#< p
 
 -------------------------------------------------------------------------------------------
@@ -303,8 +306,14 @@ class ( IsCHRSolvable env cnstr guard bprio prio subst
       ) => MonoBacktrackPrio cnstr guard bprio prio subst env m
          | cnstr guard bprio prio subst -> env
 
-runCHRMonoBacktrackPrioT :: Monad m => CHRGlobState cnstr guard bprio prio subst -> CHRBackState cnstr bprio subst -> CHRMonoBacktrackPrioT cnstr guard bprio prio subst env m a -> m [a]
-runCHRMonoBacktrackPrioT gs bs m = observeAllT (gs,bs) m
+runCHRMonoBacktrackPrioT
+  :: Monad m
+     => CHRGlobState cnstr guard bprio prio subst
+     -> CHRBackState cnstr bprio subst
+     -- -> CHRPrioEvaluatableVal bprio
+     -> CHRMonoBacktrackPrioT cnstr guard bprio prio subst env m a
+     -> m [a]
+runCHRMonoBacktrackPrioT gs bs {- bp -} m = observeAllT (gs, bs {- _chrbstBacktrackPrio=bp -}) m
 
 getSolveTrace :: (PP c, PP g, PP bp, MonoBacktrackPrio c g bp p s e m) => CHRMonoBacktrackPrioT c g bp p s e m PP_Doc
 getSolveTrace = fmap (ppSolveTrace . reverse) $ getl $ fstl ^* chrgstTrace
@@ -421,27 +430,30 @@ splitWorkFromQueue = do
 -- | Add a constraint to be solved or residualised
 addConstraintAsWork :: MonoBacktrackPrio c g bp p s e m => c -> CHRMonoBacktrackPrioT c g bp p s e m (ConstraintSolvesVia, WorkInx)
 addConstraintAsWork c = do
-    i <- modifyAndGet (fstl ^* chrgstNextFreeWorkInx) $ \i -> (i, i + 1)
     let via = cnstrSolvesVia c
-    w <- case via of
-           ConstraintSolvesVia_Rule -> do
-               fstl ^* chrgstWorkStore ^* wkstoreTrie =$: TreeTrie.insertByKeyWith (++) k [i]
-               addWorkToRuleWorkQueue i
-               return w
-             where k = chrToWorkKey c
-                   w = Work k c i
-           ConstraintSolvesVia_Solve -> do
-               addWorkToSolveQueue i
-               return $ Work_Solve c
-           ConstraintSolvesVia_Residual -> do
-               sndl ^* chrbstResidualQueue =$: (i :)
-               return $ Work_Residue c
-           ConstraintSolvesVia_Fail -> do
-               addWorkToSolveQueue i
-               return $ Work_Fail
-    fstl ^* chrgstWorkStore ^* wkstoreTable =$: IntMap.insert i w
-    return (via,i)
-
+        addw i w = do
+          fstl ^* chrgstWorkStore ^* wkstoreTable =$: IntMap.insert i w
+          return (via,i)
+    case via of
+        ConstraintSolvesVia_Rule -> do
+            i <- fresh
+            fstl ^* chrgstWorkStore ^* wkstoreTrie =$: TreeTrie.insertByKeyWith (++) k [i]
+            addWorkToRuleWorkQueue i
+            addw i $ Work k c i
+          where k = chrToWorkKey c
+        ConstraintSolvesVia_Solve -> do
+            i <- fresh
+            addWorkToSolveQueue i
+            addw i $ Work_Solve c
+        ConstraintSolvesVia_Residual -> do
+            i <- fresh
+            sndl ^* chrbstResidualQueue =$: (i :)
+            addw i $ Work_Residue c
+        ConstraintSolvesVia_Fail -> do
+            -- fail right away
+            mzero
+  where
+    fresh = modifyAndGet (fstl ^* chrgstNextFreeWorkInx) $ \i -> (i, i + 1)
 {-
 
 chrStoreSingletonElem :: (TTKeyable c, Ord (TTKey c), TTKey c ~ TrTrKey c) => Rule c g bp p -> CHRStore c g b p
@@ -639,6 +651,22 @@ data FoundWorkMatch c g bp p s
       }
 
 -------------------------------------------------------------------------------------------
+--- Solver options
+-------------------------------------------------------------------------------------------
+
+-- | Solve specific options
+data CHRSolveOpts
+  = CHRSolveOpts
+      { chrslvOptSucceedOnLeftoverWork	:: !Bool		-- ^ left over unresolvable (non residue) work is also a succesful result
+      }
+
+defaultCHRSolveOpts :: CHRSolveOpts
+defaultCHRSolveOpts
+  = CHRSolveOpts
+      { chrslvOptSucceedOnLeftoverWork	= False
+      }
+
+-------------------------------------------------------------------------------------------
 --- Solver
 -------------------------------------------------------------------------------------------
 
@@ -647,9 +675,10 @@ chrSolve
   :: -- forall c g bp p s e m .
      ( MonoBacktrackPrio c g bp p s e m
      , PP s
-     ) => e
+     ) => CHRSolveOpts
+       -> e
        -> CHRMonoBacktrackPrioT c g bp p s e m (SolverResult s)
-chrSolve env = slv
+chrSolve opts env = slv
   where
     -- solve
     slv = do
@@ -658,23 +687,20 @@ chrSolve env = slv
           -- There is work in the solve work queue
           Just (workInx) -> do
               work <- lkupWork workInx
-              case work of
-                Work_Fail -> mzero
-                _ -> do
-                  subst <- getl $ sndl ^* chrbstSolveSubst
-                  let mbSlv = flip chrmatcherRun subst $ chrBuiltinSolveM env $ workCnstr work
-                  case mbSlv of
-                    Just (s,_) -> sndl ^* chrbstSolveSubst =$: (s |+>)
-                    _          -> sndl ^* chrbstResidualQueue =$: (workInx :)
+              subst <- getl $ sndl ^* chrbstSolveSubst
+              let mbSlv = flip chrmatcherRun subst $ chrBuiltinSolveM env $ workCnstr work
+              case mbSlv of
+                Just (s,_) -> sndl ^* chrbstSolveSubst =$: (s |+>)
+                _          -> sndl ^* chrbstResidualQueue =$: (workInx :)
 
-                  -- debug info
-                  sndl ^* chrbstReductionSteps =$: (SolverReductionDBG
-                    (    "solve wk" >#< work
-                     >-< "match" >#< mbSlv
-                    ) :)
+              -- debug info
+              sndl ^* chrbstReductionSteps =$: (SolverReductionDBG
+                (    "solve wk" >#< work
+                 >-< "match" >#< mbSlv
+                ) :)
 
-                  -- just continue with next work
-                  slv
+              -- just continue with next work
+              slv
 
           -- If no more solve work, continue with normal work
           Nothing -> do
@@ -730,12 +756,15 @@ chrSolve env = slv
                     case foundWorkMatchesFilteredPriod of
                       -- at least one solution to follow up
                       ((a:_):_) -> do
-                          addWorkToRuleWorkQueue workInx
-                          slv1 a
-                      -- no chr applies for this work, so consider it to be residual
-                      _ -> do
-                          sndl ^* chrbstLeftWorkQueue =$: (workInx :)
-                          slv
+                            addWorkToRuleWorkQueue workInx
+                            slv1 a
+                      _ | chrslvOptSucceedOnLeftoverWork opts -> do
+                            -- no chr applies for this work, so consider it to be residual
+                            sndl ^* chrbstLeftWorkQueue =$: (workInx :)
+                            slv
+                        | otherwise -> do
+                            -- no chr applies for this work, can never be resolved, consider this a failure unless prevented by option
+                            mzero
 
 {-
     -- solve a group of matches with same prio, cutting of alternatives from other lower priorities if this priority has a solution

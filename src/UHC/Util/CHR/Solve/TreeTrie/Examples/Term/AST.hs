@@ -74,13 +74,13 @@ instance Serialize Tm
 data C
   = C_Con String [Tm]
   | CB_Eq Tm Tm          -- ^ builtin: unification
-  | C_Fail               -- ^ explicit fail
+  | CB_Fail              -- ^ explicit fail
   deriving (Show, Eq, Ord, Typeable, Generic)
 
 instance PP C where
   pp (C_Con c as) = c >#< ppParensCommas as
   pp (CB_Eq x y ) = "unify" >#< ppParensCommas [x,y]
-  pp (C_Fail    ) = pp "fail"
+  pp (CB_Fail   ) = pp "fail"
 
 instance Serialize C
 
@@ -233,7 +233,7 @@ instance CHREmptySubstitution S where
 instance IsConstraint C where
   cnstrSolvesVia (C_Con _ _) = ConstraintSolvesVia_Rule
   cnstrSolvesVia (CB_Eq _ _) = ConstraintSolvesVia_Solve
-  cnstrSolvesVia (C_Fail   ) = ConstraintSolvesVia_Fail
+  cnstrSolvesVia (CB_Fail  ) = ConstraintSolvesVia_Fail
 
 instance IsCHRGuard E G S where
 

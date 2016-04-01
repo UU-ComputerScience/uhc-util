@@ -88,7 +88,6 @@ data Work c
   | Work_Solve
       { workCnstr   :: !c                           -- ^ constraint which must be solved
       }
-  | Work_Fail                                       -- ^ failure
 
 type instance TTKey (Work c) = TTKey c
 
@@ -99,7 +98,6 @@ instance (PP (TTKey c), PP c) => PP (Work c) where
   pp (Work         k c t) = ppParens k >|< "@" >|< t >#< c
   pp (Work_Residue   c  ) = pp                           c
   pp (Work_Solve     c  ) = pp                           c
-  pp (Work_Fail         ) = pp "fail"
 
 -------------------------------------------------------------------------------------------
 --- Solver trace
