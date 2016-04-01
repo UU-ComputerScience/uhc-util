@@ -65,7 +65,7 @@ tmIsVar _          = Nothing
 
 instance PP Tm where
   pp (Tm_Var v   ) = pp v -- "v" >|< v
-  pp (Tm_Con c as) = c >#< ppParensCommas as
+  pp (Tm_Con c as) = ppParens $ c >#< ppSpaces as
   pp (Tm_Int i   ) = pp i
 
 instance Serialize Tm
@@ -78,8 +78,8 @@ data C
   deriving (Show, Eq, Ord, Typeable, Generic)
 
 instance PP C where
-  pp (C_Con c as) = c >#< ppParensCommas as
-  pp (CB_Eq x y ) = "unify" >#< ppParensCommas [x,y]
+  pp (C_Con c as) = c >#< ppSpaces as
+  pp (CB_Eq x y ) = "unify" >#< ppSpaces [x,y]
   pp (CB_Fail   ) = pp "fail"
 
 instance Serialize C
@@ -152,8 +152,8 @@ instance Serialize POp
 instance Serialize P
 
 instance Bounded P where
-  minBound = P_Tm $ Tm_Int $ unPrio $ minBound
-  maxBound = P_Tm $ Tm_Int $ unPrio $ maxBound
+  minBound = P_Tm $ Tm_Int $ fromIntegral $ unPrio $ minBound
+  maxBound = P_Tm $ Tm_Int $ fromIntegral $ unPrio $ maxBound
 
 type S = Map.Map Var Tm
 

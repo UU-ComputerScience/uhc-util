@@ -60,6 +60,7 @@ module UHC.Util.CHR.Base
 
 import qualified UHC.Util.TreeTrie as TreeTrie
 import           UHC.Util.VarMp
+import           Data.Word
 import           Data.Monoid
 import           Data.Typeable
 import           Data.Function
@@ -437,7 +438,7 @@ instance {-# OVERLAPPABLE #-} (CHREmptySubstitution subst, VarLookupCmb subst su
 -------------------------------------------------------------------------------------------
 
 -- | Separate priority type, where minBound represents lowest prio, and compare sorts from high to low prio (i.e. high `compare` low == LT)
-newtype Prio = Prio {unPrio :: Int}
+newtype Prio = Prio {unPrio :: Word32}
   deriving (Eq, Bounded, Num, Enum, Integral, Real)
 
 instance Show Prio where

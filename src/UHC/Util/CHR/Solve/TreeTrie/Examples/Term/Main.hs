@@ -22,7 +22,7 @@ import           UHC.Util.CHR.Solve.TreeTrie.Examples.Term.Parser
 
 data RunOpt
   = RunOpt_DebugTrace               -- ^ include debugging trace in output
-  | RunOpt_SucceedOnLeftoverWork    -- ^ left over unresolvable (non residue) work is also a succesful result
+  | RunOpt_SucceedOnLeftoverWork    -- ^ left over unresolvable (non residue) work is also a successful result
   deriving (Eq)
 
 -- | Run file with options
@@ -50,7 +50,7 @@ runFile runopts f = do
           mapM_ addRule prog
           mapM_ addConstraintAsWork query
           r <- chrSolve sopts ()
-          ppSolverResult (RunOpt_DebugTrace `elem` runopts) r >>= (liftIO . putPPLn)
+          ppSolverResult (RunOpt_DebugTrace `elem` runopts) r >>= \sr -> liftIO $ putPPLn $ "Solution" >-< indent 2 sr
           return r
     runCHRMonoBacktrackPrioT (emptyCHRGlobState) (emptyCHRBackState {- _chrbstBacktrackPrio=0 -}) {- 0 -} mbp
     
@@ -65,7 +65,7 @@ runFile runopts f = do
 mainTerm = do
   forM_
       [ "ruleprio"
-      -- , "backtrack"
+      , "backtrack"
       -- , "unify"
       -- , "antisym"
       ] $ \f -> do

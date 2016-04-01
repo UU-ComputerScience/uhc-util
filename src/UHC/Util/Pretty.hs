@@ -92,6 +92,7 @@ import           UHC.Util.FPath
 import           UHC.Util.Time
 import           System.IO
 import           Data.List
+import           Data.Word
 import qualified Data.Set as Set
 
 -------------------------------------------------------------------------
@@ -418,6 +419,9 @@ instance {-# OVERLAPPABLE #-} PP a => PP (Set.Set a) where
   pp = ppCurlysCommasBlockH . Set.toList
 
 instance PP Bool where
+  pp = pp . show
+
+instance PP Word32 where
   pp = pp . show
 
 instance PP ClockTime where
