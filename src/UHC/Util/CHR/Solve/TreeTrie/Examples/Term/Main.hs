@@ -25,8 +25,10 @@ data RunOpt
   | RunOpt_SucceedOnLeftoverWork    -- ^ left over unresolvable (non residue) work is also a succesful result
   deriving (Eq)
 
+-- | Run file with options
 runFile :: [RunOpt] -> FilePath -> IO ()
 runFile runopts f = do
+    -- scan, parse
     msg $ "READ " ++ f
     toks <- scanFile
       ([] ++ scanChrExtraKeywordsTxt dummy)
@@ -35,8 +37,12 @@ runFile runopts f = do
       ("=/\\><.+*-@:|?" ++ scanChrExtraOpChars dummy)
       f
     (prog, query) <- parseIOMessage show pProg toks
+    
+    -- print program
     putPPLn $ "Rules" >-< indent 2 (vlist $ map pp prog)
     putPPLn $ "Query" >-< indent 2 (vlist $ map pp query)
+
+    -- solve
     msg $ "SOLVE " ++ f
     let sopts = defaultCHRSolveOpts {chrslvOptSucceedOnLeftoverWork = RunOpt_SucceedOnLeftoverWork `elem` runopts}
         mbp :: CHRMonoBacktrackPrioT C G P P S E IO (SolverResult S)
@@ -47,14 +53,20 @@ runFile runopts f = do
           ppSolverResult (RunOpt_DebugTrace `elem` runopts) r >>= (liftIO . putPPLn)
           return r
     runCHRMonoBacktrackPrioT (emptyCHRGlobState) (emptyCHRBackState {- _chrbstBacktrackPrio=0 -}) {- 0 -} mbp
+    
+    -- done
     msg $ "DONE " ++ f
+    
   where
     msg m = putStrLn $ "---------------- " ++ m ++ " ----------------"
     dummy = undefined :: Rule C G P P
 
+-- | run some test programs
 mainTerm = do
   forM_
-      [ "unify"
+      [ "ruleprio"
+      -- , "backtrack"
+      -- , "unify"
       -- , "antisym"
       ] $ \f -> do
     let f' = "test/" ++ f ++ ".chr"

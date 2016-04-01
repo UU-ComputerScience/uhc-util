@@ -21,7 +21,7 @@ source-repository head
 
 library
   Build-Depends:
-    base >= 4.8 && < 5,
+    base >= 4.8.1 && < 5,
     mtl >= 2,
     transformers >= 0.4.2,
     fgl >= 5.4,

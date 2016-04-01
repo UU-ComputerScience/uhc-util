@@ -299,6 +299,7 @@ instance CHRPrioEvaluatable E Tm S where
     Tm_Int i -> fromIntegral i
     Tm_Var v -> maybe minBound (chrPrioEval e s) $ varlookupResolveVar tmIsVar v s
     _        -> minBound
+  chrPrioLift = Tm_Int . fromIntegral
 
 type instance CHRPrioEvaluatableVal P = Prio
 
@@ -311,6 +312,7 @@ instance CHRPrioEvaluatable E P S where
         POp_Mul -> p1' * p2'
       where p1' = chrPrioEval e s p1
             p2' = chrPrioEval e s p2
+  chrPrioLift = P_Tm . chrPrioLift
 
 -- instance M.IsCHRSolvable E C G S where
 

@@ -120,7 +120,7 @@ class ( CHRPrioEvaluatable env p subst
       , PP p
       ) => IsCHRPrio env p subst
 
-instance {-# OVERLAPPABLE #-} IsCHRPrio env () subst
+-- instance {-# OVERLAPPABLE #-} IsCHRPrio env () subst
 
 -- | (Class alias) API for backtrack priority requirements
 class ( IsCHRPrio env bp subst
@@ -129,7 +129,7 @@ class ( IsCHRPrio env bp subst
       -- , Num (CHRPrioEvaluatableVal bp)
       ) => IsCHRBacktrackPrio env bp subst
 
-instance {-# OVERLAPPABLE #-} (CHREmptySubstitution subst, VarLookupCmb subst subst) => IsCHRBacktrackPrio env () subst
+-- instance {-# OVERLAPPABLE #-} (CHREmptySubstitution subst, VarLookupCmb subst subst) => IsCHRBacktrackPrio env () subst
 
 -------------------------------------------------------------------------------------------
 --- Existentially quantified Constraint representations to allow for mix of arbitrary universes
@@ -438,7 +438,7 @@ instance {-# OVERLAPPABLE #-} (CHREmptySubstitution subst, VarLookupCmb subst su
 
 -- | Separate priority type, where minBound represents lowest prio, and compare sorts from high to low prio (i.e. high `compare` low == LT)
 newtype Prio = Prio {unPrio :: Int}
-  deriving (Eq, Bounded, Num, Enum)
+  deriving (Eq, Bounded, Num, Enum, Integral, Real)
 
 instance Show Prio where
   show = show . unPrio
@@ -447,7 +447,6 @@ instance PP Prio where
   pp = pp . unPrio
 
 instance Ord Prio where
-  -- Prio p1 `compare` Prio p2 = p2 `compare` p1
   compare = flip compare `on` unPrio
   {-# INLINE compare #-}
   
@@ -459,7 +458,7 @@ instance Ord Prio where
 type family CHRPrioEvaluatableVal p :: *
 
 -- | A PrioEvaluatable participates in the reduction process to indicate the rule priority, higher prio takes precedence
-class (Ord (CHRPrioEvaluatableVal x), Bounded (CHRPrioEvaluatableVal x)) => CHRPrioEvaluatable env x subst where
+class (Ord (CHRPrioEvaluatableVal x), Bounded (CHRPrioEvaluatableVal x)) => CHRPrioEvaluatable env x subst | x -> env subst where
   -- | Reduce to a prio representation
   chrPrioEval :: env -> subst -> x -> CHRPrioEvaluatableVal x
   chrPrioEval _ _ _ = minBound
@@ -467,6 +466,9 @@ class (Ord (CHRPrioEvaluatableVal x), Bounded (CHRPrioEvaluatableVal x)) => CHRP
   -- | Compare priorities
   chrPrioCompare :: env -> (subst,x) -> (subst,x) -> Ordering
   chrPrioCompare e (s1,x1) (s2,x2) = chrPrioEval e s1 x1 `compare` chrPrioEval e s2 x2
+  
+  -- | Lift prio val into prio
+  chrPrioLift :: CHRPrioEvaluatableVal x -> x
 
 type instance CHRPrioEvaluatableVal () = Prio
 
@@ -476,8 +478,9 @@ instance {-# OVERLAPPABLE #-} Ord x => CHRPrioEvaluatable env x subst where
   chrPrioCompare _ (_,x) (_,y) = compare x y
 -}
 
-instance {-# OVERLAPPABLE #-} CHRPrioEvaluatable env () subst where
 {-
+instance {-# OVERLAPPABLE #-} CHRPrioEvaluatable env () subst where
+  chrPrioLift _ = ()
   chrPrioEval _ _ _ = minBound
   chrPrioCompare _ _ _ = EQ
 -}
@@ -492,6 +495,7 @@ data ConstraintSolvesVia
   | ConstraintSolvesVia_Solve       -- ^ solving involving finding of variable bindings (e.g. unification)
   | ConstraintSolvesVia_Residual    -- ^ a leftover, residue
   | ConstraintSolvesVia_Fail        -- ^ triggers explicit fail
+  | ConstraintSolvesVia_Succeed     -- ^ triggers explicit succes
   deriving (Show, Enum, Eq, Ord)
 
 instance PP ConstraintSolvesVia where

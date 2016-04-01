@@ -75,6 +75,10 @@ module UHC.Util.Utils
   , DataAndConName(..)
   , showUnprefixed
   
+    -- * Ordering
+  , orderingLexic
+  , orderingLexicList
+  
     -- * Misc
   , panic
   
@@ -91,8 +95,6 @@ module UHC.Util.Utils
   , consecutiveBy
   
   , partitionAndRebuild
-  
-  , orderingLexic
   
     -- * Maybe
   , panicJust
@@ -114,6 +116,7 @@ module UHC.Util.Utils
 import Data.Char
 import Data.List
 import Data.Maybe
+import Data.Function
 import Data.Typeable
 import GHC.Generics
 import qualified Data.Set as Set
@@ -455,22 +458,22 @@ sortOn = sortOnLazy
 #endif
 
 sortByOn :: (b -> b -> Ordering) -> (a -> b) -> [a] -> [a]
-sortByOn cmp sel = sortBy (\e1 e2 -> sel e1 `cmp` sel e2)
+sortByOn cmp sel = sortBy (cmp `on` sel) -- (\e1 e2 -> sel e1 `cmp` sel e2)
 
 groupOn :: Eq b => (a -> b) -> [a] -> [[a]]
-groupOn sel = groupBy (\e1 e2 -> sel e1 == sel e2)
+groupOn sel = groupBy ((==) `on` sel) -- (\e1 e2 -> sel e1 == sel e2)
 
 groupSortOn :: Ord b => (a -> b) -> [a] -> [[a]]
 groupSortOn sel = groupOn sel . sortOn sel
 
 groupByOn :: (b -> b -> Bool) -> (a -> b) -> [a] -> [[a]]
-groupByOn eq sel = groupBy (\e1 e2 -> sel e1 `eq` sel e2)
+groupByOn eq sel = groupBy (eq `on` sel) -- (\e1 e2 -> sel e1 `eq` sel e2)
 
 groupSortByOn :: (b -> b -> Ordering) -> (a -> b) -> [a] -> [[a]]
 groupSortByOn cmp sel = groupByOn (\e1 e2 -> cmp e1 e2 == EQ) sel . sortByOn cmp sel
 
 nubOn :: Eq b => (a->b) -> [a] -> [a]
-nubOn sel = nubBy (\a1 a2 -> sel a1 == sel a2)
+nubOn sel = nubBy ((==) `on` sel) -- (\a1 a2 -> sel a1 == sel a2)
 
 -- | The 'consecutiveBy' function groups like groupBy, but based on a function which says whether 2 elements are consecutive
 consecutiveBy                  :: (a -> a -> Bool) -> [a] -> [[a]]
@@ -515,8 +518,14 @@ partitionAndRebuild _ [] = ([], [], \_ _ -> [])
 -------------------------------------------------------------------------
 
 -- | Reduce compare results lexicographically to one compare result
-orderingLexic :: [Ordering] -> Ordering
-orderingLexic = foldr1 (\o1 o2 -> if o1 == EQ then o2 else o1)
+orderingLexicList :: [Ordering] -> Ordering
+orderingLexicList = foldr1 orderingLexic
+{-# INLINE orderingLexicList #-}
+
+-- | Reduce compare results lexicographically using a continuation ordering
+orderingLexic :: Ordering -> Ordering -> Ordering
+orderingLexic o1 o2 = if o1 == EQ then o2 else o1
+{-# INLINE orderingLexic #-}
 
 -------------------------------------------------------------------------
 -- Maybe

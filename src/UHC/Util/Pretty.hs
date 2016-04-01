@@ -432,10 +432,10 @@ instance PP () where
 instance (PP a, PP b) => PP (a,b) where
   pp (a,b) = "(" >|< a >-|-< "," >|< b >-|-< ")"
 
-{-
 instance (PP a, PP b, PP c) => PP (a,b,c) where
-  pp (a,b,c) = ppParensCommasBlock [a,b,c]
+  pp (a,b,c) = "(" >|< a >-|-< "," >|< b >-|-< "," >|< c >-|-< ")"
 
+{-
 instance (PP a, PP b, PP c, PP d) => PP (a,b,c,d) where
   pp (a,b,c,d) = ppParensCommasBlock [a,b,c,d]
 
