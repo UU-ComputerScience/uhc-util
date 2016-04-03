@@ -65,7 +65,7 @@ runFile runopts f = do
 mainTerm = do
   forM_
       [ "ruleprio"
-      , "backtrack"
+      -- , "backtrack"
       -- , "unify"
       -- , "antisym"
       ] $ \f -> do

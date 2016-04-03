@@ -480,6 +480,7 @@ addConstraintAsWork c = do
             return $ Work_Residue c
         -- fail right away if this constraint is a fail constraint
         ConstraintSolvesVia_Fail -> do
+            addWorkToSolveQueue i
             return Work_Fail
     addw i w
 {-
@@ -544,7 +545,7 @@ slvSucces = do
 -- | Failure return, no solution is found
 slvFail :: MonoBacktrackPrio c g bp p s e m => CHRMonoBacktrackPrioT c g bp p s e m (SolverResult s)
 slvFail = do
-    -- failing just terminates this slv, scheduling to another
+    -- failing just terminates this slv, scheduling to another, if any
     slvScheduleRun
     -- mzero
 {-# INLINE slvFail #-}
@@ -572,12 +573,13 @@ slvReschedule slv = do
 
 -- | Retrieve solver with the highest prio from the schedule queue
 slvSplitFromSchedule :: MonoBacktrackPrio c g bp p s e m => CHRMonoBacktrackPrioT c g bp p s e m (Maybe (CHRPrioEvaluatableVal bp, CHRMonoBacktrackPrioT c g bp p s e m (SolverResult s)))
-slvSplitFromSchedule = modifyAndGet (fstl ^* chrgstScheduleQue) $ \q -> (Que.getMin q, Que.deleteMin q)
+slvSplitFromSchedule = modifyAndGet (fstl ^* chrgstScheduleQue) $ \q -> {- trp "slvSplitFromSchedule" (pp $ Que.size q) $ -} (Que.getMin q, Que.deleteMin q)
 {-# INLINE slvSplitFromSchedule #-}
 
 -- | Run from the schedule que, fail if nothing left to be done
 slvScheduleRun :: MonoBacktrackPrio c g bp p s e m => CHRMonoBacktrackPrioT c g bp p s e m (SolverResult s)
 slvScheduleRun = slvSplitFromSchedule >>= maybe mzero snd
+-- slvScheduleRun = slvSplitFromSchedule >>= \mp -> trp "slvScheduleRun" (pp $ fmap fst mp) $ maybe mzero snd mp
 {-# INLINE slvScheduleRun #-}
 
 -------------------------------------------------------------------------------------------
@@ -872,8 +874,11 @@ chrSolve opts env = slv
 
                     -- debug info
                     bprio <- getl $ sndl ^* chrbstBacktrackPrio
+                    sque <- getl $ fstl ^* chrgstScheduleQue
                     sndl ^* chrbstReductionSteps =$: (SolverReductionDBG
-                      (    "bprio" >#< bprio
+                      (    {- "sque len" >#< Que.size sque
+                       >-< -}
+                           "bprio" >#< bprio
                        >-< "wk" >#< work
                        >-< "que" >#< ppBracketsCommas (Set.toList activeWk)
                        >-< "visited" >#< ppBracketsCommas (Set.toList visitedChrWkCombis)
@@ -884,20 +889,11 @@ chrSolve opts env = slv
                        -- >-< "prio'd" >#< ppAssocL (zip [0::Int ..] $ map ppAssocL foundWorkSortedMatches)
                       ) :)
 
-                    {-
-                    -- actual solving, backtracking etc
-                    addWorkToRuleWorkQueue workInx
-                    -- for now, leave out the backtracking part
-                    slvPrios foundWorkMatchesFilteredPriod
-                    -}
-{-
-                    slvOnBacktrackPrios workInx foundWorkSortedMatches
--}
                     -- pick the first and highest rule prio solution
                     case foundWorkSortedMatches of
                       ((_,fwsm):_) -> do
                             addWorkToRuleWorkQueue workInx
-                            slv1 fwsm
+                            slv1 bprio fwsm
                       _ | chrslvOptSucceedOnLeftoverWork opts -> do
                             -- no chr applies for this work, so consider it to be residual
                             sndl ^* chrbstLeftWorkQueue =$: (workInx :)
@@ -906,96 +902,46 @@ chrSolve opts env = slv
                         | otherwise -> do
                             -- no chr applies for this work, can never be resolved, consider this a failure unless prevented by option
                             slvFail
-{-
-                    -- instead, pick one, if any
-                    case foundWorkSortedMatches of
-                      -- at least one solution to follow up
-                      (((_,fwsm):_):_) -> do
-                            addWorkToRuleWorkQueue workInx
-                            slv1 fwsm
-                            -- (CHRConstraintInx {chrciInx = ci}, StoredCHR {_storedChrRule = rul@(Rule {ruleSimpSz = simpSz})}, workInxs, matchSubst)
-                      _ | chrslvOptSucceedOnLeftoverWork opts -> do
-                            -- no chr applies for this work, so consider it to be residual
-                            sndl ^* chrbstLeftWorkQueue =$: (workInx :)
-                            slv
-                        | otherwise -> do
-                            -- no chr applies for this work, can never be resolved, consider this a failure unless prevented by option
-                            slvFail
 
--}
-{-
-    -- solve, backtracking on different backtracking priorities
-    slvOnBacktrackPrios workInx matches = case matches of
-        [] | chrslvOptSucceedOnLeftoverWork opts -> do
-               -- no chr applies for this work, so consider it to be residual
-               sndl ^* chrbstLeftWorkQueue =$: (workInx :)
-               slv
-           | otherwise -> do
-               -- no chr applies for this work, can never be resolved, consider this a failure unless prevented by option
-               slvFail
-        [m] -> slvOnRulePrios workInx m
-        ms  -> do
-               alts <- forM ms $ backtrack . slvOnRulePrios workInx
-               msum alts
-
-    -- solve, picking the first for this backtracking priority
-    slvOnRulePrios workInx matches = case matches of
-        -- at least one solution to follow up
-        ((_,fwsm):_) -> do
-              addWorkToRuleWorkQueue workInx
-              slv1 fwsm
-        _ -> panic "chrSolve.slvOnRulePrios: should not happen"
--}
     -- solve one step further, allowing a backtrack point here
-    slv1 (FoundWorkSortedMatch
+    slv1 curbprio
+         (FoundWorkSortedMatch
             { foundWorkSortedMatchInx = CHRConstraintInx {chrciInx = ci}
             , foundWorkSortedMatchChr = StoredCHR {_storedChrRule = Rule {ruleSimpSz = simpSz}}
-            , foundWorkSortedMatchBodyAlts = alts@(alt@(FoundBodyAlt {foundBodyAltAlt=rbodyalt}) : _)
+            , foundWorkSortedMatchBodyAlts = alts
             , foundWorkSortedMatchWorkInx = workInxs
             , foundWorkSortedMatchSubst = matchSubst
             }) = do
-        -- set prio
-        -- sndl ^* chrbstBacktrackPrio =: foundBodyAltBacktrackPrio alt
         -- remove the simplification part from the work queue
         deleteWorkFromQueue $ take simpSz workInxs
-        -- add all alternatives to the schedule que
-        forM alts $ \alt@(FoundBodyAlt {foundBodyAltAlt=rbodyalt}) -> do
-          -- extract body alternative
-          let body = rbodyaltBody rbodyalt
-              bprio = foundBodyAltBacktrackPrio alt
-          -- make a backtracking version of the next work step
-          next <- backtrack $ do
-            -- set prio for this alt
-            sndl ^* chrbstBacktrackPrio =: bprio
-            -- add each constraint from the body, applying the meta var subst
-            newWkInxs <- forM body $ addConstraintAsWork . (matchSubst `varUpd`)
-            -- mark this combi of chr and work as visited
-            let matchedCombi = MatchedCombi ci workInxs
-            sndl ^* chrbstMatchedCombis =$: Set.insert matchedCombi
-            -- add this reduction step as being taken
-            sndl ^* chrbstReductionSteps =$: (SolverReductionStep matchedCombi (foundBodyAltInx alt) (Map.unionsWith (++) $ map (\(k,v) -> Map.singleton k [v]) $ newWkInxs) :)
-            -- take next step
-            slv
-          -- put on the scheduling que
-          slvSchedule bprio next
-        -- switch to next on the queue
-        slvScheduleRun
-        {-
-        -- extract body alternative
-        let body = rbodyaltBody rbodyalt
-        -- remove the simplification part from the work queue
-        deleteWorkFromQueue $ take simpSz workInxs
-        -- add each constraint from the body, applying the meta var subst
-        newWkInxs <- forM body $ addConstraintAsWork . (matchSubst `varUpd`)
-        -- mark this combi of chr and work as visited
-        let matchedCombi = MatchedCombi ci workInxs
-        sndl ^* chrbstMatchedCombis =$: Set.insert matchedCombi
-        -- add this reduction step as being taken
-        sndl ^* chrbstReductionSteps =$: (SolverReductionStep matchedCombi (foundBodyAltInx alt) (Map.unionsWith (++) $ map (\(k,v) -> Map.singleton k [v]) $ newWkInxs) :)
-        -- result
-        -- return emptySolverResult
-        slv
-        -}
+        -- depending on nr of alts continue slightly different
+        case alts of
+          -- just continue if no alts 
+          [] -> slv
+          -- just reschedule
+          [alt@(FoundBodyAlt {foundBodyAltBacktrackPrio=bprio})]
+            | curbprio == bprio -> {- trp "slv1" (pp bprio) $ -} nextwork bprio alt
+            | otherwise -> do
+                slvSchedule bprio $ nextwork bprio alt
+                slvScheduleRun
+          -- otherwise backtrack and schedule all and then reschedule
+          alts -> do
+                forM alts $ \alt@(FoundBodyAlt {foundBodyAltBacktrackPrio=bprio}) -> (backtrack $ nextwork bprio alt) >>= slvSchedule bprio
+                slvScheduleRun
+
+      where
+        nextwork bprio alt@(FoundBodyAlt {foundBodyAltAlt=(RuleBodyAlt {rbodyaltBody=body})}) = do
+          -- set prio for this alt
+          sndl ^* chrbstBacktrackPrio =: bprio
+          -- add each constraint from the body, applying the meta var subst
+          newWkInxs <- forM body $ addConstraintAsWork . (matchSubst `varUpd`)
+          -- mark this combi of chr and work as visited
+          let matchedCombi = MatchedCombi ci workInxs
+          sndl ^* chrbstMatchedCombis =$: Set.insert matchedCombi
+          -- add this reduction step as being taken
+          sndl ^* chrbstReductionSteps =$: (SolverReductionStep matchedCombi (foundBodyAltInx alt) (Map.unionsWith (++) $ map (\(k,v) -> Map.singleton k [v]) $ newWkInxs) :)
+          -- take next step
+          slv
 
     -- misc utils
     

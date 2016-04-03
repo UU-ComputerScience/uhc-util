@@ -39,7 +39,7 @@ pTm =   pB
           pT = Tm_Con <$> pConid <*> pList pB
 
 pP :: Pr P
-pP = pB
+pP = pP
    where pB = P_Tm <$> pTm <|> pParens pP
          pP =   pChainr (P_Op <$> (POp_Add <$ pKey "+" <|> POp_Sub <$ pKey "-"))
               $ pChainr (P_Op <$> (POp_Mul <$ pKey "*"))
