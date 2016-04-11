@@ -1,4 +1,4 @@
-{-# LANGUAGE UndecidableInstances, GeneralizedNewtypeDeriving, ScopedTypeVariables #-}
+{-# LANGUAGE UndecidableInstances, GeneralizedNewtypeDeriving, ScopedTypeVariables, TypeFamilies #-}
 {-# LANGUAGE CPP #-}
 #if __GLASGOW_HASKELL__ >= 710
 #else
@@ -9,6 +9,9 @@
 
 module UHC.Util.VarLookup
     ( VarLookup(..)
+    , VarLookupKey
+    , VarLookupVal
+    
     , varlookupResolveVarWithMetaLev
     , varlookupResolveVar
     , varlookupResolveValWithMetaLev
@@ -35,9 +38,10 @@ module UHC.Util.VarLookup
     )
   where
 
-import Control.Applicative
-import Data.Maybe
-import UHC.Util.Pretty
+import           Control.Applicative
+import           Data.Maybe
+import           UHC.Util.Pretty
+import qualified Data.Set as Set
 
 -------------------------------------------------------------------------------------------
 --- Level of lookup
@@ -54,6 +58,12 @@ metaLevVal = 0
 --- VarLookup: something which can lookup a value 'v' given a key 'k'.
 -------------------------------------------------------------------------------------------
 
+
+-- | Type family for key of a VarLookup
+type family VarLookupKey k :: *
+-- | Type family for value of a VarLookup
+type family VarLookupVal k :: *
+
 {- |
 VarLookup abstracts from a Map.
 The purpose is to be able to combine maps only for the purpose of searching without actually merging the maps.
@@ -61,20 +71,31 @@ This then avoids the later need to unmerge such mergings.
 The class interface serves to hide this.
 -}
 
-class VarLookup m k v where
+class VarLookup m k v | m -> k v where
+  -- | Lookup a key at a level
   varlookupWithMetaLev :: MetaLev -> k -> m -> Maybe v
-  varlookup :: k -> m -> Maybe v
-  -- varlookupValIsVar :: v -> Maybe k
 
-  -- defaults
+  -- | Lookup a key
+  varlookup :: k -> m -> Maybe v
   varlookup = varlookupWithMetaLev metaLevVal
-  -- varlookupValIsVar _ = Nothing
+  {-# INLINE varlookup #-}
+  
+  -- | Keys at a level
+  varlookupKeysSetWithMetaLev :: (Ord k) => MetaLev -> m -> Set.Set k
+  
+  -- | Keys as Set
+  varlookupKeysSet :: (Ord k) => m -> Set.Set k
+  varlookupKeysSet = varlookupKeysSetWithMetaLev metaLevVal
+  {-# INLINE varlookupKeysSet #-}
+  
 
 instance (VarLookup m1 k v,VarLookup m2 k v) => VarLookup (m1,m2) k v where
   varlookupWithMetaLev l k (m1,m2)
     = case varlookupWithMetaLev l k m1 of
         r@(Just _) -> r
         _          -> varlookupWithMetaLev l k m2
+  varlookupKeysSetWithMetaLev l (m1,m2)
+    = varlookupKeysSetWithMetaLev l m1 `Set.union` varlookupKeysSetWithMetaLev l m2
 
 -- | Fully resolve lookup
 varlookupResolveVarWithMetaLev :: VarLookup m k v => MetaLev -> (v -> Maybe k) -> k -> m -> Maybe v
@@ -104,10 +125,8 @@ instance VarLookup m k v => VarLookup [m] k v where
 -}
 
 varlookupMap :: VarLookup m k v => (v -> Maybe res) -> k -> m -> Maybe res
-varlookupMap get k m
-  = do { v <- varlookup k m
-       ; get v
-       }
+varlookupMap get k m = varlookup k m >>= get
+{-# INLINE varlookupMap #-}
 
 -------------------------------------------------------------------------------------------
 --- VarLookupFix
@@ -172,9 +191,12 @@ instance
 -------------------------------------------------------------------------------------------
 
 class VarLookupBase m k v | m -> k v where
+  -- | Make an empty VarLookup
   varlookupEmpty :: m
+  -- | Make a singleton VarLookup at a level
   varlookupSingletonWithMetaLev :: MetaLev -> k -> v -> m
   
+  -- | Make a singleton VarLookup
   varlookupSingleton :: k -> v -> m
   varlookupSingleton = varlookupSingletonWithMetaLev metaLevVal
   {-# INLINE varlookupSingleton #-}
@@ -206,6 +228,7 @@ instance PP s => PP (StackedVarLookup s) where
 
 instance VarLookup m k v => VarLookup (StackedVarLookup m) k v where
   varlookupWithMetaLev l k (StackedVarLookup ms) = listToMaybe $ catMaybes $ map (varlookupWithMetaLev l k) ms
+  varlookupKeysSetWithMetaLev l (StackedVarLookup ms) = Set.unions $ map (varlookupKeysSetWithMetaLev l) ms
 
 instance VarLookupBase m k v => VarLookupBase (StackedVarLookup m) k v where
   varlookupEmpty = StackedVarLookup [varlookupEmpty]

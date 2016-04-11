@@ -20,13 +20,14 @@ module UHC.Util.CHR.Solve.TreeTrie.Examples.Term.AST
 import           UHC.Util.VarLookup
 import           UHC.Util.Substitutable
 import           UHC.Util.TreeTrie
-import           UHC.Util.Pretty
+import           UHC.Util.Pretty as PP
 import           UHC.Util.Serialize
 import           UHC.Util.CHR.Key
 import           UHC.Util.CHR.Base
 import           UHC.Util.CHR.Rule
 import           UHC.Util.Utils
 import           UHC.Util.AssocL
+import           UHC.Util.Lens
 import           Data.Typeable
 import           Data.Maybe
 import qualified Data.Map as Map
@@ -36,7 +37,7 @@ import           Control.Applicative
 import qualified UHC.Util.CHR.Solve.TreeTrie.Mono as M
 import qualified UHC.Util.CHR.Solve.TreeTrie.MonoBacktrackPrio as MBP
 
--- import           UHC.Util.Debug
+import           UHC.Util.Debug
 
 
 type Var = String -- Int
@@ -99,10 +100,12 @@ instance Serialize B
 -- | Guard
 data G
   = G_Eq Tm Tm          -- ^ check for equality
+  | G_Ne Tm Tm          -- ^ check for inequality
   deriving (Show, Typeable, Generic)
 
 instance PP G where
   pp (G_Eq x y) = "is-eq" >#< ppParensCommas [x,y]
+  pp (G_Ne x y) = "is-ne" >#< ppParensCommas [x,y]
 
 instance Serialize G
 
@@ -172,16 +175,18 @@ instance VarLookupBase S Var Tm where
   varlookupEmpty = Map.empty
 
 instance PP S where
-  pp = ppAssocL . Map.toList
+  pp = ppAssocLH . Map.toList
 
 type instance ExtrValVarKey G = Var
 type instance ExtrValVarKey C = Var
 type instance ExtrValVarKey Tm = Var
+type instance ExtrValVarKey P = Var
 
 type instance CHRMatchableKey S = Key
 
 instance VarLookup S Var Tm where
   varlookupWithMetaLev _ = Map.lookup
+  varlookupKeysSetWithMetaLev _ = Map.keysSet
 
 instance VarLookupCmb S S where
   (|+>) = Map.union
@@ -201,6 +206,7 @@ instance VarUpdatable P S where
 
 instance VarUpdatable G S where
   s `varUpd` G_Eq x y = G_Eq (s `varUpd` x) (s `varUpd` y)
+  s `varUpd` G_Ne x y = G_Ne (s `varUpd` x) (s `varUpd` y)
 
 instance VarUpdatable C S where
   s `varUpd` c = case c of
@@ -221,11 +227,16 @@ instance VarExtractable Tm where
 
 instance VarExtractable G where
   varFreeSet (G_Eq x y) = Set.unions [varFreeSet x, varFreeSet y]
+  varFreeSet (G_Ne x y) = Set.unions [varFreeSet x, varFreeSet y]
 
 instance VarExtractable C where
   varFreeSet (C_Con _ as) = Set.unions $ map varFreeSet as
   varFreeSet (CB_Eq x y ) = Set.unions [varFreeSet x, varFreeSet y]
   varFreeSet _            = Set.empty
+
+instance VarExtractable P where
+  varFreeSet (P_Tm t) = varFreeSet t
+  varFreeSet (P_Op o x1 x2) = Set.unions [varFreeSet x1, varFreeSet x2]
 
 instance CHREmptySubstitution S where
   chrEmptySubst = Map.empty
@@ -243,43 +254,54 @@ instance IsCHRPrio E P S where
 
 instance IsCHRBacktrackPrio E P S where
 
--- instance IsCHRBuiltin E B S where
-
 instance CHRCheckable E G S where
   chrCheckM e g =
     case g of
-      G_Eq t1 t2 -> chrUnifyM CHRMatchHow_Equal e t1 t2
+      G_Eq t1 t2 -> do
+        chrmatcherstateEnv =$: \e -> e {chrmatchenvHow=CHRMatchHow_Equal}
+        chrUnifyM e t1 t2
+      G_Ne t1 t2 -> do
+        menv <- getl chrmatcherstateEnv
+        s <- getl chrmatcherstateVarLookup
+        chrmatcherRun' chrMatchSuccess (\_ _ -> chrMatchFail) (chrCheckM e (G_Eq t1 t2)) menv s
 
 instance CHRMatchable E Tm S where
-  chrUnifyM how e t1 t2 = do
+  chrUnifyM e t1 t2 = do
+      menv <- getl chrmatcherstateEnv
+      let how = chrmatchenvHow menv
       case (t1, t2) of
         (Tm_Con c1 as1, Tm_Con c2 as2) | c1 == c2 && length as1 == length as2 
-                                                                   -> sequence_ (zipWith (chrMatchToM e) as1 as2)
-        (Tm_Int i1    , Tm_Int i2    ) | i1 == i2                  -> chrMatchSuccess
-        (Tm_Var v1    , Tm_Var v2    ) | v1 == v2                  -> chrMatchSuccess
-        (Tm_Var v1    , t2           ) | how == CHRMatchHow_Equal  -> varContinue chrMatchFail (\t1 -> chrUnifyM how e t1 t2) v1
-                                       | how >= CHRMatchHow_Match  -> varContinue (chrMatchBind v1 t2) (\t1 -> chrUnifyM how e t1 t2) v1
-        (t1           , Tm_Var v2    ) | how == CHRMatchHow_Equal  -> varContinue chrMatchFail (chrUnifyM how e t1) v2
-                                       | how == CHRMatchHow_Match  -> chrMatchWait v2
-                                       | otherwise {- unify -}     -> varContinue (chrMatchBind v2 t1) (chrUnifyM how e t1) v2
-        _                                                          -> chrMatchFail
+                                                                          -> sequence_ (zipWith (chrUnifyM e) as1 as2)
+        (Tm_Int i1    , Tm_Int i2    ) | i1 == i2                         -> chrMatchSuccess
+        (Tm_Var v1    , Tm_Var v2    ) | v1 == v2                         -> chrMatchSuccess
+        (Tm_Var v1    , t2           ) | how == CHRMatchHow_Equal         -> varContinue chrMatchFail (\t1 -> chrUnifyM e t1 t2) v1
+                                       | how >= CHRMatchHow_Match && chrmatchenvMetaMayBind menv v1
+                                                                          -> varContinue (chrMatchBind menv v1 t2) (\t1 -> chrUnifyM e t1 t2) v1
+        (t1           , Tm_Var v2    ) | how == CHRMatchHow_Equal         -> varContinue chrMatchFail (chrUnifyM e t1) v2
+                                       | how == CHRMatchHow_MatchAndWait  -> varContinue (chrMatchWait v2) (chrUnifyM e t1) v2
+                                       | how == CHRMatchHow_Unify && chrmatchenvMetaMayBind menv v2
+                                                                          -> varContinue (chrMatchBind menv v2 t1) (chrUnifyM e t1) v2
+        _                                                                 -> chrMatchFail
     where
       varContinue = varlookupResolveAndContinueM tmIsVar chrMatchSubst
 
 instance CHRMatchable E C S where
-  chrMatchToM e c1 c2 = do
+  chrUnifyM e c1 c2 = do
     case (c1, c2) of
       (C_Con c1 as1, C_Con c2 as2) | c1 == c2 && length as1 == length as2 
-                                                 -> sequence_ (zipWith (chrMatchToM e) as1 as2)
+                                                 -> sequence_ (zipWith (chrUnifyM e) as1 as2)
       _                                          -> chrMatchFail
   chrBuiltinSolveM e b = case b of
-    CB_Eq x y -> chrUnifyM CHRMatchHow_Unify e x y
+    CB_Eq x y -> do
+      chrmatcherstateEnv =$: \e -> e {chrmatchenvHow=CHRMatchHow_Unify}
+      chrUnifyM e x y
+      -- chrUnifyM (emptyCHRMatchEnv {chrmatchenvHow=CHRMatchHow_Unify}) e x y
 
 instance CHRMatchable E P S where
-  chrMatchToM e p1 p2 = do
+  chrUnifyM e p1 p2 = do
     case (p1, p2) of
-      (P_Tm   t1     , P_Tm   t2     ) -> chrMatchToM e t1  t2
-      (P_Op _ p11 p12, P_Op _ p21 p22) -> chrMatchToM e p11 p21 >> chrMatchToM e p12 p22
+      (P_Tm   t1     , P_Tm   t2     ) -> chrUnifyM e t1  t2
+      (P_Op _ p11 p12, P_Op _ p21 p22) -> chrUnifyM e p11 p21 >> chrUnifyM e p12 p22
       _                                -> chrMatchFail
 
 {-

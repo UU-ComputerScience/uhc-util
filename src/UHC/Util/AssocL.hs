@@ -5,7 +5,8 @@ module UHC.Util.AssocL
     , assocLElts, assocLKeys
     , assocLGroupSort
     , assocLMapUnzip
-    , ppAssocL, ppAssocL', ppAssocLV
+    , ppAssocL, ppAssocL'
+    , ppAssocLV, ppAssocLH
     , ppCurlysAssocL
     
       -- * Utils
@@ -34,6 +35,10 @@ ppAssocL = ppAssocL' (ppBlock "[" "]" ",") ":"
 ppAssocLV :: (PP k, PP v) => AssocL k v -> PP_Doc
 ppAssocLV = ppAssocL' vlist ":"
 {-# INLINE ppAssocLV #-}
+
+ppAssocLH :: (PP k, PP v) => AssocL k v -> PP_Doc
+ppAssocLH = ppAssocL' (ppBlockH "[" "]" ", ") ":"
+{-# INLINE ppAssocLH #-}
 
 -- | intended for parsing
 ppCurlysAssocL :: (k -> PP_Doc) -> (v -> PP_Doc) -> AssocL k v -> PP_Doc

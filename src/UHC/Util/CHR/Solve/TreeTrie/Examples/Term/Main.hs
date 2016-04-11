@@ -32,7 +32,7 @@ runFile runopts f = do
     msg $ "READ " ++ f
     toks <- scanFile
       ([] ++ scanChrExtraKeywordsTxt dummy)
-      (["\\", "=>", "<=>", ".", "+", "*", "-", "::", "@", "|", "\\/", "?"] ++ scanChrExtraKeywordsOps dummy)
+      (["\\", "=>", "==>", "<=>", ".", "+", "*", "-", "::", "@", "|", "\\/", "?"] ++ scanChrExtraKeywordsOps dummy)
       ("()," ++ scanChrExtraSpecialChars dummy)
       ("=/\\><.+*-@:|?" ++ scanChrExtraOpChars dummy)
       f
@@ -64,7 +64,9 @@ runFile runopts f = do
 -- | run some test programs
 mainTerm = do
   forM_
-      [ "ruleprio"
+      [ "leq"
+      --, "var"
+      -- , "ruleprio"
       -- , "backtrack"
       -- , "unify"
       -- , "antisym"

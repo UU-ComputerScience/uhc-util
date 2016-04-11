@@ -95,6 +95,7 @@ import qualified Data.Set as Set
 import qualified Data.PQueue.Prio.Min as Que
 import qualified Data.Map as Map
 import qualified Data.IntMap.Strict as IntMap
+import qualified Data.IntSet as IntSet
 import qualified Data.Sequence as Seq
 import           Data.List as List
 import           Data.Typeable
@@ -124,7 +125,7 @@ data CHRConstraintInx =
     { chrciInx :: !CHRInx
     , chrciAt  :: !Int
     }
-  deriving Show
+  deriving (Eq, Ord, Show)
 
 instance PP CHRConstraintInx where
   pp (CHRConstraintInx i j) = i >|< "." >|< j
@@ -236,6 +237,34 @@ instance (PP w) => PP (SolverReductionStep' Int w) where
   pp (SolverReductionDBG p) = "DBG" >#< p
 
 -------------------------------------------------------------------------------------------
+--- Waiting (for var resolution) work
+-------------------------------------------------------------------------------------------
+
+-- | Admin for waiting work
+data WaitForVar s
+  = WaitForVar
+      { _waitForVarVars      :: CHRWaitForVarSet s
+      , _waitForVarWorkInx   :: WorkInx
+      }
+  deriving (Typeable)
+
+-- | Index into collection of 'WaitForVar'
+type WaitInx = Int
+
+type WaitForVarWorkStoreMp s = IntMap.IntMap (WaitForVar s)
+type WaitForVarWorkMp      s = Map.Map (SubstVarKey s) IntSet.IntSet
+
+{-
+-}
+-- | State used during releasing vars
+data WaitForVarSplitState s
+  = WaitForVarSplitState
+      { _wfvssStoreMp       :: !(WaitForVarWorkStoreMp s)
+      , _wfvssMp            :: !(WaitForVarWorkMp      s)
+      , _wfvssReleased      :: !IntSet.IntSet                   -- ^ released WorkInx
+      }
+
+-------------------------------------------------------------------------------------------
 --- The CHR monad, state, etc. Used to interact with store and solver
 -------------------------------------------------------------------------------------------
 
@@ -245,10 +274,9 @@ data CHRGlobState cnstr guard bprio prio subst env m
       { _chrgstStore                 :: !(CHRStore cnstr guard bprio prio)                     -- ^ Actual database of rules, to be searched
       , _chrgstNextFreeRuleInx       :: !CHRInx                                          -- ^ Next free rule identification, used by solving to identify whether a rule has been used for a constraint.
                                                                                          --   The numbering is applied to constraints inside a rule which can be matched.
-      -- , _chrgstNextFreshVarId        :: !(ExtrValVarKey (Rule cnstr guard bprio prio))         -- ^ The next free id used for a fresh variable
       , _chrgstWorkStore             :: !(WorkStore cnstr)                               -- ^ Actual database of solvable constraints
       , _chrgstNextFreeWorkInx       :: !WorkTime                                        -- ^ Next free work/constraint identification, used by solving to identify whether a rule has been used for a constraint.
-      , _chrgstScheduleQue           :: !(Que.MinPQueue (CHRPrioEvaluatableVal bprio) (CHRMonoBacktrackPrioT cnstr guard bprio prio subst env m (SolverResult subst)))
+      , _chrgstScheduleQueue         :: !(Que.MinPQueue (CHRPrioEvaluatableVal bprio) (CHRMonoBacktrackPrioT cnstr guard bprio prio subst env m (SolverResult subst)))
       , _chrgstTrace                 :: SolveTrace' cnstr (StoredCHR cnstr guard bprio prio) subst
       }
   deriving (Typeable)
@@ -259,19 +287,26 @@ emptyCHRGlobState = CHRGlobState emptyCHRStore 0 emptyWorkStore initWorkTime Que
 -- | Backtrackable state
 data CHRBackState cnstr bprio subst env
   = CHRBackState
-      { _chrbstBacktrackPrio         :: !(CHRPrioEvaluatableVal bprio)   -- ^ the current backtrack prio the solver runs on
-      , _chrbstSolveSubst            :: !subst                           -- ^ subst for variable bindings found during solving, not for the ones binding rule metavars during matching but for the user ones (in to be solved constraints)
-      , _chrbstRuleWorkQueue         :: !WorkQueue                       -- ^ work queue for rule matching
-      , _chrbstSolveQueue            :: !WorkQueue                       -- ^ solve queue, constraints which are not solved by rule matching but with some domain specific solver, yielding variable subst constributing to backtrackable bindings
-      , _chrbstResidualQueue         :: [WorkInx]                        -- ^ residual queue, constraints which are residual, no need to solve, etc
-      , _chrbstLeftWorkQueue         :: [WorkInx]                        -- ^ left over work queue, constraints which could not be solved
-      , _chrbstMatchedCombis         :: !(Set.Set MatchedCombi)          -- ^ all combis of chr + work which were reduced, to prevent this from happening a second time (when propagating)
-      , _chrbstReductionSteps        :: [SolverReductionStep]
+      { _chrbstBacktrackPrio         :: !(CHRPrioEvaluatableVal bprio)                          -- ^ the current backtrack prio the solver runs on
+      
+      , _chrbstRuleWorkQueue         :: !WorkQueue                                              -- ^ work queue for rule matching
+      , _chrbstSolveQueue            :: !WorkQueue                                              -- ^ solve queue, constraints which are not solved by rule matching but with some domain specific solver, yielding variable subst constributing to backtrackable bindings
+      , _chrbstResidualQueue         :: [WorkInx]                                               -- ^ residual queue, constraints which are residual, no need to solve, etc
+      , _chrbstLeftWorkQueue         :: [WorkInx]                                               -- ^ left over work queue, constraints which could not be solved
+      
+      , _chrbstMatchedCombis         :: !(Set.Set MatchedCombi)                                 -- ^ all combis of chr + work which were reduced, to prevent this from happening a second time (when propagating)
+      
+      , _chrbstSolveSubst            :: !subst                                                  -- ^ subst for variable bindings found during solving, not for the ones binding rule metavars during matching but for the user ones (in to be solved constraints)
+      , _chrbstNextFreeWaitInx       :: !WaitInx
+      , _chrbstWaitForVarWorkStore   :: !(WaitForVarWorkStoreMp subst)                     -- ^ work waiting for a var to be bound
+      , _chrbstWaitForVarWork        :: !(WaitForVarWorkMp subst)                -- ^ work waiting for a var to be bound
+      
+      , _chrbstReductionSteps        :: [SolverReductionStep]                                   -- ^ trace of reduction steps taken (excluding solve steps)
       }
   deriving (Typeable)
 
 emptyCHRBackState :: (CHREmptySubstitution s, Bounded (CHRPrioEvaluatableVal bp)) => CHRBackState c bp s e
-emptyCHRBackState = CHRBackState minBound chrEmptySubst emptyWorkQueue emptyWorkQueue [] [] Set.empty []
+emptyCHRBackState = CHRBackState minBound emptyWorkQueue emptyWorkQueue [] [] Set.empty chrEmptySubst 0 IntMap.empty Map.empty []
 
 -- | Monad for CHR, taking from 'LogicStateT' the state and backtracking behavior
 type CHRMonoBacktrackPrioT cnstr guard bprio prio subst env m
@@ -282,6 +317,8 @@ class ( IsCHRSolvable env cnstr guard bprio prio subst
       , Monad m
       , Ord (TTKey cnstr)
       , Ord prio
+      , Ord (SubstVarKey subst)
+      , VarLookup subst (SubstVarKey subst) (SubstVarVal subst)
       , TTKeyable cnstr
       -- , CHREmptySubstitution subst
       -- , CHRMatchable env cnstr subst
@@ -302,12 +339,13 @@ data SolverResult subst =
     { slvresSubst                 :: subst                            -- ^ global found variable bindings
     , slvresResidualCnstr         :: [WorkInx]                        -- ^ constraints which are residual, no need to solve, etc, leftover when ready, taken from backtrack state
     , slvresWorkCnstr             :: [WorkInx]                        -- ^ constraints which are still unsolved, taken from backtrack state
+    , slvresWaitVarCnstr          :: [WorkInx]                        -- ^ constraints which are still unsolved, waiting for variable resolution
     , slvresReductionSteps        :: [SolverReductionStep]            -- ^ how did we get to the result (taken from the backtrack state when a result is given back)
     }
 
 {-
 emptySolverResult :: CHREmptySubstitution s => SolverResult s
-emptySolverResult = SolverResult chrEmptySubst [] [] []
+emptySolverResult = SolverResult chrEmptySubst [] [] [] []
 -}
 
 -------------------------------------------------------------------------------------------
@@ -332,6 +370,8 @@ class ( IsCHRConstraint env c s
 --- Lens construction
 -------------------------------------------------------------------------------------------
 
+mkLabel ''WaitForVar
+mkLabel ''WaitForVarSplitState
 mkLabel ''StoredCHR
 mkLabel ''CHRStore
 mkLabel ''WorkStore
@@ -406,13 +446,44 @@ addRule chr = do
 -- | Add work to the rule work queue
 addWorkToRuleWorkQueue :: MonoBacktrackPrio c g bp p s e m => WorkInx -> CHRMonoBacktrackPrioT c g bp p s e m ()
 addWorkToRuleWorkQueue i = do
-    -- sndl ^* chrbstRuleWorkQueue ^* wkqueueQueue =$: (Seq.|> i)
     sndl ^* chrbstRuleWorkQueue ^* wkqueueSet =$: (Set.insert i)
+
+-- | Add work to the wait for var queue
+addWorkToWaitForVarQueue :: (MonoBacktrackPrio c g bp p s e m, Ord (SubstVarKey s)) => CHRWaitForVarSet s -> WorkInx -> CHRMonoBacktrackPrioT c g bp p s e m ()
+addWorkToWaitForVarQueue ws wi = do
+    i <- modifyAndGet (sndl ^* chrbstNextFreeWaitInx) $ \i -> (i, i + 1)
+    sndl ^* chrbstWaitForVarWorkStore =$: IntMap.insert i (WaitForVar ws wi)
+    sndl ^* chrbstWaitForVarWork =$: \m -> foldr (\v -> Map.insertWith IntSet.union v (IntSet.singleton i)) m (Set.toList ws)
+    return ()
+
+-- | For (new) found subst split off work waiting for it
+splitOffResolvedWaitForVarWork :: (MonoBacktrackPrio c g bp p s e m, Ord (SubstVarKey s)) => CHRWaitForVarSet s -> CHRMonoBacktrackPrioT c g bp p s e m [WorkInx]
+splitOffResolvedWaitForVarWork vars = do
+    wm <- getl $ sndl ^* chrbstWaitForVarWork
+    ws <- getl $ sndl ^* chrbstWaitForVarWorkStore
+    -- in a separate state accumulate the work which can be redone
+    let wfvss = flip execState (WaitForVarSplitState ws wm IntSet.empty) $ do
+            -- for every variable which has been resolved
+            forM_ (Set.toList vars) $ \v -> do
+              wfvis <- fmap (Map.findWithDefault IntSet.empty v) $ getl $ wfvssMp
+              -- for every work waiting on the variable
+              forM_ (IntSet.toList wfvis) $ \wfvi -> do
+                mbwfv <- fmap (IntMap.lookup wfvi) $ getl $ wfvssStoreMp
+                when (isJust mbwfv) $ do
+                  -- remove the variable on which the work was waiting
+                  let wfv = waitForVarVars ^$= Set.delete v $ fromJust mbwfv
+                  -- if no variables are holding this work anymore, yield it so it can be re-entered as active work
+                  when (Set.null $ wfv ^. waitForVarVars) $ do
+                    wfvssReleased =$: IntSet.insert (wfv ^. waitForVarWorkInx)
+                    wfvssMp =$: Map.delete v
+                  wfvssStoreMp =$: IntMap.insert wfvi wfv
+    sndl ^* chrbstWaitForVarWork =: wfvss ^. wfvssMp
+    sndl ^* chrbstWaitForVarWorkStore =: wfvss ^. wfvssStoreMp
+    return $ IntSet.toList $ wfvss ^. wfvssReleased
 
 -- | Add work to the solve queue
 addWorkToSolveQueue :: MonoBacktrackPrio c g bp p s e m => WorkInx -> CHRMonoBacktrackPrioT c g bp p s e m ()
 addWorkToSolveQueue i = do
-    -- sndl ^* chrbstRuleWorkQueue ^* wkqueueQueue =$: (Seq.|> i)
     sndl ^* chrbstSolveQueue ^* wkqueueSet =$: (Set.insert i)
 
 -- | Split off work from the solve work queue, possible none left
@@ -469,7 +540,7 @@ addConstraintAsWork c = do
             fstl ^* chrgstWorkStore ^* wkstoreTrie =$: TreeTrie.insertByKeyWith (++) k [i]
             addWorkToRuleWorkQueue i
             return $ Work k c i
-          where k = chrToWorkKey c
+          where k = chrToKey c -- chrToWorkKey c
         -- work for the solver is added to its own queue
         ConstraintSolvesVia_Solve -> do
             addWorkToSolveQueue i
@@ -537,6 +608,12 @@ slvSucces = do
           { slvresSubst = bst ^. chrbstSolveSubst
           , slvresResidualCnstr = reverse $ bst ^. chrbstResidualQueue
           , slvresWorkCnstr = reverse $ bst ^. chrbstLeftWorkQueue
+          , slvresWaitVarCnstr = IntSet.toList $ IntSet.fromList
+              [ wi -- wfv ^. waitForVarWorkInx
+              | wfvis <- Map.elems $ bst ^. chrbstWaitForVarWork
+              , wfvi <- IntSet.toList wfvis
+              , wi <- maybeToList $ fmap _waitForVarWorkInx $ IntMap.lookup wfvi (bst ^. chrbstWaitForVarWorkStore)
+              ]
           , slvresReductionSteps = reverse $ bst ^. chrbstReductionSteps
           }
     -- when ready, just return and backtrack into the scheduler
@@ -554,7 +631,7 @@ slvFail = do
 slvSchedule :: MonoBacktrackPrio c g bp p s e m => CHRPrioEvaluatableVal bp -> CHRMonoBacktrackPrioT c g bp p s e m (SolverResult s) -> CHRMonoBacktrackPrioT c g bp p s e m ()
 slvSchedule bprio slv = do
     -- bprio <- getl $ sndl ^* chrbstBacktrackPrio
-    fstl ^* chrgstScheduleQue =$: Que.insert bprio slv
+    fstl ^* chrgstScheduleQueue =$: Que.insert bprio slv
 {-# INLINE slvSchedule #-}
 
 -- | Schedule a solver with the current backtrack prio, assuming this is the same as 'slv' has administered itself in its backtracking state
@@ -573,7 +650,7 @@ slvReschedule slv = do
 
 -- | Retrieve solver with the highest prio from the schedule queue
 slvSplitFromSchedule :: MonoBacktrackPrio c g bp p s e m => CHRMonoBacktrackPrioT c g bp p s e m (Maybe (CHRPrioEvaluatableVal bp, CHRMonoBacktrackPrioT c g bp p s e m (SolverResult s)))
-slvSplitFromSchedule = modifyAndGet (fstl ^* chrgstScheduleQue) $ \q -> {- trp "slvSplitFromSchedule" (pp $ Que.size q) $ -} (Que.getMin q, Que.deleteMin q)
+slvSplitFromSchedule = modifyAndGet (fstl ^* chrgstScheduleQueue) $ \q -> {- trp "slvSplitFromSchedule" (pp $ Que.size q) $ -} (Que.getMin q, Que.deleteMin q)
 {-# INLINE slvSplitFromSchedule #-}
 
 -- | Run from the schedule que, fail if nothing left to be done
@@ -581,33 +658,6 @@ slvScheduleRun :: MonoBacktrackPrio c g bp p s e m => CHRMonoBacktrackPrioT c g 
 slvScheduleRun = slvSplitFromSchedule >>= maybe mzero snd
 -- slvScheduleRun = slvSplitFromSchedule >>= \mp -> trp "slvScheduleRun" (pp $ fmap fst mp) $ maybe mzero snd mp
 {-# INLINE slvScheduleRun #-}
-
--------------------------------------------------------------------------------------------
---- Solver trace
--------------------------------------------------------------------------------------------
-
-{-
-type SolveStep  c g b p s = SolveStep'  c (Rule c g bp p) s
-type SolveTrace c g b p s = SolveTrace' c (Rule c g bp p) s
--}
-
--------------------------------------------------------------------------------------------
---- Cache for maintaining which WorkKey has already had a match
--------------------------------------------------------------------------------------------
-
-{-
--- type SolveMatchCache c g b p s = Map.Map (CHRKey c) [((StoredCHR c g bp p,([WorkKey c],[Work c])),s)]
--- type SolveMatchCache c g b p s = Map.Map (WorkKey c) [((StoredCHR c g bp p,([WorkKey c],[Work c])),s)]
-type SolveMatchCache c g b p s = SolveMatchCache' c (StoredCHR c g bp p) s
--}
-
--------------------------------------------------------------------------------------------
---- Solve state
--------------------------------------------------------------------------------------------
-
-{-
-type SolveState c g b p s = SolveState' c (Rule c g bp p) (StoredCHR c g bp p) s
--}
 
 -------------------------------------------------------------------------------------------
 --- Solver utils
@@ -641,9 +691,10 @@ ppSolverResult
      ) => Bool
        -> SolverResult s
        -> CHRMonoBacktrackPrioT c g bp p s e m PP_Doc
-ppSolverResult inclSteps (SolverResult {slvresSubst = s, slvresResidualCnstr = ris, slvresWorkCnstr = wis, slvresReductionSteps = steps}) = do
-    rs <- forM ris $ \i -> lkupWork i >>= return . pp . workCnstr
-    ws <- forM wis $ \i -> lkupWork i >>= return . pp . workCnstr
+ppSolverResult inclSteps (SolverResult {slvresSubst = s, slvresResidualCnstr = ris, slvresWorkCnstr = wis, slvresWaitVarCnstr = wvis, slvresReductionSteps = steps}) = do
+    rs  <- forM ris  $ \i -> lkupWork i >>= return . pp . workCnstr
+    ws  <- forM wis  $ \i -> lkupWork i >>= return . pp . workCnstr
+    wvs <- forM wvis $ \i -> lkupWork i >>= return . pp . workCnstr
     ss <- if inclSteps
       then forM steps $ \step -> cvtSolverReductionStep step >>= (return . pp)
       else return [pp "Only included when asked for"]
@@ -651,6 +702,7 @@ ppSolverResult inclSteps (SolverResult {slvresSubst = s, slvresResidualCnstr = r
           "Subst"   >-< indent 2 s
       >-< "Residue" >-< indent 2 (vlist rs)
       >-< "Work"    >-< indent 2 (vlist ws)
+      >-< "Wait"    >-< indent 2 (vlist wvs)
       >-< "Steps"   >-< indent 2 (vlist ss)
 
 -------------------------------------------------------------------------------------------
@@ -727,10 +779,10 @@ instance (PP c, PP bp, PP (CHRPrioEvaluatableVal bp)) => PP (FoundBodyAlt c bp) 
 -- | Intermediate Solver structure: all matched combis with their body alternatives + backtrack priorities
 data FoundSlvMatch c g bp p s
   = FoundSlvMatch
-      { foundSlvMatchSubst          :: !s
-      , foundSlvMatchWaitForVars    :: !(Set.Set (SubstVarKey s))
-      , foundSlvMatchSortKey        :: !(FoundMatchSortKey bp p s)
-      , foundSlvMatchBodyAlts       :: ![FoundBodyAlt c bp]
+      { foundSlvMatchSubst          :: !s                                   -- ^ the subst of rule meta vars making this a rule + work combi match
+      , foundSlvMatchWaitForVars    :: !(CHRWaitForVarSet s)                -- ^ for the work we try to solve the (global) vars on which we have to wait to continue
+      , foundSlvMatchSortKey        :: !(FoundMatchSortKey bp p s)          -- ^ key to sort found matches
+      , foundSlvMatchBodyAlts       :: ![FoundBodyAlt c bp]                 -- ^ the body alternatives of the rule which matches
       }
 
 instance Show (FoundSlvMatch c g bp p s) where
@@ -757,20 +809,20 @@ instance (PP c, PP bp, PP p, PP s, PP (SubstVarKey s), PP (CHRPrioEvaluatableVal
 -- | Intermediate Solver structure: all matched combis with their backtrack prioritized body alternatives
 data FoundWorkSortedMatch c g bp p s
   = FoundWorkSortedMatch
-      { {- foundWorkSortedMatchKey       :: !(FoundMatchSortKey bp p s)
-      , -}
-        foundWorkSortedMatchInx       :: !CHRConstraintInx
-      , foundWorkSortedMatchChr       :: !(StoredCHR c g bp p)
-      , foundWorkSortedMatchBodyAlts  :: ![FoundBodyAlt c bp]
-      , foundWorkSortedMatchWorkInx   :: ![WorkInx]
-      , foundWorkSortedMatchSubst     :: !s
+      { foundWorkSortedMatchInx             :: !CHRConstraintInx
+      , foundWorkSortedMatchChr             :: !(StoredCHR c g bp p)
+      , foundWorkSortedMatchBodyAlts        :: ![FoundBodyAlt c bp]
+      , foundWorkSortedMatchWorkInx         :: ![WorkInx]
+      , foundWorkSortedMatchSubst           :: !s
+      , foundWorkSortedMatchWaitForVars     :: !(CHRWaitForVarSet s)
       }
 
 instance Show (FoundWorkSortedMatch c g bp p s) where
   show _ = "FoundWorkSortedMatch"
 
 instance (PP c, PP bp, PP p, PP s, PP g, PP (TTKey c), PP (SubstVarKey s), PP (CHRPrioEvaluatableVal bp)) => PP (FoundWorkSortedMatch c g bp p s) where
-  pp (FoundWorkSortedMatch {foundWorkSortedMatchBodyAlts=as, foundWorkSortedMatchWorkInx=wis, foundWorkSortedMatchSubst=s}) = wis >-< s >-< vlist as
+  pp (FoundWorkSortedMatch {foundWorkSortedMatchBodyAlts=as, foundWorkSortedMatchWorkInx=wis, foundWorkSortedMatchSubst=s, foundWorkSortedMatchWaitForVars=wvs})
+    = wis >-< s >#< ppParens wvs >-< vlist as
 
 -------------------------------------------------------------------------------------------
 --- Solver options
@@ -805,7 +857,7 @@ chrSolve opts env = slv
     -- solve
     slv = do
         mbSlvWk <- splitWorkFromSolveQueue
-        case mbSlvWk of
+        case {- trp "chrSolve.slv.mbSlvWk" (pp mbSlvWk) -} mbSlvWk of
           -- There is work in the solve work queue
           Just (workInx) -> do
               work <- lkupWork workInx
@@ -813,10 +865,14 @@ chrSolve opts env = slv
                 Work_Fail -> slvFail
                 _ -> do
                   subst <- getl $ sndl ^* chrbstSolveSubst
-                  let mbSlv = flip chrmatcherRun subst $ chrBuiltinSolveM env $ workCnstr work
+                  let mbSlv = chrmatcherRun (chrBuiltinSolveM env $ workCnstr work) emptyCHRMatchEnv subst
                   case mbSlv of
-                    Just (s,_) -> sndl ^* chrbstSolveSubst =$: (s |+>)
-                    _          -> sndl ^* chrbstResidualQueue =$: (workInx :)
+                    Just (s,_) -> do
+                      -- the newfound subst may reactivate waiting work
+                      splitOffResolvedWaitForVarWork (varlookupKeysSet s) >>= mapM_ addWorkToRuleWorkQueue
+                      sndl ^* chrbstSolveSubst =$: (s |+>)
+                    _          -> do
+                      sndl ^* chrbstResidualQueue =$: (workInx :)
 
                   -- debug info
                   sndl ^* chrbstReductionSteps =$: (SolverReductionDBG
@@ -829,10 +885,11 @@ chrSolve opts env = slv
 
           -- If no more solve work, continue with normal work
           Nothing -> do
+              -- TBD: reactivate waiting work
               activeWk <- activeInQueue
               visitedChrWkCombis <- getl $ sndl ^* chrbstMatchedCombis
               mbWk <- splitWorkFromQueue
-              case mbWk of
+              case {- trp "chrSolve.slv.mbWk" (pp mbWk >#< activeWk) -} mbWk of
                 -- If no more work, ready
                 Nothing -> slvSucces
       
@@ -842,58 +899,61 @@ chrSolve opts env = slv
                     work <- lkupWork workInx
           
                     -- find all matching chrs for the work
-                    foundChrInxs <- fmap (concat . TreeTrie.lookupResultToList . TreeTrie.lookupPartialByKey TTL_WildInTrie (workKey work))
-                      $ getl $ fstl ^* chrgstStore ^* chrstoreTrie
-                    let foundChrGroupedInxs = Map.unionsWith (++) $ map (\(CHRConstraintInx i j) -> Map.singleton i [j]) foundChrInxs
-                    foundChrs <- forM (Map.toList foundChrGroupedInxs) $ \(chrInx,rlInxs) -> lkupChr chrInx >>= \chr -> return $ FoundChr chrInx chr rlInxs
+                    foundChrInxs <- slvLookup (workKey work) (chrgstStore ^* chrstoreTrie)
+                    -- remove duplicates, regroup
+                    let foundChrGroupedInxs = Map.unionsWith Set.union $ map (\(CHRConstraintInx i j) -> Map.singleton i (Set.singleton j)) foundChrInxs
+                    foundChrs <- forM (Map.toList foundChrGroupedInxs) $ \(chrInx,rlInxs) -> lkupChr chrInx >>= \chr -> return $ FoundChr chrInx chr $ Set.toList rlInxs
 
                     -- found chrs for the work correspond to 1 single position in the head, find all combinations with work in the queue
                     foundWorkInxs <- sequence
-                      [ fmap (FoundWorkInx (CHRConstraintInx ci i) c) $ slvCandidate activeWk visitedChrWkCombis (workKey work) c i
+                      [ fmap (FoundWorkInx (CHRConstraintInx ci i) c) $ slvCandidate activeWk visitedChrWkCombis workInx c i
                       | FoundChr ci c is <- foundChrs, i <- is
                       ]
           
                     -- each found combi has to match
-                    foundWorkMatches <- fmap concat $ forM foundWorkInxs $ \(FoundWorkInx ci c wis) -> do
-                      forM wis $ \wi -> do
-                        w <- forM wi lkupWork
-                        fmap (FoundWorkMatch ci c wi) $ slvMatch env c (map workCnstr w)
+                    foundWorkMatches <- fmap concat $
+                      forM foundWorkInxs $ \(FoundWorkInx ci c wis) -> do
+                        forM wis $ \wi -> do
+                          w <- forM wi lkupWork
+                          fmap (FoundWorkMatch ci c wi) $ slvMatch env c (map workCnstr w) (chrciAt ci)
 
-                    -- sort over priorities et
-                    let foundWorkSortedMatches = {- groupOn (foundMatchSortKeyBacktrackPrio . fst) $ -} sortByOn (compareFoundMatchSortKey $ chrPrioCompare env) fst
-                          [ (k, FoundWorkSortedMatch (foundWorkMatchInx fwm) (foundWorkMatchChr fwm) (foundSlvMatchBodyAlts sm) (foundWorkMatchWorkInx fwm) (foundSlvMatchSubst sm))
-                          | fwm@(FoundWorkMatch {foundWorkMatchSlvMatch = Just sm@(FoundSlvMatch {foundSlvMatchSubst=s, foundSlvMatchSortKey=k})}) <- foundWorkMatches
+                    -- split off the work which has to wait for variable bindings (as indicated by matching)
+                    -- let () = partition () foundWorkMatches
+                    -- sort over priorities
+                    let foundWorkSortedMatches = sortByOn (compareFoundMatchSortKey $ chrPrioCompare env) fst
+                          [ (k, FoundWorkSortedMatch (foundWorkMatchInx fwm) (foundWorkMatchChr fwm) (foundSlvMatchBodyAlts sm)
+                                                     (foundWorkMatchWorkInx fwm) (foundSlvMatchSubst sm) (foundSlvMatchWaitForVars sm))
+                          | fwm@(FoundWorkMatch {foundWorkMatchSlvMatch = Just sm@(FoundSlvMatch {foundSlvMatchSortKey=k})}) <- foundWorkMatches
                           -- , (k,a) <- foundSlvMatchBodyAlts sm
                           ]
 
-{-
-                    -- which we group by backtrack priority (on numerical value) and then rule priority (directly comparing), highest to lowest with the ones which cannot be compared at the end
-                    let foundWorkMatchesFilteredPriod = map assocLElts (groupSortByOn (chrPrioCompare env) fst forCmp) ++ (if List.null noCmp then [] else [noCmp])
-                          where (forCmp, noCmp) = partitionOnSplit id fromJust isJust [ (fmap ((,) s) pr,(ci,c,wi,s)) | FoundWorkMatch ci c wi (Just (FoundSlvMatch s _ _)) <- foundWorkMatches ]
--}
-
-                    -- debug info
                     bprio <- getl $ sndl ^* chrbstBacktrackPrio
-                    sque <- getl $ fstl ^* chrgstScheduleQue
-                    sndl ^* chrbstReductionSteps =$: (SolverReductionDBG
-                      (    {- "sque len" >#< Que.size sque
-                       >-< -}
-                           "bprio" >#< bprio
-                       >-< "wk" >#< work
-                       >-< "que" >#< ppBracketsCommas (Set.toList activeWk)
-                       >-< "visited" >#< ppBracketsCommas (Set.toList visitedChrWkCombis)
-                       >-< "chrs" >#< vlist [ ci >|< ppParensCommas is >|< ":" >#< c | FoundChr ci c is <- foundChrs ]
-                       >-< "works" >#< vlist [ ci >|< ":" >#< vlist (map ppBracketsCommas ws) | FoundWorkInx ci c ws <- foundWorkInxs ]
-                       >-< "matches" >#< vlist [ ci >|< ":" >#< ppBracketsCommas wi >#< ":" >#< mbm | FoundWorkMatch ci _ wi mbm <- foundWorkMatches ]
-                       -- >-< "prio'd" >#< (vlist $ zipWith (\g ms -> g >|< ":" >#< vlist [ ci >|< ":" >#< ppBracketsCommas wi >#< ":" >#< s | (ci,_,wi,s) <- ms ]) [0::Int ..] foundWorkMatchesFilteredPriod)
-                       -- >-< "prio'd" >#< ppAssocL (zip [0::Int ..] $ map ppAssocL foundWorkSortedMatches)
-                      ) :)
+                    subst <- getl $ sndl ^* chrbstSolveSubst
+                    -- sque <- getl $ fstl ^* chrgstScheduleQueue
+                    -- debug info
+                    let dbg =      "bprio" >#< bprio
+                               >-< "wk" >#< (work >-< subst `varUpd` workCnstr work)
+                               >-< "que" >#< ppBracketsCommas (Set.toList activeWk)
+                               >-< "subst" >#< subst
+                               >-< "visited" >#< ppBracketsCommas (Set.toList visitedChrWkCombis)
+                               >-< "chrs" >#< vlist [ ci >|< ppParensCommas is >|< ":" >#< c | FoundChr ci c is <- foundChrs ]
+                               >-< "works" >#< vlist [ ci >|< ":" >#< vlist (map ppBracketsCommas ws) | FoundWorkInx ci c ws <- foundWorkInxs ]
+                               >-< "matches" >#< vlist [ ci >|< ":" >#< ppBracketsCommas wi >#< ":" >#< mbm | FoundWorkMatch ci _ wi mbm <- foundWorkMatches ]
+                               -- >-< "prio'd" >#< (vlist $ zipWith (\g ms -> g >|< ":" >#< vlist [ ci >|< ":" >#< ppBracketsCommas wi >#< ":" >#< s | (ci,_,wi,s) <- ms ]) [0::Int ..] foundWorkMatchesFilteredPriod)
+                               -- >-< "prio'd" >#< ppAssocL (zip [0::Int ..] $ map ppAssocL foundWorkSortedMatches)
+                    sndl ^* chrbstReductionSteps =$: (SolverReductionDBG dbg :)
 
                     -- pick the first and highest rule prio solution
-                    case foundWorkSortedMatches of
-                      ((_,fwsm):_) -> do
+                    case {- trp "chrSolve.slv.dbg" dbg $ -} sortOn (Set.size . foundWorkSortedMatchWaitForVars . snd) $ foundWorkSortedMatches of
+                      ((_,fwsm@(FoundWorkSortedMatch {foundWorkSortedMatchWaitForVars = waitForVars})):_)
+                        | Set.null waitForVars -> do
                             addWorkToRuleWorkQueue workInx
                             slv1 bprio fwsm
+                        | otherwise -> do
+                            -- put on wait queue if there are unresolved variables
+                            addWorkToWaitForVarQueue waitForVars workInx
+                            -- continue without reschedule
+                            slv
                       _ | chrslvOptSucceedOnLeftoverWork opts -> do
                             -- no chr applies for this work, so consider it to be residual
                             sndl ^* chrbstLeftWorkQueue =$: (workInx :)
@@ -911,6 +971,7 @@ chrSolve opts env = slv
             , foundWorkSortedMatchBodyAlts = alts
             , foundWorkSortedMatchWorkInx = workInxs
             , foundWorkSortedMatchSubst = matchSubst
+            -- , foundWorkSortedMatchWaitForVars = waitForVars
             }) = do
         -- remove the simplification part from the work queue
         deleteWorkFromQueue $ take simpSz workInxs
@@ -944,7 +1005,28 @@ chrSolve opts env = slv
           slv
 
     -- misc utils
-    
+
+-- | Lookup work in a store part of the global state
+slvLookup
+  :: ( MonoBacktrackPrio c g bp p s e m
+     , Ord x
+     ) => CHRKey c                                   -- ^ work key
+       -> Lens (CHRGlobState c g bp p s e m) (CHRTrie' c [x])
+       -> CHRMonoBacktrackPrioT c g bp p s e m [x]
+slvLookup key t =
+    (getl $ fstl ^* t) >>= \t -> do
+      let lkup how = concat $ TreeTrie.lookupResultToList $ TreeTrie.lookupPartialByKey how key t
+      return $ Set.toList $ Set.fromList $ lkup TTL_WildInTrie ++ lkup TTL_WildInKey
+
+{-
+      Actual type: CHRGlobState
+                     cnstr1 guard1 bprio1 prio1 subst1 env1 m1
+                   :-> CHRTrie' cnstr1 [CHRConstraintInx]
+
+    lkup how k = do
+      fmap (concat . TreeTrie.lookupResultToList . TreeTrie.lookupPartialByKey how k) $ getl $ fstl ^* chrgstWorkStore ^* wkstoreTrie
+-}
+
 -- | Extract candidates matching a CHRKey.
 --   Return a list of CHR matches,
 --     each match expressed as the list of constraints (in the form of Work + Key) found in the workList wlTrie, thus giving all combis with constraints as part of a CHR,
@@ -954,30 +1036,25 @@ slvCandidate
      -- , Ord (TTKey c), PP (TTKey c)
      ) => Set.Set WorkInx                           -- ^ active in queue
        -> Set.Set MatchedCombi                      -- ^ already matched combis
-       -> CHRKey c                                  -- ^ work key
-       -- -> LastQuery c
-       -- -> WorkTrie c
-       -> StoredCHR c g bp p                           -- ^ found chr for the work
+       -> WorkInx                                   -- ^ work inx
+       -> StoredCHR c g bp p                        -- ^ found chr for the work
        -> Int                                       -- ^ position in the head where work was found
        -> CHRMonoBacktrackPrioT c g bp p s e m
             ( [[WorkInx]]                           -- All matches of the head, unfiltered w.r.t. deleted work
             )
-       -- -> ( [( [(CHRKey c, Work c)]
-       --       , [(CHRKey c, Work c)]
-       --       )]
-       --    , (CHRKey c, Set.Set (CHRKey c))
-       --    )
-slvCandidate activeInQueue alreadyMatchedCombis workHdKey {- lastQuery wlTrie -} (StoredCHR {_storedHeadKeys = ks, _storedChrInx = ci}) headInx = do
+slvCandidate activeInQueue alreadyMatchedCombis wi (StoredCHR {_storedHeadKeys = ks, _storedChrInx = ci}) headInx = do
     let [ks1,_,ks2] = splitPlaces [headInx, headInx+1] ks
-    ws1 <- forM ks1 $ lkup TTL_WildInKey
-    w   <-            lkup TTL_Exact     workHdKey
-    ws2 <- forM ks2 $ lkup TTL_WildInKey
+    ws1 <- forM ks1 lkup
+    ws2 <- forM ks2 lkup
     return $ filter (\wi ->    all (`Set.member` activeInQueue) wi
                             && Set.notMember (MatchedCombi ci wi) alreadyMatchedCombis)
-           $ combineToDistinguishedEltsBy (==) $ ws1 ++ [w] ++ ws2
+           $ combineToDistinguishedEltsBy (==) $ ws1 ++ [[wi]] ++ ws2
   where
+    lkup k = slvLookup k (chrgstWorkStore ^* wkstoreTrie)
+{-
     lkup how k = do
       fmap (concat . TreeTrie.lookupResultToList . TreeTrie.lookupPartialByKey how k) $ getl $ fstl ^* chrgstWorkStore ^* wkstoreTrie
+-}
 
 -- | Match the stored CHR with a set of possible constraints, giving a substitution on success
 slvMatch
@@ -995,77 +1072,25 @@ slvMatch
      , CHRPrioEvaluatable env bp s
      -- , CHRBuiltinSolvable env b s
      -- , PP s
-     )
-     => env
-     -> StoredCHR c g bp p
-     -> [c]
-     -> CHRMonoBacktrackPrioT c g bp p s e m (Maybe (FoundSlvMatch c g bp p s))
-slvMatch env chr@(StoredCHR {_storedChrRule = Rule {rulePrio = mbpr, ruleHead = hc, ruleGuard = gd, ruleBacktrackPrio = mbbpr, ruleBodyAlts = alts}}) cnstrs = do
+     ) => env
+       -> StoredCHR c g bp p
+       -> [c]
+       -> Int                                       -- ^ position in the head where work was found, on that work specifically we might have to wait
+       -> CHRMonoBacktrackPrioT c g bp p s e m (Maybe (FoundSlvMatch c g bp p s))
+slvMatch env chr@(StoredCHR {_storedChrRule = Rule {rulePrio = mbpr, ruleHead = hc, ruleGuard = gd, ruleBacktrackPrio = mbbpr, ruleBodyAlts = alts}}) cnstrs headInx = do
     subst <- getl $ sndl ^* chrbstSolveSubst
     curbprio <- fmap chrPrioLift $ getl $ sndl ^* chrbstBacktrackPrio
     return $ fmap (\(s,ws) -> FoundSlvMatch s ws (FoundMatchSortKey (fmap ((,) s) mbpr) (_storedChrInx chr))
-                    [ ( {- FoundMatchSortKey bp (fmap ((,) s) mbpr) (_storedChrInx chr)
-                      , -} FoundBodyAlt i bp a
-                      ) | (i,a) <- zip [0..] alts
-                        , let bp = maybe minBound (chrPrioEval env s) $ rbodyaltBacktrackPrio a
+                    [ FoundBodyAlt i bp a | (i,a) <- zip [0..] alts, let bp = maybe minBound (chrPrioEval env s) $ rbodyaltBacktrackPrio a
                     ])
-           $ flip chrmatcherRun subst
+           $ (\m -> chrmatcherRun m (emptyCHRMatchEnv {chrmatchenvMetaMayBind = (`Set.member` freevars)}) subst)
            $ sequence_
            $ prio curbprio ++ matches ++ checks
   where
     prio curbprio = maybe [] (\bpr -> [chrMatchToM env bpr curbprio]) mbbpr
-    matches = zipWith (chrMatchToM env) hc cnstrs
+    matches = zipWith3 (\i h c -> chrMatchAndWaitToM (i == headInx) env h c) [0::Int ..] hc cnstrs
     checks  = map (chrCheckM env) gd
-{-
-slvMatch env chr@(StoredCHR {_storedChrRule = Rule {rulePrio = mbpr}}) cnstrs = return $ do
-    subst <- foldl cmb (Just chrEmptySubst) $ matches chr cnstrs ++ checks chr
-    return ({- maybe minBound (chrPrioEval env subst) -} mbpr, subst)
-  where
-    matches (StoredCHR {_storedChrRule = Rule {ruleHead = hc}}) cnstrs
-      = zipWith mt hc cnstrs
-      where mt cFr cTo subst = chrMatchTo env subst cFr cTo
-    checks (StoredCHR {_storedChrRule = Rule {ruleGuard = gd}})
-      = map chk gd
-      where chk g subst = chrCheck env subst g
-    cmb (Just s) next = fmap (|+> s) $ next s
-    cmb _        _    = Nothing
--}
-{-
-slvMatch env chr@(StoredCHR {_storedChrRule = Rule {rulePrio = mbpr}}) cnstrs = do
-    return $ flip runStateT chrEmptySubst $ do
-      sequence_ (matches chr cnstrs ++ checks chr)
-      subst <- get
-      -- liftIO (putPPLn (pp subst))
-      return $ maybe maxBound (chrPrioEval env subst) mbpr
-  where
-    wrap f = get >>= \subst -> lift (f subst) >>= \s -> return (trp "slvMatch.lift.f" s s) >>= \s -> return (trp "slvMatch.s" s s |+> trp "slvMatch.subst" subst subst)
-    matches (StoredCHR {_storedChrRule = Rule {ruleHead = hc}}) cnstrs
-      = zipWith (\cFr cTo -> wrap $ \subst -> let ms = chrMatchTo env subst cFr cTo in trp "slvMatch.chrMatchTo" ms ms) hc cnstrs
-    checks (StoredCHR {_storedChrRule = Rule {ruleGuard = gd}})
-      = map (\g -> wrap $ \subst -> chrCheck env subst g) gd
--}
-
-{-
-slvMatch
-  :: ( CHREmptySubstitution s
-     , CHRMatchable env c s
-     , CHRCheckable env g s
-     , VarLookupCmb s s
-     )
-     => env -> StoredCHR c g bp p -> [c] -> Maybe s
-slvMatch env chr cnstrs
-  = foldl cmb (Just chrEmptySubst) $ matches chr cnstrs ++ checks chr
-  where matches (StoredCHR {storedChrRule = Rule {ruleHead = hc}}) cnstrs
-          = zipWith mt hc cnstrs
-          where mt cFr cTo subst = chrMatchTo env subst cFr cTo
-        checks (StoredCHR {storedChrRule = Rule {ruleGuard = gd}})
-          = map chk gd
-          where chk g subst = chrCheck env subst g
-        cmb (Just s) next = fmap (|+> s) $ next s
-        cmb _        _    = Nothing
-{-# INLINE slvMatch #-}
-
--}
+    freevars = varFreeSet hc
 
 -------------------------------------------------------------------------------------------
 --- Instances: Serialize

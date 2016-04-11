@@ -31,6 +31,9 @@ module UHC.Util.Lens
   -- * Tuple accessors
   , fstl
   , sndl
+  , fst3l
+  , snd3l
+  , trd3l
   
   -- * Wrappers
   
@@ -53,13 +56,13 @@ import qualified Data.Label.Partial as P
 
 import           UHC.Util.Utils
 
--- * Textual alias for (:->)
+-- * Textual alias for (:->), avoiding TypeOperators
 type Lens a b = a :-> b
 
 -- * Operator interface for composition
 
 infixl 9 ^*
--- | composition
+-- | composition with a flipped reading
 (^*) :: (a :-> b) -> (b :-> c) -> (a :-> c)
 f1 ^* f2 = f2 . f1
 {-# INLINE (^*) #-}
@@ -101,6 +104,7 @@ infixr 4 =$:
 (=$:) = M.modify
 {-# INLINE (=$:) #-}
 
+-- | Zoom state in on substructure. This regretfully does not really work, because of MonadState fundep.
 focus :: (MS.MonadState a m, MS.MonadState b m) => (a :-> b) -> m c -> m c
 focus f m = do
   a <- MS.get
@@ -116,6 +120,7 @@ focus f m = do
 -- | Alias for 'gets' avoiding conflict with MonadState
 getl :: MS.MonadState f m => (f :-> o) -> m o
 getl = M.gets
+{-# INLINE getl #-}
 
 -- * Tuple
 
@@ -124,6 +129,15 @@ fstl = L.fst
 
 sndl = L.snd
 {-# INLINE sndl #-}
+
+fst3l = L.fst3
+{-# INLINE fst3l #-}
+
+snd3l = L.snd3
+{-# INLINE snd3l #-}
+
+trd3l = L.trd3
+{-# INLINE trd3l #-}
 
 -- * Wrappers
 

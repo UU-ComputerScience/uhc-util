@@ -18,13 +18,16 @@ instance CHRParsable C G P P (Rule C G P P) where
   pChrConstraint              =   C_Con <$> pConid <*> pList pTm
   pChrBuiltinConstraint       =   CB_Eq <$> pTm <* pKey "==" <*> pTm
                               <|> CB_Fail <$ pKey "fail"
-  pChrGuard                   =   G_Eq <$> pTm <* pKey "==" <*> pTm
+  pChrGuard                   = pTm <**>
+                                  ((flip G_Eq <$ pKey "==" <|> flip G_Ne <$ pKey "/=")
+                                    <*> pTm
+                                  )
   pChrBacktrackPrioVar        =   P_Tm <$> pTm_Var
   pChrBacktrackPrio           =   pP
   pChrRulePrio                =   pP
   
   scanChrExtraKeywordsTxt   _ = ["fail"]
-  scanChrExtraKeywordsOps   _ = ["=="]
+  scanChrExtraKeywordsOps   _ = ["==", "/="]
   scanChrExtraSpecialChars  _ =  ""
   scanChrExtraOpChars       _ =  ""
 
@@ -35,8 +38,9 @@ pTm :: Pr Tm
 pTm =   pB
     where pB =   (Tm_Int . read) <$> pInteger
              <|> pTm_Var
+             <|> flip Tm_Con [] <$> pConid
              <|> pParens pT
-          pT = Tm_Con <$> pConid <*> pList pB
+          pT  = Tm_Con <$> pConid <*> pList1 pB
 
 pP :: Pr P
 pP = pP

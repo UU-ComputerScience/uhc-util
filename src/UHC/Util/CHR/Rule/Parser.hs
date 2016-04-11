@@ -59,7 +59,7 @@ pProg =
     pR = pPre <**>
            ( pHead <**>
                (   (   (\(g,b) h pre -> pre $ g $ mkR h (length h) b) <$ pKey "<=>"
-                   <|> (\(g,b) h pre -> pre $ g $ mkR h 0          b) <$ pKey "=>"
+                   <|> (\(g,b) h pre -> pre $ g $ mkR h 0          b) <$ (pKey "=>" <|> pKey "==>")
                    ) <*> pBody
                <|> (   (\hr (g,b) hk pre -> pre $ mkR (hr ++ hk) (length hr) b)
                        <$ pKey "\\" <*> pHead <* pKey "<=>" <*> pBody

@@ -67,3 +67,6 @@ class Ord (ExtrValVarKey vv) => VarExtractable vv where -- k | vv -> k where
   varFree           =   Set.toList . varFreeSet
   varFreeSet        =   Set.fromList . varFree
 
+instance {-# OVERLAPPABLE #-} (VarExtractable vv, Ord (ExtrValVarKey vv)) => VarExtractable [vv] where
+  varFreeSet        =   Set.unions . map varFreeSet
+

@@ -132,9 +132,11 @@ chrTrieFromListPartialExactWith :: (Ord (TTKey v)) => (v -> v -> v) -> [(CHRTrie
 chrTrieFromListPartialExactWith = TreeTrie.fromListByKeyWith
 {-# INLINE chrTrieFromListPartialExactWith #-}
 
+{-
 chrTrieLookup' :: (Ord (TTKey v), PP (TTKey v)) => (CHRTrieKey v -> v -> v') -> CHRLookupHow -> CHRTrieKey v -> CHRTrie v -> ([v'],Maybe v')
 chrTrieLookup' = TreeTrie.lookupPartialByKey'
 {-# INLINE chrTrieLookup' #-}
+-}
 
 chrTrieLookup :: (Ord (TTKey v), PP (TTKey v)) => CHRLookupHow -> CHRTrieKey v -> CHRTrie v -> ([v],Maybe v)
 chrTrieLookup = TreeTrie.lookupPartialByKey

@@ -114,19 +114,20 @@ data VarMp' k v
       { varmpMetaLev    :: !MetaLev             -- ^ the base meta level
       , varmpMpL        :: [Map.Map k v]        -- ^ for each level a map, starting at the base meta level
       }
-  deriving ( Eq, Ord
-           , Typeable, Generic
-           )
+  deriving (Eq, Ord, Typeable, Generic)
 
 -- get the base meta level map, ignore the others
 varmpToMap :: VarMp' k v -> Map.Map k v
 varmpToMap (VarMp _ (m:_)) = m
+{-# INLINE varmpToMap #-}
 
 mkVarMp :: Map.Map k v -> VarMp' k v
 mkVarMp m = VarMp 0 [m]
+{-# INLINE mkVarMp #-}
 
 emptyVarMp :: VarMp' k v
 emptyVarMp = mkVarMp Map.empty
+{-# INLINE emptyVarMp #-}
 
 varmpIsEmpty :: VarMp' k v -> Bool
 varmpIsEmpty (VarMp {varmpMpL=l}) = all Map.null l
@@ -270,6 +271,8 @@ instance Ord k => VarLookup (VarMp' k v) k v where
                                                      lkup 0 (m:_)  = Map.lookup k m
                                                      lkup l (_:ms) = lkup (l-1) ms
   varlookup              k vm@(VarMp vmlev _ ) = varlookupWithMetaLev vmlev k vm
+  varlookupKeysSetWithMetaLev l (VarMp vmlev ms) = Map.keysSet $ ms !! (l-vmlev)
+  varlookupKeysSet              (VarMp _     ms) = Set.unions $ map Map.keysSet ms
 
 
 instance Ord k => VarLookupCmb (VarMp' k v) (VarMp' k v) where
@@ -413,6 +416,7 @@ tyAsVarMp = tyAsVarMp' (flip const)
 
 varmpLookup :: (VarLookup m k i,Ord k) => k -> m -> Maybe i
 varmpLookup = varlookupMap (Just . id)
+{-# INLINE varmpLookup #-}
 
 {-
 varmpTyLookup :: (VarLookup m k VarMpInfo,Ord k) => k -> m -> Maybe Ty

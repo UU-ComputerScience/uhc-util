@@ -78,6 +78,7 @@ library
     UHC.Util.Substitutable,
     UHC.Util.Time,
     UHC.Util.TreeTrie,
+    UHC.Util.TreeTrie2,
     UHC.Util.Utils,
     UHC.Util.VarLookup,
     UHC.Util.VarMp

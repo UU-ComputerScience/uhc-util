@@ -41,7 +41,7 @@ module UHC.Util.CHR.Rule
   )
   where
 
-import qualified UHC.Util.TreeTrie as TreeTrie
+-- import qualified UHC.Util.TreeTrie as TreeTrie
 import           UHC.Util.CHR.Base
 import           UHC.Util.VarMp
 import           UHC.Util.Utils
@@ -137,7 +137,7 @@ instance (PP c, PP g, PP p, PP bp) => PP (Rule c g bp p) where
           ppChr l = ppSpaces l -- vlist l -- ppCurlysBlock
 
 type instance TTKey (Rule cnstr guard bprio prio) = TTKey cnstr
-type instance TreeTrie.TrTrKey (Rule cnstr guard bprio prio) = TTKey cnstr
+-- type instance TreeTrie.TrTrKey (Rule cnstr guard bprio prio) = TTKey cnstr
 
 instance (TTKeyable cnstr) => TTKeyable (Rule cnstr guard bprio prio) where
   toTTKey' o chr = toTTKey' o $ head $ ruleHead chr
@@ -174,7 +174,7 @@ type instance ExtrValVarKey (RuleBodyAlt c p) = ExtrValVarKey c
 -- TBD: should vars be extracted from prio and builtin as well?
 instance (VarExtractable c) => VarExtractable (RuleBodyAlt c p) where
   varFreeSet          (RuleBodyAlt {rbodyaltBody=b})
-    = Set.unions $ concat [map varFreeSet b]
+    = Set.unions $ map varFreeSet b
 
 -- TBD: should vars be extracted from prio as well?
 instance (VarExtractable c, VarExtractable g, ExtrValVarKey c ~ ExtrValVarKey g) => VarExtractable (Rule c g bp p) where
