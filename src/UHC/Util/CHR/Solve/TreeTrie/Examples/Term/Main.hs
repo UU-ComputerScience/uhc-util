@@ -64,10 +64,11 @@ runFile runopts f = do
 -- | run some test programs
 mainTerm = do
   forM_
-      [ "leq"
-      --, "var"
+      [
+      --   "leq"
+      -- , "var"
       -- , "ruleprio"
-      -- , "backtrack"
+       "backtrack2"
       -- , "unify"
       -- , "antisym"
       ] $ \f -> do

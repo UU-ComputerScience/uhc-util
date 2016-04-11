@@ -304,16 +304,6 @@ instance CHRMatchable E P S where
       (P_Op _ p11 p12, P_Op _ p21 p22) -> chrUnifyM e p11 p21 >> chrUnifyM e p12 p22
       _                                -> chrMatchFail
 
-{-
-instance CHRBuiltinSolvable E C S where
-  chrBuiltinSolveM e b = case b of
-    CB_Eq x y -> chrUnifyM CHRMatchHow_Unify e x y
-
-instance CHRBuiltinSolvable E B S where
-  chrBuiltinSolveM e b = case b of
-    B_Eq x y -> chrUnifyM CHRMatchHow_Unify e x y
--}
-
 type instance CHRPrioEvaluatableVal Tm = Prio
 
 instance CHRPrioEvaluatable E Tm S where

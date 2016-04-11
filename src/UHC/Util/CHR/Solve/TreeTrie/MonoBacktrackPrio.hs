@@ -744,6 +744,7 @@ data FoundMatchSortKey bp p s
   = FoundMatchSortKey
       { {- foundMatchSortKeyBacktrackPrio  :: !(CHRPrioEvaluatableVal bp)
       , -} foundMatchSortKeyPrio           :: !(Maybe (s,p))
+      , foundMatchSortKeyWaitSize       :: !Int
       , foundMatchSortKeyTextOrder      :: !CHRInx
       }
 
@@ -751,11 +752,11 @@ instance Show (FoundMatchSortKey bp p s) where
   show _ = "FoundMatchSortKey"
 
 instance (PP p, PP s) => PP (FoundMatchSortKey bp p s) where
-  pp (FoundMatchSortKey {foundMatchSortKeyPrio=p, foundMatchSortKeyTextOrder=o}) = ppParensCommas [pp p, pp o]
+  pp (FoundMatchSortKey {foundMatchSortKeyPrio=p, foundMatchSortKeyWaitSize=w, foundMatchSortKeyTextOrder=o}) = ppParensCommas [pp p, pp w, pp o]
 
 compareFoundMatchSortKey :: {- (Ord (CHRPrioEvaluatableVal bp)) => -} ((s,p) -> (s,p) -> Ordering) -> FoundMatchSortKey bp p s -> FoundMatchSortKey bp p s -> Ordering
-compareFoundMatchSortKey cmp_rp (FoundMatchSortKey {- bp1 -} rp1 to1) (FoundMatchSortKey {- bp2 -} rp2 to2) =
-    {- orderingLexic (bp1 `compare` bp2) $ -} orderingLexic (rp1 `cmp_mbrp` rp2) $ to1 `compare` to2
+compareFoundMatchSortKey cmp_rp (FoundMatchSortKey {- bp1 -} rp1 ws1 to1) (FoundMatchSortKey {- bp2 -} rp2 ws2 to2) =
+    {- orderingLexic (bp1 `compare` bp2) $ -} orderingLexic (rp1 `cmp_mbrp` rp2) $ orderingLexic (ws1 `compare` ws2) $ to1 `compare` to2
   where
     cmp_mbrp (Just rp1) (Just rp2) = cmp_rp rp1 rp2
     cmp_mbrp (Just _  ) _          = GT
@@ -944,7 +945,7 @@ chrSolve opts env = slv
                     sndl ^* chrbstReductionSteps =$: (SolverReductionDBG dbg :)
 
                     -- pick the first and highest rule prio solution
-                    case {- trp "chrSolve.slv.dbg" dbg $ -} sortOn (Set.size . foundWorkSortedMatchWaitForVars . snd) $ foundWorkSortedMatches of
+                    case {- trp "chrSolve.slv.dbg" dbg $ -} {- sortOn (Set.size . foundWorkSortedMatchWaitForVars . snd) $ -} foundWorkSortedMatches of
                       ((_,fwsm@(FoundWorkSortedMatch {foundWorkSortedMatchWaitForVars = waitForVars})):_)
                         | Set.null waitForVars -> do
                             addWorkToRuleWorkQueue workInx
@@ -1080,17 +1081,18 @@ slvMatch
 slvMatch env chr@(StoredCHR {_storedChrRule = Rule {rulePrio = mbpr, ruleHead = hc, ruleGuard = gd, ruleBacktrackPrio = mbbpr, ruleBodyAlts = alts}}) cnstrs headInx = do
     subst <- getl $ sndl ^* chrbstSolveSubst
     curbprio <- fmap chrPrioLift $ getl $ sndl ^* chrbstBacktrackPrio
-    return $ fmap (\(s,ws) -> FoundSlvMatch s ws (FoundMatchSortKey (fmap ((,) s) mbpr) (_storedChrInx chr))
+    return $ fmap (\(s,ws) -> FoundSlvMatch s ws (FoundMatchSortKey (fmap ((,) s) mbpr) (Set.size ws) (_storedChrInx chr))
                     [ FoundBodyAlt i bp a | (i,a) <- zip [0..] alts, let bp = maybe minBound (chrPrioEval env s) $ rbodyaltBacktrackPrio a
                     ])
            $ (\m -> chrmatcherRun m (emptyCHRMatchEnv {chrmatchenvMetaMayBind = (`Set.member` freevars)}) subst)
+           -- $ (\m -> chrmatcherRun m emptyCHRMatchEnv subst)
            $ sequence_
            $ prio curbprio ++ matches ++ checks
   where
     prio curbprio = maybe [] (\bpr -> [chrMatchToM env bpr curbprio]) mbbpr
     matches = zipWith3 (\i h c -> chrMatchAndWaitToM (i == headInx) env h c) [0::Int ..] hc cnstrs
     checks  = map (chrCheckM env) gd
-    freevars = varFreeSet hc
+    freevars = Set.unions [varFreeSet hc, maybe Set.empty varFreeSet mbbpr]
 
 -------------------------------------------------------------------------------------------
 --- Instances: Serialize
