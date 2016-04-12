@@ -290,11 +290,12 @@ data CHRGlobState cnstr guard bprio prio subst env m
       , _chrgstNextFreeWorkInx       :: !WorkTime                                        -- ^ Next free work/constraint identification, used by solving to identify whether a rule has been used for a constraint.
       , _chrgstScheduleQueue         :: !(Que.MinPQueue (CHRPrioEvaluatableVal bprio) (CHRMonoBacktrackPrioT cnstr guard bprio prio subst env m (SolverResult subst)))
       , _chrgstTrace                 :: SolveTrace' cnstr (StoredCHR cnstr guard bprio prio) subst
+      , _chrgstStatNrSolveSteps      :: !Int
       }
   deriving (Typeable)
 
 emptyCHRGlobState :: {- Num (ExtrValVarKey c) => -} CHRGlobState c g b p s e m
-emptyCHRGlobState = CHRGlobState emptyCHRStore 0 emptyWorkStore initWorkTime Que.empty emptySolveTrace
+emptyCHRGlobState = CHRGlobState emptyCHRStore 0 emptyWorkStore initWorkTime Que.empty emptySolveTrace 0
 
 -- | Backtrackable state
 data CHRBackState cnstr bprio subst env
@@ -707,13 +708,15 @@ ppSolverResult verbosity (SolverResult {slvresSubst = s, slvresResidualCnstr = r
     rs  <- forM ris  $ \i -> lkupWork i >>= return . pp . workCnstr
     ws  <- forM wis  $ \i -> lkupWork i >>= return . pp . workCnstr
     wvs <- forM wvis $ \i -> lkupWork i >>= return . pp . workCnstr
-    ss <- if verbosity >= Verbosity_ALot
+    ss  <- if verbosity >= Verbosity_ALot
       then forM steps $ \step -> cvtSolverReductionStep step >>= (return . pp)
       else return [pp $ "Only included with enough verbosity turned on"]
+    nrsteps <- getl $ fstl ^* chrgstStatNrSolveSteps
     let pextra | verbosity >= Verbosity_Normal = 
                       "Subst"   >-< indent 2 s
                   >-< "Residue" >-< indent 2 (vlist rs)
                   >-< "Wait"    >-< indent 2 (vlist wvs)
+                  >-< "Stats"   >-< indent 2 (ppAssocL [ ("Nr of solve steps", pp nrsteps) ])
                   >-< "Steps"   >-< indent 2 (vlist ss)
                | otherwise = Pretty.empty
     return $ 
@@ -874,6 +877,7 @@ chrSolve opts env = slv
   where
     -- solve
     slv = do
+        fstl ^* chrgstStatNrSolveSteps =$: (+1)
         mbSlvWk <- splitWorkFromSolveQueue
         case {- trp "chrSolve.slv.mbSlvWk" (pp mbSlvWk) -} mbSlvWk of
           -- There is work in the solve work queue
