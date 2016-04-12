@@ -68,7 +68,7 @@ mainTerm = do
       --   "leq"
       -- , "var"
       -- , "ruleprio"
-       "backtrack2"
+       "backtrack3"
       -- , "unify"
       -- , "antisym"
       ] $ \f -> do

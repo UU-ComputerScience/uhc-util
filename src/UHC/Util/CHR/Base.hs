@@ -249,12 +249,13 @@ data CHRMatchHow
 -- | Context/environment required for matching itself
 data CHRMatchEnv k
   = CHRMatchEnv
-      { chrmatchenvHow          :: !CHRMatchHow
-      , chrmatchenvMetaMayBind  :: !(k -> Bool)
+      { {- chrmatchenvHow          :: !CHRMatchHow
+      , -} 
+        chrmatchenvMetaMayBind  :: !(k -> Bool)
       }
 
 emptyCHRMatchEnv :: CHRMatchEnv x
-emptyCHRMatchEnv = CHRMatchEnv CHRMatchHow_Equal (const True)
+emptyCHRMatchEnv = CHRMatchEnv {- CHRMatchHow_Equal -} (const True)
 
 -------------------------------------------------------------------------------------------
 --- Wait for var
@@ -308,20 +309,20 @@ type instance CHRMatchableKey (StackedVarLookup subst) = CHRMatchableKey subst
 class (CHREmptySubstitution subst, VarLookupCmb subst subst, VarExtractable x, SubstVarKey subst ~ ExtrValVarKey x) => CHRMatchable env x subst where
   -- | One-directional (1st to 2nd 'x') unify
   chrMatchTo :: env -> subst -> x -> x -> Maybe subst
-  chrMatchTo env s x1 x2 = chrUnify (emptyCHRMatchEnv {chrmatchenvHow = CHRMatchHow_Match, chrmatchenvMetaMayBind = (`Set.member` varFreeSet x1)}) env s x1 x2
+  chrMatchTo env s x1 x2 = chrUnify CHRMatchHow_Match (emptyCHRMatchEnv {chrmatchenvMetaMayBind = (`Set.member` varFreeSet x1)}) env s x1 x2
     -- where free = varFreeSet x1
   
   -- | One-directional (1st to 2nd 'x') unify
-  chrUnify :: CHRMatchEnv (SubstVarKey subst) -> env -> subst -> x -> x -> Maybe subst
-  chrUnify how e s x1 x2 = chrmatcherUnlift (chrUnifyM e x1 x2) how s
+  chrUnify :: CHRMatchHow -> CHRMatchEnv (SubstVarKey subst) -> env -> subst -> x -> x -> Maybe subst
+  chrUnify how menv e s x1 x2 = chrmatcherUnlift (chrUnifyM how e x1 x2) menv s
   
   -- | Match one-directional (from 1st to 2nd arg), under a subst, yielding a subst for the metavars in the 1st arg, waiting for those in the 2nd
   chrMatchToM :: env -> x -> x -> CHRMatcher subst ()
-  chrMatchToM e x1 x2 = chrUnifyM e x1 x2
+  chrMatchToM e x1 x2 = chrUnifyM CHRMatchHow_Match e x1 x2
 
   -- | Unify bi-directional or match one-directional (from 1st to 2nd arg), under a subst, yielding a subst for the metavars in the 1st arg, waiting for those in the 2nd
-  chrUnifyM :: env -> x -> x -> CHRMatcher subst ()
-  chrUnifyM e x1 x2 = getl chrmatcherstateEnv >>= \menv -> chrmatcherLift $ \sg -> chrUnify menv e sg x1 x2
+  chrUnifyM :: CHRMatchHow -> env -> x -> x -> CHRMatcher subst ()
+  chrUnifyM how e x1 x2 = getl chrmatcherstateEnv >>= \menv -> chrmatcherLift $ \sg -> chrUnify how menv e sg x1 x2
 
 {-
   -- | Solve a constraint which is categorized as 'ConstraintSolvesVia_Solve'
@@ -435,11 +436,7 @@ chrMatchModifyWait f =
 
 -- | Match one-directional (from 1st to 2nd arg), under a subst, yielding a subst for the metavars in the 1st arg, waiting for those in the 2nd
 chrMatchAndWaitToM :: CHRMatchable env x subst => Bool -> env -> x -> x -> CHRMatcher subst ()
--- chrMatchAndWaitToM wait = chrUnifyM (emptyCHRMatchEnv {chrmatchenvHow=if wait then CHRMatchHow_MatchAndWait else CHRMatchHow_Match})
-chrMatchAndWaitToM wait env x1 x2 = do
-    chrmatcherstateEnv =$: \e -> e {chrmatchenvHow=if wait then CHRMatchHow_MatchAndWait else CHRMatchHow_Match}
-    chrUnifyM env x1 x2
-    -- chrUnifyM (emptyCHRMatchEnv {chrmatchenvHow=if wait then CHRMatchHow_MatchAndWait else CHRMatchHow_Match})
+chrMatchAndWaitToM wait env x1 x2 = chrUnifyM (if wait then CHRMatchHow_MatchAndWait else CHRMatchHow_Match) env x1 x2
 
 -------------------------------------------------------------------------------------------
 --- CHRMatchable: instances
@@ -450,7 +447,7 @@ instance {-# OVERLAPPABLE #-} Ord (ExtrValVarKey ()) => VarExtractable () where
   varFreeSet _ = Set.empty
 
 instance {-# OVERLAPPABLE #-} (Ord (ExtrValVarKey ()), CHREmptySubstitution subst, VarLookupCmb subst subst, SubstVarKey subst ~ ExtrValVarKey ()) => CHRMatchable env () subst where
-  chrUnifyM _ _ _ = chrMatchFail
+  chrUnifyM _ _ _ _ = chrMatchFail
 
 -------------------------------------------------------------------------------------------
 --- Prio: instances

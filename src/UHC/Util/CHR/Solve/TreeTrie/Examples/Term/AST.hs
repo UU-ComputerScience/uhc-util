@@ -257,51 +257,45 @@ instance IsCHRBacktrackPrio E P S where
 instance CHRCheckable E G S where
   chrCheckM e g =
     case g of
-      G_Eq t1 t2 -> do
-        chrmatcherstateEnv =$: \e -> e {chrmatchenvHow=CHRMatchHow_Equal}
-        chrUnifyM e t1 t2
+      G_Eq t1 t2 -> chrUnifyM CHRMatchHow_Equal e t1 t2
       G_Ne t1 t2 -> do
         menv <- getl chrmatcherstateEnv
         s <- getl chrmatcherstateVarLookup
         chrmatcherRun' chrMatchSuccess (\_ _ -> chrMatchFail) (chrCheckM e (G_Eq t1 t2)) menv s
 
 instance CHRMatchable E Tm S where
-  chrUnifyM e t1 t2 = do
+  chrUnifyM how e t1 t2 = do
       menv <- getl chrmatcherstateEnv
-      let how = chrmatchenvHow menv
       case (t1, t2) of
         (Tm_Con c1 as1, Tm_Con c2 as2) | c1 == c2 && length as1 == length as2 
-                                                                          -> sequence_ (zipWith (chrUnifyM e) as1 as2)
+                                                                          -> sequence_ (zipWith (chrUnifyM how e) as1 as2)
         (Tm_Int i1    , Tm_Int i2    ) | i1 == i2                         -> chrMatchSuccess
         (Tm_Var v1    , Tm_Var v2    ) | v1 == v2                         -> chrMatchSuccess
-        (Tm_Var v1    , t2           ) | how == CHRMatchHow_Equal         -> varContinue chrMatchFail (\t1 -> chrUnifyM e t1 t2) v1
+        (Tm_Var v1    , t2           ) | how == CHRMatchHow_Equal         -> varContinue chrMatchFail (\t1 -> chrUnifyM how e t1 t2) v1
                                        | how >= CHRMatchHow_Match && chrmatchenvMetaMayBind menv v1
-                                                                          -> varContinue (chrMatchBind menv v1 t2) (\t1 -> chrUnifyM e t1 t2) v1
-        (t1           , Tm_Var v2    ) | how == CHRMatchHow_Equal         -> varContinue chrMatchFail (chrUnifyM e t1) v2
-                                       | how == CHRMatchHow_MatchAndWait  -> varContinue (chrMatchWait v2) (chrUnifyM e t1) v2
+                                                                          -> varContinue (chrMatchBind menv v1 t2) (\t1 -> chrUnifyM how e t1 t2) v1
+        (t1           , Tm_Var v2    ) | how == CHRMatchHow_Equal         -> varContinue chrMatchFail (chrUnifyM how e t1) v2
+                                       | how == CHRMatchHow_MatchAndWait  -> varContinue (chrMatchWait v2) (chrUnifyM how e t1) v2
                                        | how == CHRMatchHow_Unify && chrmatchenvMetaMayBind menv v2
-                                                                          -> varContinue (chrMatchBind menv v2 t1) (chrUnifyM e t1) v2
+                                                                          -> varContinue (chrMatchBind menv v2 t1) (chrUnifyM how e t1) v2
         _                                                                 -> chrMatchFail
     where
       varContinue = varlookupResolveAndContinueM tmIsVar chrMatchSubst
 
 instance CHRMatchable E C S where
-  chrUnifyM e c1 c2 = do
+  chrUnifyM how e c1 c2 = do
     case (c1, c2) of
       (C_Con c1 as1, C_Con c2 as2) | c1 == c2 && length as1 == length as2 
-                                                 -> sequence_ (zipWith (chrUnifyM e) as1 as2)
+                                                 -> sequence_ (zipWith (chrUnifyM how e) as1 as2)
       _                                          -> chrMatchFail
   chrBuiltinSolveM e b = case b of
-    CB_Eq x y -> do
-      chrmatcherstateEnv =$: \e -> e {chrmatchenvHow=CHRMatchHow_Unify}
-      chrUnifyM e x y
-      -- chrUnifyM (emptyCHRMatchEnv {chrmatchenvHow=CHRMatchHow_Unify}) e x y
+    CB_Eq x y -> chrUnifyM CHRMatchHow_Unify e x y
 
 instance CHRMatchable E P S where
-  chrUnifyM e p1 p2 = do
+  chrUnifyM how e p1 p2 = do
     case (p1, p2) of
-      (P_Tm   t1     , P_Tm   t2     ) -> chrUnifyM e t1  t2
-      (P_Op _ p11 p12, P_Op _ p21 p22) -> chrUnifyM e p11 p21 >> chrUnifyM e p12 p22
+      (P_Tm   t1     , P_Tm   t2     ) -> chrUnifyM how e t1  t2
+      (P_Op _ p11 p12, P_Op _ p21 p22) -> chrUnifyM how e p11 p21 >> chrUnifyM how e p12 p22
       _                                -> chrMatchFail
 
 type instance CHRPrioEvaluatableVal Tm = Prio

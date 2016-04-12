@@ -1085,7 +1085,6 @@ slvMatch env chr@(StoredCHR {_storedChrRule = Rule {rulePrio = mbpr, ruleHead = 
                     [ FoundBodyAlt i bp a | (i,a) <- zip [0..] alts, let bp = maybe minBound (chrPrioEval env s) $ rbodyaltBacktrackPrio a
                     ])
            $ (\m -> chrmatcherRun m (emptyCHRMatchEnv {chrmatchenvMetaMayBind = (`Set.member` freevars)}) subst)
-           -- $ (\m -> chrmatcherRun m emptyCHRMatchEnv subst)
            $ sequence_
            $ prio curbprio ++ matches ++ checks
   where
