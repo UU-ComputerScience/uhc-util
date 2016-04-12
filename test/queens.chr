@@ -1,0 +1,8 @@
+-- 4 Queens problem
+-- Pure backtracking example, no use of global vars or priority
+Queens <=> Row 1, Row 2, Row 3, Row 4.
+Row r <=> Queen r 1 \/ Queen r 2 \/ Queen r 3 \/ Queen r 4.
+Queen r1 c1, Queen r2 c2 ==> c1 /= c2.
+Queen r1 c1, Queen r2 c2 ==> (abs(r1 - r2)) /= (abs(c1 - c2)).
+
+?Queens.

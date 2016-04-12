@@ -32,6 +32,7 @@ import           Data.Typeable
 import           Data.Maybe
 import qualified Data.Map as Map
 import qualified Data.Set as Set
+import           Control.Monad
 import           Control.Monad.IO.Class
 import           Control.Applicative
 import qualified UHC.Util.CHR.Solve.TreeTrie.Mono as M
@@ -46,18 +47,21 @@ data Key
   = Key_Int     !Int            
   | Key_Var     !Var            
   | Key_Str     !String   
+  | Key_Op      !POp   
   deriving (Eq, Ord, Show)
 
 instance PP Key where
   pp (Key_Int i) = "ki" >|< ppParens i
   pp (Key_Var v) = "kv" >|< ppParens v
   pp (Key_Str s) = "ks" >|< ppParens s
+  pp (Key_Op  o) = "ko" >|< ppParens o
 
 -- | Terms
 data Tm
   = Tm_Var Var              -- ^ variable (to be substituted)
   | Tm_Int Int              -- ^ int value (for arithmetic)
-  | Tm_Con String [Tm]
+  | Tm_Con String [Tm]      -- ^ general term structure
+  | Tm_Op  POp    [Tm]      -- ^ interpretable (when solving) term structure
   deriving (Show, Eq, Ord, Typeable, Generic)
 
 tmIsVar :: Tm -> Maybe Var
@@ -65,9 +69,12 @@ tmIsVar (Tm_Var v) = Just v
 tmIsVar _          = Nothing
 
 instance PP Tm where
-  pp (Tm_Var v   ) = pp v -- "v" >|< v
-  pp (Tm_Con c as) = ppParens $ c >#< ppSpaces as
-  pp (Tm_Int i   ) = pp i
+  pp (Tm_Var v        ) = pp v -- "v" >|< v
+  pp (Tm_Con c []     ) = pp c
+  pp (Tm_Con c as     ) = ppParens $ c >#< ppSpaces as
+  pp (Tm_Op  o [a    ]) = ppParens $ o >#< a
+  pp (Tm_Op  o [a1,a2]) = ppParens $ a1 >#< o >#< a2
+  pp (Tm_Int i        ) = pp i
 
 instance Serialize Tm
 
@@ -75,12 +82,14 @@ instance Serialize Tm
 data C
   = C_Con String [Tm]
   | CB_Eq Tm Tm          -- ^ builtin: unification
+  | CB_Ne Tm Tm          -- ^ builtin: non unification
   | CB_Fail              -- ^ explicit fail
   deriving (Show, Eq, Ord, Typeable, Generic)
 
 instance PP C where
   pp (C_Con c as) = c >#< ppSpaces as
   pp (CB_Eq x y ) = "unify" >#< ppSpaces [x,y]
+  pp (CB_Ne x y ) = "not-unify" >#< ppSpaces [x,y]
   pp (CB_Fail   ) = pp "fail"
 
 instance Serialize C
@@ -125,6 +134,7 @@ instance TTKeyable Tm where
                                       | otherwise           = (TT1K_One $ Key_Var v, ttkChildren [])
   toTTKeyParentChildren' o (Tm_Int i) = (TT1K_One $ Key_Int i, ttkChildren [])
   toTTKeyParentChildren' o (Tm_Con c as) = (TT1K_One $ Key_Str c, ttkChildren $ map (toTTKey' o) as)
+  toTTKeyParentChildren' o (Tm_Op op as) = (TT1K_One $ Key_Op op, ttkChildren $ map (toTTKey' o) as)
 
 instance TTKeyable C where
   -- Only necessary for non-builtin constraints
@@ -132,19 +142,28 @@ instance TTKeyable C where
 
 type E = ()
 
+-- | Binary operator
 data POp
-  = POp_Add | POp_Sub | POp_Mul
+  = 
+    -- binary
+    PBOp_Add
+  | PBOp_Sub
+  | PBOp_Mul
+  
+    -- unary
+  | PUOp_Abs
   deriving (Eq, Ord, Show, Generic)
+
+instance PP POp where
+  pp PBOp_Add = pp "+"
+  pp PBOp_Sub = pp "-"
+  pp PBOp_Mul = pp "*"
+  pp PUOp_Abs = pp "abs"
 
 data P
   = P_Tm Tm
   | P_Op POp P P
   deriving (Eq, Ord, Show, Generic)
-
-instance PP POp where
-  pp POp_Add = pp "+"
-  pp POp_Sub = pp "-"
-  pp POp_Mul = pp "*"
 
 instance PP P where
   pp (P_Tm t) = pp t
@@ -197,6 +216,7 @@ instance VarUpdatable S S where
 instance VarUpdatable Tm S where
   s `varUpd` t = case fromJust $ varlookupResolveVal tmIsVar t s <|> return t of
       Tm_Con c as -> Tm_Con c $ map (s `varUpd`) as
+      Tm_Op  o as -> Tm_Op  o $ map (s `varUpd`) as
       t -> t
 
 instance VarUpdatable P S where
@@ -212,6 +232,7 @@ instance VarUpdatable C S where
   s `varUpd` c = case c of
     C_Con c as -> C_Con c $ map (s `varUpd`) as
     CB_Eq x y  -> CB_Eq (s `varUpd` x) (s `varUpd` y)
+    CB_Ne x y  -> CB_Ne (s `varUpd` x) (s `varUpd` y)
     c          -> c
 
 {-
@@ -223,6 +244,7 @@ instance VarUpdatable B S where
 instance VarExtractable Tm where
   varFreeSet (Tm_Var v) = Set.singleton v
   varFreeSet (Tm_Con _ as) = Set.unions $ map varFreeSet as
+  varFreeSet (Tm_Op  _ as) = Set.unions $ map varFreeSet as
   varFreeSet _ = Set.empty
 
 instance VarExtractable G where
@@ -244,6 +266,7 @@ instance CHREmptySubstitution S where
 instance IsConstraint C where
   cnstrSolvesVia (C_Con _ _) = ConstraintSolvesVia_Rule
   cnstrSolvesVia (CB_Eq _ _) = ConstraintSolvesVia_Solve
+  cnstrSolvesVia (CB_Ne _ _) = ConstraintSolvesVia_Solve
   cnstrSolvesVia (CB_Fail  ) = ConstraintSolvesVia_Fail
 
 instance IsCHRGuard E G S where
@@ -269,6 +292,10 @@ instance CHRMatchable E Tm S where
       case (t1, t2) of
         (Tm_Con c1 as1, Tm_Con c2 as2) | c1 == c2 && length as1 == length as2 
                                                                           -> sequence_ (zipWith (chrUnifyM how e) as1 as2)
+        (Tm_Op  o1 as1, Tm_Op  o2 as2) | how < CHRMatchHow_Unify && o1 == o2 && length as1 == length as2 
+                                                                          -> sequence_ (zipWith (chrUnifyM how e) as1 as2)
+        (Tm_Op  o1 as1, t2           ) | how == CHRMatchHow_Unify         -> evop o1 as1 >>= \t1 -> chrUnifyM how e t1 t2
+        (t1           , Tm_Op  o2 as2) | how == CHRMatchHow_Unify         -> evop o2 as2 >>= \t2 -> chrUnifyM how e t1 t2
         (Tm_Int i1    , Tm_Int i2    ) | i1 == i2                         -> chrMatchSuccess
         (Tm_Var v1    , Tm_Var v2    ) | v1 == v2                         -> chrMatchSuccess
         (Tm_Var v1    , t2           ) | how == CHRMatchHow_Equal         -> varContinue chrMatchFail (\t1 -> chrUnifyM how e t1 t2) v1
@@ -281,6 +308,19 @@ instance CHRMatchable E Tm S where
         _                                                                 -> chrMatchFail
     where
       varContinue = varlookupResolveAndContinueM tmIsVar chrMatchSubst
+      evop o xs = do
+          xs <- forM xs ev 
+          case (o, xs) of
+            (PUOp_Abs, [Tm_Int x]) -> ret $ abs x
+            (PBOp_Add, [Tm_Int x, Tm_Int y]) -> ret $ x + y
+            (PBOp_Sub, [Tm_Int x, Tm_Int y]) -> ret $ x - y
+            (PBOp_Mul, [Tm_Int x, Tm_Int y]) -> ret $ x * y
+        where ret x = return $ Tm_Int x
+      ev x = case x of
+          Tm_Int _    -> return x
+          Tm_Var v    -> varContinue chrMatchFail ev v
+          Tm_Op  o xs -> evop o xs
+          _           -> chrMatchFail
 
 instance CHRMatchable E C S where
   chrUnifyM how e c1 c2 = do
@@ -290,6 +330,10 @@ instance CHRMatchable E C S where
       _                                          -> chrMatchFail
   chrBuiltinSolveM e b = case b of
     CB_Eq x y -> chrUnifyM CHRMatchHow_Unify e x y
+    CB_Ne x y -> do -- chrUnifyM CHRMatchHow_Unify e x y
+        menv <- getl chrmatcherstateEnv
+        s <- getl chrmatcherstateVarLookup
+        chrmatcherRun' chrMatchSuccess (\_ _ -> chrMatchFail) (chrBuiltinSolveM e (CB_Eq x y)) menv s
 
 instance CHRMatchable E P S where
   chrUnifyM how e p1 p2 = do
@@ -313,9 +357,9 @@ instance CHRPrioEvaluatable E P S where
   chrPrioEval e s p = case p of
     P_Tm t -> chrPrioEval e s t
     P_Op o p1 p2 -> case o of
-        POp_Add -> p1' + p2'
-        POp_Sub -> p1' - p2'
-        POp_Mul -> p1' * p2'
+        PBOp_Add -> p1' + p2'
+        PBOp_Sub -> p1' - p2'
+        PBOp_Mul -> p1' * p2'
       where p1' = chrPrioEval e s p1
             p2' = chrPrioEval e s p2
   chrPrioLift = P_Tm . chrPrioLift

@@ -20,7 +20,9 @@ http://link.springer.com/10.1007/978-3-540-92243-8_2
 -}
 
 module UHC.Util.CHR.Solve.TreeTrie.MonoBacktrackPrio
-  ( CHRGlobState(..)
+  ( Verbosity(..)
+
+  , CHRGlobState(..)
   , emptyCHRGlobState
   
   , CHRBackState(..)
@@ -111,6 +113,16 @@ import           UHC.Util.Lens
 import           Control.Monad.LogicState
 
 import           UHC.Util.Debug
+
+-------------------------------------------------------------------------------------------
+--- Verbosity
+-------------------------------------------------------------------------------------------
+
+data Verbosity
+  = Verbosity_Quiet         -- default
+  | Verbosity_Normal
+  | Verbosity_ALot
+  deriving (Eq, Ord, Show, Enum, Typeable)
 
 -------------------------------------------------------------------------------------------
 --- A CHR as stored
@@ -688,22 +700,25 @@ cvtSolverReductionStep (SolverReductionDBG pp) = return (SolverReductionDBG pp)
 ppSolverResult
   :: ( MonoBacktrackPrio c g bp p s e m
      , PP s
-     ) => Bool
+     ) => Verbosity
        -> SolverResult s
        -> CHRMonoBacktrackPrioT c g bp p s e m PP_Doc
-ppSolverResult inclSteps (SolverResult {slvresSubst = s, slvresResidualCnstr = ris, slvresWorkCnstr = wis, slvresWaitVarCnstr = wvis, slvresReductionSteps = steps}) = do
+ppSolverResult verbosity (SolverResult {slvresSubst = s, slvresResidualCnstr = ris, slvresWorkCnstr = wis, slvresWaitVarCnstr = wvis, slvresReductionSteps = steps}) = do
     rs  <- forM ris  $ \i -> lkupWork i >>= return . pp . workCnstr
     ws  <- forM wis  $ \i -> lkupWork i >>= return . pp . workCnstr
     wvs <- forM wvis $ \i -> lkupWork i >>= return . pp . workCnstr
-    ss <- if inclSteps
+    ss <- if verbosity >= Verbosity_ALot
       then forM steps $ \step -> cvtSolverReductionStep step >>= (return . pp)
-      else return [pp "Only included when asked for"]
+      else return [pp $ "Only included with enough verbosity turned on"]
+    let pextra | verbosity >= Verbosity_Normal = 
+                      "Subst"   >-< indent 2 s
+                  >-< "Residue" >-< indent 2 (vlist rs)
+                  >-< "Wait"    >-< indent 2 (vlist wvs)
+                  >-< "Steps"   >-< indent 2 (vlist ss)
+               | otherwise = Pretty.empty
     return $ 
-          "Subst"   >-< indent 2 s
-      >-< "Residue" >-< indent 2 (vlist rs)
-      >-< "Work"    >-< indent 2 (vlist ws)
-      >-< "Wait"    >-< indent 2 (vlist wvs)
-      >-< "Steps"   >-< indent 2 (vlist ss)
+          "Work"    >-< indent 2 (vlist ws)
+      >-< pextra
 
 -------------------------------------------------------------------------------------------
 --- Solver: running it
@@ -833,12 +848,14 @@ instance (PP c, PP bp, PP p, PP s, PP g, PP (TTKey c), PP (SubstVarKey s), PP (C
 data CHRSolveOpts
   = CHRSolveOpts
       { chrslvOptSucceedOnLeftoverWork  :: !Bool        -- ^ left over unresolvable (non residue) work is also a successful result
+      , chrslvOptSucceedOnFailedSolve   :: !Bool        -- ^ failed solve is considered also a successful result, with the failed constraint as a residue
       }
 
 defaultCHRSolveOpts :: CHRSolveOpts
 defaultCHRSolveOpts
   = CHRSolveOpts
       { chrslvOptSucceedOnLeftoverWork  = False
+      , chrslvOptSucceedOnFailedSolve   = False
       }
 
 -------------------------------------------------------------------------------------------
@@ -867,22 +884,27 @@ chrSolve opts env = slv
                 _ -> do
                   subst <- getl $ sndl ^* chrbstSolveSubst
                   let mbSlv = chrmatcherRun (chrBuiltinSolveM env $ workCnstr work) emptyCHRMatchEnv subst
-                  case mbSlv of
-                    Just (s,_) -> do
-                      -- the newfound subst may reactivate waiting work
-                      splitOffResolvedWaitForVarWork (varlookupKeysSet s) >>= mapM_ addWorkToRuleWorkQueue
-                      sndl ^* chrbstSolveSubst =$: (s |+>)
-                    _          -> do
-                      sndl ^* chrbstResidualQueue =$: (workInx :)
-
+                  
                   -- debug info
                   sndl ^* chrbstReductionSteps =$: (SolverReductionDBG
                     (    "solve wk" >#< work
                      >-< "match" >#< mbSlv
                     ) :)
 
-                  -- just continue with next work
-                  slv
+                  case mbSlv of
+                    Just (s,_) -> do
+                          -- the newfound subst may reactivate waiting work
+                          splitOffResolvedWaitForVarWork (varlookupKeysSet s) >>= mapM_ addWorkToRuleWorkQueue
+                          sndl ^* chrbstSolveSubst =$: (s |+>)
+                          -- just continue with next work
+                          slv
+                    _ | chrslvOptSucceedOnFailedSolve opts -> do
+                          sndl ^* chrbstResidualQueue =$: (workInx :)
+                          -- just continue with next work
+                          slv
+                      | otherwise -> do
+                          slvFail
+
 
           -- If no more solve work, continue with normal work
           Nothing -> do

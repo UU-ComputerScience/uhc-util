@@ -419,7 +419,7 @@ chrMatchSuccess :: CHRMatcher subst ()
 chrMatchSuccess = return ()
 {-# INLINE chrMatchSuccess #-}
 
-chrMatchFail :: CHRMatcher subst ()
+chrMatchFail :: CHRMatcher subst a
 chrMatchFail = throwError ()
 {-# INLINE chrMatchFail #-}
 

@@ -1,10 +1,12 @@
 module UHC.Util.CHR.Solve.TreeTrie.Examples.Term.Main
   ( RunOpt(..)
+  , Verbosity(..)
 
   , runFile
   )
   where
 
+import           Data.Maybe
 import           System.IO
 import           Control.Monad
 import           Control.Monad.IO.Class
@@ -23,7 +25,14 @@ import           UHC.Util.CHR.Solve.TreeTrie.Examples.Term.Parser
 data RunOpt
   = RunOpt_DebugTrace               -- ^ include debugging trace in output
   | RunOpt_SucceedOnLeftoverWork    -- ^ left over unresolvable (non residue) work is also a successful result
+  | RunOpt_SucceedOnFailedSolve     -- ^ failed solve is considered also a successful result, with the failed constraint as a residue
+  | RunOpt_Verbosity Verbosity
   deriving (Eq)
+
+mbRunOptVerbosity :: [RunOpt] -> Maybe Verbosity
+mbRunOptVerbosity []                       = Nothing
+mbRunOptVerbosity (RunOpt_Verbosity v : _) = Just v
+mbRunOptVerbosity (_                  : r) = mbRunOptVerbosity r
 
 -- | Run file with options
 runFile :: [RunOpt] -> FilePath -> IO ()
@@ -44,13 +53,17 @@ runFile runopts f = do
 
     -- solve
     msg $ "SOLVE " ++ f
-    let sopts = defaultCHRSolveOpts {chrslvOptSucceedOnLeftoverWork = RunOpt_SucceedOnLeftoverWork `elem` runopts}
+    let sopts = defaultCHRSolveOpts
+                  { chrslvOptSucceedOnLeftoverWork = RunOpt_SucceedOnLeftoverWork `elem` runopts
+                  , chrslvOptSucceedOnFailedSolve  = RunOpt_SucceedOnFailedSolve  `elem` runopts
+                  }
         mbp :: CHRMonoBacktrackPrioT C G P P S E IO (SolverResult S)
         mbp = do
           mapM_ addRule prog
           mapM_ addConstraintAsWork query
           r <- chrSolve sopts ()
-          ppSolverResult (RunOpt_DebugTrace `elem` runopts) r >>= \sr -> liftIO $ putPPLn $ "Solution" >-< indent 2 sr
+          let verbosity = maximum $ [Verbosity_Quiet] ++ maybeToList (mbRunOptVerbosity runopts) ++ (if RunOpt_DebugTrace `elem` runopts then [Verbosity_ALot] else [])
+          ppSolverResult verbosity r >>= \sr -> liftIO $ putPPLn $ "Solution" >-< indent 2 sr
           return r
     runCHRMonoBacktrackPrioT (emptyCHRGlobState) (emptyCHRBackState {- _chrbstBacktrackPrio=0 -}) {- 0 -} mbp
     
@@ -65,10 +78,11 @@ runFile runopts f = do
 mainTerm = do
   forM_
       [
-      --   "leq"
+        "queens"
+      -- , "leq"
       -- , "var"
       -- , "ruleprio"
-       "backtrack3"
+      -- , "backtrack3"
       -- , "unify"
       -- , "antisym"
       ] $ \f -> do
