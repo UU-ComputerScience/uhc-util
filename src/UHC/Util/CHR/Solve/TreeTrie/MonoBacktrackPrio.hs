@@ -463,10 +463,10 @@ addWorkToRuleWorkQueue i = do
 
 -- | Add work to the wait for var queue
 addWorkToWaitForVarQueue :: (MonoBacktrackPrio c g bp p s e m, Ord (SubstVarKey s)) => CHRWaitForVarSet s -> WorkInx -> CHRMonoBacktrackPrioT c g bp p s e m ()
-addWorkToWaitForVarQueue ws wi = do
+addWorkToWaitForVarQueue wfvs wi = do
     i <- modifyAndGet (sndl ^* chrbstNextFreeWaitInx) $ \i -> (i, i + 1)
-    sndl ^* chrbstWaitForVarWorkStore =$: IntMap.insert i (WaitForVar ws wi)
-    sndl ^* chrbstWaitForVarWork =$: \m -> foldr (\v -> Map.insertWith IntSet.union v (IntSet.singleton i)) m (Set.toList ws)
+    sndl ^* chrbstWaitForVarWorkStore =$: IntMap.insert i (WaitForVar wfvs wi)
+    sndl ^* chrbstWaitForVarWork =$: \m -> foldr (\wfv -> Map.insertWith IntSet.union wfv (IntSet.singleton i)) m (Set.toList wfvs)
     return ()
 
 -- | For (new) found subst split off work waiting for it
@@ -485,14 +485,42 @@ splitOffResolvedWaitForVarWork vars = do
                 when (isJust mbwfv) $ do
                   -- remove the variable on which the work was waiting
                   let wfv = waitForVarVars ^$= Set.delete v $ fromJust mbwfv
-                  -- if no variables are holding this work anymore, yield it so it can be re-entered as active work
-                  when (Set.null $ wfv ^. waitForVarVars) $ do
-                    wfvssReleased =$: IntSet.insert (wfv ^. waitForVarWorkInx)
-                    wfvssMp =$: Map.delete v
-                  wfvssStoreMp =$: IntMap.insert wfvi wfv
+                  -- if no variables are holding back this work anymore, yield it so it can be re-entered as active work
+                  if (Set.null $ wfv ^. waitForVarVars)
+                    then do
+                      wfvssReleased =$: IntSet.insert (wfv ^. waitForVarWorkInx)
+                      -- release admin as well
+                      wfvssStoreMp =$: IntMap.delete wfvi
+                    else do
+                      wfvssStoreMp =$: IntMap.update (const $ Just wfv) wfvi
+              -- remove admin for waiting for var
+              wfvssMp =$: Map.delete v
     sndl ^* chrbstWaitForVarWork =: wfvss ^. wfvssMp
     sndl ^* chrbstWaitForVarWorkStore =: wfvss ^. wfvssStoreMp
     return $ IntSet.toList $ wfvss ^. wfvssReleased
+
+-- | Debug
+getWaitForInfo :: MonoBacktrackPrio c g bp p s e m => CHRMonoBacktrackPrioT c g bp p s e m [(SubstVarKey s, [(WaitInx, [(WorkInx, [SubstVarKey s])])])]
+getWaitForInfo = do
+    bst <- getl sndl
+    return
+      [ ( v
+        , [ (wfvi, map (\i -> (_waitForVarWorkInx i, Set.toList $ _waitForVarVars i)) $ maybeToList $ IntMap.lookup wfvi (bst ^. chrbstWaitForVarWorkStore))
+          | wfvi <- IntSet.toList wfvis
+          ]
+        )
+      | (v,wfvis) <- Map.toList $ bst ^. chrbstWaitForVarWork
+      ]
+{-
+          , slvresWaitVarCnstr = IntSet.toList $ IntSet.fromList
+              [ wi -- wfv ^. waitForVarWorkInx
+              | wfvis <- Map.elems $ bst ^. chrbstWaitForVarWork
+              , wfvi <- IntSet.toList wfvis
+              , wi <- maybeToList $ fmap _waitForVarWorkInx $ IntMap.lookup wfvi (bst ^. chrbstWaitForVarWorkStore)
+              ]
+-}
+
+
 
 -- | Add work to the solve queue
 addWorkToSolveQueue :: MonoBacktrackPrio c g bp p s e m => WorkInx -> CHRMonoBacktrackPrioT c g bp p s e m ()
@@ -956,12 +984,14 @@ chrSolve opts env = slv
 
                     bprio <- getl $ sndl ^* chrbstBacktrackPrio
                     subst <- getl $ sndl ^* chrbstSolveSubst
+                    dbgWaitInfo <- getWaitForInfo
                     -- sque <- getl $ fstl ^* chrgstScheduleQueue
                     -- debug info
                     let dbg =      "bprio" >#< bprio
                                >-< "wk" >#< (work >-< subst `varUpd` workCnstr work)
                                >-< "que" >#< ppBracketsCommas (Set.toList activeWk)
                                >-< "subst" >#< subst
+                               >-< "wait info" >#< ppAssocL (assocLMapElt (ppAssocL . assocLMapElt (ppAssocLH . assocLMapElt ppCommas)) dbgWaitInfo)
                                >-< "visited" >#< ppBracketsCommas (Set.toList visitedChrWkCombis)
                                >-< "chrs" >#< vlist [ ci >|< ppParensCommas is >|< ":" >#< c | FoundChr ci c is <- foundChrs ]
                                >-< "works" >#< vlist [ ci >|< ":" >#< vlist (map ppBracketsCommas ws) | FoundWorkInx ci c ws <- foundWorkInxs ]

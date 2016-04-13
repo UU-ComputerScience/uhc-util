@@ -1,7 +1,8 @@
--- Should leave P a in the "waiting (for 'a' to be bound)" queue
-P x <=> x /= 0 | P 0.
+-- Should leave P a in the "waiting (for 'a' to be bound)" queue, only to be resolved by Q constraint
+P 1 <=> P 0.
+Q 1 x <=> x == 1.
 
-?P a.
+?P a, Q 1 a.
 
 {-
 P 1 <=> P 2.
