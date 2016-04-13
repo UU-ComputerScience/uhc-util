@@ -1,5 +1,5 @@
 -- Should leave P a in the "waiting (for 'a' to be bound)" queue
-P 1 <=> P 2.
+P x <=> x /= 0 | P 0.
 
 ?P a.
 

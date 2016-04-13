@@ -1,7 +1,7 @@
 -- Pure backtracking example, no use of global vars or priority
 -- Higher queen problems are very slow, can be used for optimizing the solver
 
-{- Performance:
+{- Performance (MacBook Pro (Retina, Mid 2012), 2.6 GHz Intel Core i7, 16 GB 1600 MHz DDR3):
 Queens 4 (2 solutions)
 --------
 real	0m0.613s
@@ -16,35 +16,30 @@ sys	0m0.836s
 -}
 
 {-
--}
 -- 4 Queens problem
 Queens <=> Row 1, Row 2, Row 3, Row 4.
 Row r <=> Queen r 1 \/ Queen r 2 \/ Queen r 3 \/ Queen r 4.
-Queen r1 c1, Queen r2 c2 ==> c1 /= c2.
-Queen r1 c1, Queen r2 c2 ==> (abs(r1 - r2)) /= (abs(c1 - c2)).
+-}
 
 {-
+-}
 -- 5 Queens problem
 Queens <=> Row 1, Row 2, Row 3, Row 4, Row 5.
 Row r <=> Queen r 1 \/ Queen r 2 \/ Queen r 3 \/ Queen r 4 \/ Queen r 5.
-Queen r1 c1, Queen r2 c2 ==> c1 /= c2.
-Queen r1 c1, Queen r2 c2 ==> (abs(r1 - r2)) /= (abs(c1 - c2)).
--}
 
 {-
 -- 6 Queens problem
 Queens <=> Row 1, Row 2, Row 3, Row 4, Row 5, Row 6.
 Row r <=> Queen r 1 \/ Queen r 2 \/ Queen r 3 \/ Queen r 4 \/ Queen r 5 \/ Queen r 6.
-Queen r1 c1, Queen r2 c2 ==> c1 /= c2.
-Queen r1 c1, Queen r2 c2 ==> (abs(r1 - r2)) /= (abs(c1 - c2)).
 -}
 
 {-
 -- 8 Queens problem
 Queens <=> Row 1, Row 2, Row 3, Row 4, Row 5, Row 6, Row 7, Row 8.
 Row r <=> Queen r 1 \/ Queen r 2 \/ Queen r 3 \/ Queen r 4 \/ Queen r 5 \/ Queen r 6 \/ Queen r 7 \/ Queen r 8.
+-}
+
 Queen r1 c1, Queen r2 c2 ==> c1 /= c2.
 Queen r1 c1, Queen r2 c2 ==> (abs(r1 - r2)) /= (abs(c1 - c2)).
--}
 
 ?Queens.

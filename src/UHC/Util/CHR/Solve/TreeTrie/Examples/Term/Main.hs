@@ -78,7 +78,8 @@ runFile runopts f = do
 mainTerm = do
   forM_
       [
-        "queens"
+        "var"
+      -- , "queens"
       -- , "leq"
       -- , "var"
       -- , "ruleprio"

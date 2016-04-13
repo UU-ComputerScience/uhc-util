@@ -29,6 +29,8 @@ module UHC.Util.CHR.Base
   
   , CHREmptySubstitution(..)
   
+  , CHRMatcherFailure(..)
+  
   , CHRMatcher
   , chrmatcherRun'
   , chrmatcherRun
@@ -41,6 +43,7 @@ module UHC.Util.CHR.Base
   , chrMatchSubst
   , chrMatchBind
   , chrMatchFail
+  , chrMatchFailNoBinding
   , chrMatchSuccess
   , chrMatchWait
   , chrMatchSucces
@@ -286,9 +289,14 @@ unCHRMatcherState :: CHRMatcherState subst k -> (StackedVarLookup subst, CHRWait
 unCHRMatcherState = id
 {-# INLINE unCHRMatcherState #-}
 
+-- | Failure of CHRMatcher
+data CHRMatcherFailure
+  = CHRMatcherFailure
+  | CHRMatcherFailure_NoBinding         -- ^ absence of binding
+
 -- | Matching monad, keeping a stacked (pair) of subst (local + global), and a set of global variables upon which the solver has to wait in order to (possibly) match further/again
 -- type CHRMatcher subst = StateT (StackedVarLookup subst, CHRWaitForVarSet subst) (Either ())
-type CHRMatcher subst = StateT (CHRMatcherState subst (SubstVarKey subst)) (Either ())
+type CHRMatcher subst = StateT (CHRMatcherState subst (SubstVarKey subst)) (Either CHRMatcherFailure)
 
 chrmatcherstateVarLookup     = fst3l
 chrmatcherstateWaitForVarSet = snd3l
@@ -348,7 +356,7 @@ chrmatcherUnlift mtch menv s = do
 chrmatcherLift :: (VarLookupCmb subst subst) => (subst -> Maybe subst) -> CHRMatcher subst ()
 chrmatcherLift f = do
     [sl,sg] <- fmap unStackedVarLookup $ getl chrmatcherstateVarLookup -- gets (unStackedVarLookup . _chrmatcherstateVarLookup)
-    maybe (throwError ()) (\snew -> chrmatcherstateVarLookup =$: (snew |+>)) $ f sg
+    maybe chrMatchFail (\snew -> chrmatcherstateVarLookup =$: (snew |+>)) $ f sg
     
 {-
 chrmatcherLift f = do
@@ -360,9 +368,9 @@ chrmatcherLift f = do
 -}
 
 -- | Run a CHRMatcher
-chrmatcherRun' :: (CHREmptySubstitution subst) => r -> (subst -> CHRWaitForVarSet subst -> r) -> CHRMatcher subst () -> CHRMatchEnv (SubstVarKey subst) -> StackedVarLookup subst -> r -- Maybe (subst, CHRWaitForVarSet subst)
+chrmatcherRun' :: (CHREmptySubstitution subst) => (CHRMatcherFailure -> r) -> (subst -> CHRWaitForVarSet subst -> r) -> CHRMatcher subst () -> CHRMatchEnv (SubstVarKey subst) -> StackedVarLookup subst -> r -- Maybe (subst, CHRWaitForVarSet subst)
 chrmatcherRun' fail succes mtch menv s = either
-    (const fail)
+    fail
     ((\(StackedVarLookup [s,_], w, _) -> succes s w) . unCHRMatcherState)
     -- (\(CHRMatcherState {_chrmatcherstateVarLookup = StackedVarLookup [s,_], _chrmatcherstateWaitForVarSet = w}) -> Just (s,w))
       $ flip execStateT (mkCHRMatcherState s Set.empty menv)
@@ -370,7 +378,7 @@ chrmatcherRun' fail succes mtch menv s = either
 
 -- | Run a CHRMatcher
 chrmatcherRun :: (CHREmptySubstitution subst) => CHRMatcher subst () -> CHRMatchEnv (SubstVarKey subst) -> subst -> Maybe (subst, CHRWaitForVarSet subst)
-chrmatcherRun mtch menv s = chrmatcherRun' Nothing (\s w -> Just (s,w)) mtch menv (StackedVarLookup [chrEmptySubst,s])
+chrmatcherRun mtch menv s = chrmatcherRun' (const Nothing) (\s w -> Just (s,w)) mtch menv (StackedVarLookup [chrEmptySubst,s])
 
 {-
   either
@@ -419,9 +427,15 @@ chrMatchSuccess :: CHRMatcher subst ()
 chrMatchSuccess = return ()
 {-# INLINE chrMatchSuccess #-}
 
+-- | Normal CHRMatcher failure
 chrMatchFail :: CHRMatcher subst a
-chrMatchFail = throwError ()
+chrMatchFail = throwError CHRMatcherFailure
 {-# INLINE chrMatchFail #-}
+
+-- | CHRMatcher failure because a variable binding is missing
+chrMatchFailNoBinding :: CHRMatcher subst a
+chrMatchFailNoBinding = throwError CHRMatcherFailure_NoBinding
+{-# INLINE chrMatchFailNoBinding #-}
 
 chrMatchSucces :: CHRMatcher subst ()
 chrMatchSucces = return ()
