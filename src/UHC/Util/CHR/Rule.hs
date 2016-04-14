@@ -119,7 +119,7 @@ instance Show (Rule c g bp p) where
 instance (PP c, PP g, PP p, PP bp) => PP (Rule c g bp p) where
   pp chr = ppMbPre (\p -> p >#< "::") rPrio $ ppMbPre (\n -> pp n >#< "@") (ruleName chr) $ base
     where base = case chr of
-            Rule {} | ruleSimpSz chr == 0                        -> ppChr ([ppL (ruleHead chr), pp  "=>"] ++ ppGB (ruleGuard chr) body)
+            Rule {} | ruleSimpSz chr == 0                        -> ppChr ([ppL (ruleHead chr), pp "==>"] ++ ppGB (ruleGuard chr) body)
                     | ruleSimpSz chr == length (ruleHead chr)    -> ppChr ([ppL (ruleHead chr), pp "<=>"] ++ ppGB (ruleGuard chr) body)
                     | length (ruleHead chr) == 0                 -> ppChr (ppGB (ruleGuard chr) body)
                     | otherwise                                  -> ppChr ([ppL (drop (ruleSimpSz chr) (ruleHead chr)), pp "\\", ppL (take (ruleSimpSz chr) (ruleHead chr)), pp "<=>"] ++ ppGB (ruleGuard chr) body)

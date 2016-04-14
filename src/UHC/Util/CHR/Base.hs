@@ -243,7 +243,7 @@ class CHREmptySubstitution subst where
 
 -- | How to match, increasingly more binding is allowed
 data CHRMatchHow
-  = CHRMatchHow_Equal               -- ^ equality check only
+  = CHRMatchHow_Check               -- ^ equality check only
   | CHRMatchHow_Match               -- ^ also allow one-directional (left to right) matching/binding of (meta)vars
   | CHRMatchHow_MatchAndWait        -- ^ also allow giving back of global vars on which we wait
   | CHRMatchHow_Unify               -- ^ also allow bi-directional matching, i.e. unification
@@ -258,7 +258,7 @@ data CHRMatchEnv k
       }
 
 emptyCHRMatchEnv :: CHRMatchEnv x
-emptyCHRMatchEnv = CHRMatchEnv {- CHRMatchHow_Equal -} (const True)
+emptyCHRMatchEnv = CHRMatchEnv {- CHRMatchHow_Check -} (const True)
 
 -------------------------------------------------------------------------------------------
 --- Wait for var
