@@ -263,19 +263,6 @@ data WaitForVar s
 -- | Index into collection of 'WaitForVar'
 type WaitInx = Int
 
-type WaitForVarWorkStoreMp s = IntMap.IntMap (WaitForVar s)
-type WaitForVarWorkMp      s = Map.Map (SubstVarKey s) IntSet.IntSet
-
-{-
--}
--- | State used during releasing vars
-data WaitForVarSplitState s
-  = WaitForVarSplitState
-      { _wfvssStoreMp       :: !(WaitForVarWorkStoreMp s)
-      , _wfvssMp            :: !(WaitForVarWorkMp      s)
-      , _wfvssReleased      :: !IntSet.IntSet                   -- ^ released WorkInx
-      }
-
 -------------------------------------------------------------------------------------------
 --- The CHR monad, state, etc. Used to interact with store and solver
 -------------------------------------------------------------------------------------------
@@ -359,11 +346,6 @@ data SolverResult subst =
     , slvresReductionSteps        :: [SolverReductionStep]            -- ^ how did we get to the result (taken from the backtrack state when a result is given back)
     }
 
-{-
-emptySolverResult :: CHREmptySubstitution s => SolverResult s
-emptySolverResult = SolverResult chrEmptySubst [] [] [] []
--}
-
 -------------------------------------------------------------------------------------------
 --- Solver: required instances
 -------------------------------------------------------------------------------------------
@@ -387,7 +369,6 @@ class ( IsCHRConstraint env c s
 -------------------------------------------------------------------------------------------
 
 mkLabel ''WaitForVar
-mkLabel ''WaitForVarSplitState
 mkLabel ''StoredCHR
 mkLabel ''CHRStore
 mkLabel ''WorkStore
@@ -468,58 +449,19 @@ addWorkToRuleWorkQueue i = do
 addWorkToWaitForVarQueue :: (MonoBacktrackPrio c g bp p s e m, Ord (SubstVarKey s)) => CHRWaitForVarSet s -> WorkInx -> CHRMonoBacktrackPrioT c g bp p s e m ()
 addWorkToWaitForVarQueue wfvs wi = do
     let w = WaitForVar wfvs wi
-{-
-    i <- modifyAndGet (sndl ^* chrbstNextFreeWaitInx) $ \i -> (i, i + 1)
-    sndl ^* chrbstWaitForVarWorkStore =$: IntMap.insert i w
-    sndl ^* chrbstWaitForVarWork =$: \m -> foldr (\wfv -> Map.insertWith IntSet.union wfv (IntSet.singleton i)) m (Set.toList wfvs)
-    --
--}
     sndl ^* chrbstWaitForVar =$: Map.unionWith (++) (Map.fromList [(v,[w]) | v <- Set.toList wfvs])
-    -- return ()
 
 -- | For (new) found subst split off work waiting for it
 splitOffResolvedWaitForVarWork :: (MonoBacktrackPrio c g bp p s e m, Ord (SubstVarKey s)) => CHRWaitForVarSet s -> CHRMonoBacktrackPrioT c g bp p s e m [WorkInx]
 splitOffResolvedWaitForVarWork vars = do
-{-
-    wm <- getl $ sndl ^* chrbstWaitForVarWork
-    ws <- getl $ sndl ^* chrbstWaitForVarWorkStore
-    -- in a separate state accumulate the work which can be redone
-    let wfvss = flip execState (WaitForVarSplitState ws wm IntSet.empty) $ do
-            -- for every variable which has been resolved
-            forM_ (Set.toList vars) $ \v -> do
-              wfvis <- fmap (Map.findWithDefault IntSet.empty v) $ getl $ wfvssMp
-              -- for every work waiting on the variable
-              forM_ (IntSet.toList wfvis) $ \wfvi -> do
-                mbwfv <- fmap (IntMap.lookup wfvi) $ getl $ wfvssStoreMp
-                when (isJust mbwfv) $ do
-                  let wfv = {- waitForVarVars ^$= Set.delete v $ -} fromJust mbwfv
-                  -- release the work for this wait
-                  wfvssReleased =$: IntSet.insert (wfv ^. waitForVarWorkInx)
-{-
-                  -- remove the variable on which the work was waiting
-                  let wfv = waitForVarVars ^$= Set.delete v $ fromJust mbwfv
-                  -- if no variables are holding back this work anymore, yield it so it can be re-entered as active work
-                  if (Set.null $ wfv ^. waitForVarVars)
-                    then do
-                      wfvssReleased =$: IntSet.insert (wfv ^. waitForVarWorkInx)
-                      -- release admin as well
-                      wfvssStoreMp =$: IntMap.delete wfvi
-                    else do
-                      wfvssStoreMp =$: IntMap.update (const $ Just wfv) wfvi
--}
-              -- remove admin for waiting for var
-              wfvssMp =$: Map.delete v
-    sndl ^* chrbstWaitForVarWork =: wfvss ^. wfvssMp
-    sndl ^* chrbstWaitForVarWorkStore =: wfvss ^. wfvssStoreMp
--}
-    
-    --
+    -- wait admin
     wm <- getl $ sndl ^* chrbstWaitForVar
-    let (wmRelease,wmRemain) = Map.partitionWithKey (\v _ -> Set.member v vars) wm
+    let -- split off the part which can be released
+        (wmRelease,wmRemain) = Map.partitionWithKey (\v _ -> Set.member v vars) wm
         wfvs = concat $ Map.elems wmRelease
+        -- get all influenced vars and released work
         (wvars, winxs) = (\(vss,wis) -> (Set.unions vss, IntSet.fromList wis)) $ unzip [ (vs,wi) | (WaitForVar {_waitForVarVars=vs, _waitForVarWorkInx=wi}) <- wfvs ]
-        -- wm2 = 
-    -- sndl ^* chrbstWaitForVar =: Map.map (filter (\(WaitForVar {_waitForVarWorkInx=wi}) -> wi `IntSet.notMember` winxs)) wmRemain
+    -- remove released work from remaining admin for influenced vars
     sndl ^* chrbstWaitForVar =:
       foldr (Map.alter $ maybe Nothing $ \wfvs -> case filter (\i -> _waitForVarWorkInx i `IntSet.notMember` winxs) wfvs of
                 [] -> Nothing
@@ -527,34 +469,9 @@ splitOffResolvedWaitForVarWork vars = do
             )
             wmRemain
             (Set.toList wvars)
-    --
-    
-    -- return $ IntSet.toList $ wfvss ^. wfvssReleased
+
+    -- released work
     return $ IntSet.toList winxs
-
-{-
--- | Debug
-getWaitForInfo :: MonoBacktrackPrio c g bp p s e m => CHRMonoBacktrackPrioT c g bp p s e m [(SubstVarKey s, [(WaitInx, [(WorkInx, [SubstVarKey s])])])]
-getWaitForInfo = do
-    bst <- getl sndl
-    return
-      [ ( v
-        , [ (wfvi, map (\i -> (_waitForVarWorkInx i, Set.toList $ _waitForVarVars i)) $ maybeToList $ IntMap.lookup wfvi (bst ^. chrbstWaitForVarWorkStore))
-          | wfvi <- IntSet.toList wfvis
-          ]
-        )
-      | (v,wfvis) <- Map.toList $ bst ^. chrbstWaitForVarWork
-      ]
--}
-{-
-          , slvresWaitVarCnstr = IntSet.toList $ IntSet.fromList
-              [ wi -- wfv ^. waitForVarWorkInx
-              | wfvis <- Map.elems $ bst ^. chrbstWaitForVarWork
-              , wfvi <- IntSet.toList wfvis
-              , wi <- maybeToList $ fmap _waitForVarWorkInx $ IntMap.lookup wfvi (bst ^. chrbstWaitForVarWorkStore)
-              ]
--}
-
 
 
 -- | Add work to the solve queue
@@ -685,14 +602,6 @@ slvSucces = do
           , slvresResidualCnstr = reverse $ bst ^. chrbstResidualQueue
           , slvresWorkCnstr = reverse $ bst ^. chrbstLeftWorkQueue
           , slvresWaitVarCnstr = [ wfv ^. waitForVarWorkInx | wfvs <- Map.elems $ bst ^. chrbstWaitForVar, wfv <- wfvs ]
-{-
-          , slvresWaitVarCnstr = IntSet.toList $ IntSet.fromList
-              [ wi -- wfv ^. waitForVarWorkInx
-              | wfvis <- Map.elems $ bst ^. chrbstWaitForVarWork
-              , wfvi <- IntSet.toList wfvis
-              , wi <- maybeToList $ fmap _waitForVarWorkInx $ IntMap.lookup wfvi (bst ^. chrbstWaitForVarWorkStore)
-              ]
--}
           , slvresReductionSteps = reverse $ bst ^. chrbstReductionSteps
           }
     -- when ready, just return and backtrack into the scheduler
@@ -703,7 +612,6 @@ slvFail :: MonoBacktrackPrio c g bp p s e m => CHRMonoBacktrackPrioT c g bp p s 
 slvFail = do
     -- failing just terminates this slv, scheduling to another, if any
     slvScheduleRun
-    -- mzero
 {-# INLINE slvFail #-}
 
 -- | Schedule a solver with the current backtrack prio, assuming this is the same as 'slv' has administered itself in its backtracking state
@@ -781,7 +689,7 @@ ppSolverResult verbosity (SolverResult {slvresSubst = s, slvresResidualCnstr = r
     let pextra | verbosity >= Verbosity_Normal = 
                       "Residue" >-< indent 2 (vlist rs)
                   >-< "Wait"    >-< indent 2 (vlist wvs)
-                  >-< "Stats"   >-< indent 2 (ppAssocL [ ("Nr of solve steps", pp nrsteps) ])
+                  >-< "Stats"   >-< indent 2 (ppAssocLV [ ("Count of overall solve steps", pp nrsteps) ])
                   >-< "Steps"   >-< indent 2 (vlist ss)
                | otherwise = Pretty.empty
     return $ 
@@ -1022,16 +930,14 @@ chrSolve opts env = slv
 
                     bprio <- getl $ sndl ^* chrbstBacktrackPrio
                     subst <- getl $ sndl ^* chrbstSolveSubst
-                    -- dbgWaitInfo1 <- getWaitForInfo
-                    dbgWaitInfo2 <- getl $ sndl ^* chrbstWaitForVar
+                    dbgWaitInfo <- getl $ sndl ^* chrbstWaitForVar
                     -- sque <- getl $ fstl ^* chrgstScheduleQueue
                     -- debug info
                     let dbg =      "bprio" >#< bprio
                                >-< "wk" >#< (work >-< subst `varUpd` workCnstr work)
                                >-< "que" >#< ppBracketsCommas (Set.toList activeWk)
                                >-< "subst" >#< subst
-                               -- >-< "wait1" >#< ppAssocL (assocLMapElt (ppAssocL . assocLMapElt (ppAssocLH . assocLMapElt ppCommas)) dbgWaitInfo1)
-                               >-< "wait2" >#< ppAssocL (assocLMapElt (ppAssocL . map (\i -> (_waitForVarWorkInx i, ppCommas $ Set.toList $ _waitForVarVars i))) $ Map.toList dbgWaitInfo2)
+                               >-< "wait" >#< ppAssocL (assocLMapElt (ppAssocL . map (\i -> (_waitForVarWorkInx i, ppCommas $ Set.toList $ _waitForVarVars i))) $ Map.toList dbgWaitInfo)
                                >-< "visited" >#< ppBracketsCommas (Set.toList visitedChrWkCombis)
                                >-< "chrs" >#< vlist [ ci >|< ppParensCommas is >|< ":" >#< c | FoundChr ci c is <- foundChrs ]
                                >-< "works" >#< vlist [ ci >|< ":" >#< vlist (map ppBracketsCommas ws) | FoundWorkInx ci c ws <- foundWorkInxs ]
