@@ -28,10 +28,12 @@ import           UHC.Util.CHR.Rule
 import           UHC.Util.Utils
 import           UHC.Util.AssocL
 import           UHC.Util.Lens
+import           UHC.Util.CHR.GTerm
 import           Data.Typeable
 import           Data.Maybe
 import qualified Data.Map as Map
 import qualified Data.Set as Set
+import qualified Data.List as List
 import           Control.Monad
 import           Control.Monad.IO.Class
 import           Control.Applicative
@@ -60,6 +62,7 @@ instance PP Key where
 data Tm
   = Tm_Var Var              -- ^ variable (to be substituted)
   | Tm_Int Int              -- ^ int value (for arithmetic)
+  | Tm_Bool Bool            -- ^ bool value
   | Tm_Con String [Tm]      -- ^ general term structure
   | Tm_Op  POp    [Tm]      -- ^ interpretable (when solving) term structure
   deriving (Show, Eq, Ord, Typeable, Generic)
@@ -75,6 +78,7 @@ instance PP Tm where
   pp (Tm_Op  o [a    ]) = ppParens $ o >#< a
   pp (Tm_Op  o [a1,a2]) = ppParens $ a1 >#< o >#< a2
   pp (Tm_Int i        ) = pp i
+  pp (Tm_Bool b       ) = pp b
 
 instance Serialize Tm
 
@@ -133,6 +137,7 @@ instance TTKeyable Tm where
   toTTKeyParentChildren' o (Tm_Var v) | ttkoptsVarsAsWild o = (TT1K_Any, ttkChildren [])
                                       | otherwise           = (TT1K_One $ Key_Var v, ttkChildren [])
   toTTKeyParentChildren' o (Tm_Int i) = (TT1K_One $ Key_Int i, ttkChildren [])
+  toTTKeyParentChildren' o (Tm_Bool i) = (TT1K_One $ Key_Int $ fromEnum i, ttkChildren [])
   toTTKeyParentChildren' o (Tm_Con c as) = (TT1K_One $ Key_Str c, ttkChildren $ map (toTTKey' o) as)
   toTTKeyParentChildren' o (Tm_Op op as) = (TT1K_One $ Key_Op op, ttkChildren $ map (toTTKey' o) as)
 
@@ -149,6 +154,9 @@ data POp
     PBOp_Add
   | PBOp_Sub
   | PBOp_Mul
+  | PBOp_Mod
+  | PBOp_Lt
+  | PBOp_Le
   
     -- unary
   | PUOp_Abs
@@ -158,6 +166,9 @@ instance PP POp where
   pp PBOp_Add = pp "+"
   pp PBOp_Sub = pp "-"
   pp PBOp_Mul = pp "*"
+  pp PBOp_Mod = pp "mod"
+  pp PBOp_Lt  = pp "<"
+  pp PBOp_Le  = pp "<="
   pp PUOp_Abs = pp "abs"
 
 data P
@@ -286,7 +297,7 @@ instance CHRCheckable E G S where
         s <- getl chrmatcherstateVarLookup
         chrmatcherRun'
           (\e -> case e of {CHRMatcherFailure -> chrMatchSuccess; _ -> chrMatchFail})
-          (\_ _ -> chrMatchFail)
+          (\_ _ _ -> chrMatchFail)
           (chrCheckM e (G_Eq t1 t2)) menv s
 
 instance CHRMatchable E Tm S where
@@ -300,6 +311,7 @@ instance CHRMatchable E Tm S where
         (Tm_Op  o1 as1, t2           ) | how == CHRMatchHow_Unify         -> evop o1 as1 >>= \t1 -> chrUnifyM how e t1 t2
         (t1           , Tm_Op  o2 as2) | how == CHRMatchHow_Unify         -> evop o2 as2 >>= \t2 -> chrUnifyM how e t1 t2
         (Tm_Int i1    , Tm_Int i2    ) | i1 == i2                         -> chrMatchSuccess
+        (Tm_Bool b1   , Tm_Bool b2   ) | b1 == b2                         -> chrMatchSuccess
         (Tm_Var v1    , Tm_Var v2    ) | v1 == v2                         -> chrMatchSuccess
                                        | how == CHRMatchHow_Check         -> varContinue
                                                                                (varContinue (waitv v1 >> waitv v2) (chrUnifyM how e t1) v2)
@@ -322,19 +334,29 @@ instance CHRMatchable E Tm S where
         _                                                                 -> chrMatchFail
     where
       varContinue = varlookupResolveAndContinueM tmIsVar chrMatchSubst
-      evop o xs = do
-          xs <- forM xs ev 
+      evop = tmEvalOp
+      ev = tmEval
+
+tmEval :: Tm -> CHRMatcher S Tm
+tmEval x = case x of
+          Tm_Int _    -> return x
+          Tm_Var v    -> varlookupResolveAndContinueM tmIsVar chrMatchSubst chrMatchFailNoBinding tmEval v
+          Tm_Op  o xs -> tmEvalOp o xs
+          _           -> chrMatchFail
+
+tmEvalOp :: POp -> [Tm] -> CHRMatcher S Tm
+tmEvalOp o xs = do
+          xs <- forM xs tmEval 
           case (o, xs) of
             (PUOp_Abs, [Tm_Int x]) -> ret $ abs x
             (PBOp_Add, [Tm_Int x, Tm_Int y]) -> ret $ x + y
             (PBOp_Sub, [Tm_Int x, Tm_Int y]) -> ret $ x - y
             (PBOp_Mul, [Tm_Int x, Tm_Int y]) -> ret $ x * y
-        where ret x = return $ Tm_Int x
-      ev x = case x of
-          Tm_Int _    -> return x
-          Tm_Var v    -> varContinue chrMatchFailNoBinding ev v
-          Tm_Op  o xs -> evop o xs
-          _           -> chrMatchFail
+            (PBOp_Mod, [Tm_Int x, Tm_Int y]) -> ret $ x `mod` y
+            (PBOp_Lt , [Tm_Int x, Tm_Int y]) -> retb $ x < y
+            (PBOp_Le , [Tm_Int x, Tm_Int y]) -> retb $ x <= y
+        where ret  x = return $ Tm_Int  x
+              retb x = return $ Tm_Bool x
 
 instance CHRMatchable E C S where
   chrUnifyM how e c1 c2 = do
@@ -347,7 +369,7 @@ instance CHRMatchable E C S where
     CB_Ne x y -> do -- chrUnifyM CHRMatchHow_Unify e x y
         menv <- getl chrmatcherstateEnv
         s <- getl chrmatcherstateVarLookup
-        chrmatcherRun' (\_ -> chrMatchSuccess) (\_ _ -> chrMatchFail) (chrBuiltinSolveM e (CB_Eq x y)) menv s
+        chrmatcherRun' (\_ -> chrMatchSuccess) (\_ _ _ -> chrMatchFail) (chrBuiltinSolveM e (CB_Eq x y)) menv s
 
 instance CHRMatchable E P S where
   chrUnifyM how e p1 p2 = do
@@ -359,10 +381,15 @@ instance CHRMatchable E P S where
 type instance CHRPrioEvaluatableVal Tm = Prio
 
 instance CHRPrioEvaluatable E Tm S where
+  chrPrioEval e s t = case chrmatcherRun' (\_ -> Tm_Int $ fromIntegral $ unPrio $ (minBound :: Prio)) (\_ _ x -> x) (tmEval t) emptyCHRMatchEnv (StackedVarLookup [s]) of
+    Tm_Int i -> fromIntegral i
+    t        -> minBound
+{-
   chrPrioEval e s t = case t of
     Tm_Int i -> fromIntegral i
     Tm_Var v -> maybe minBound (chrPrioEval e s) $ varlookupResolveVar tmIsVar v s
-    _        -> minBound
+    t        -> chrmatcherRun' (\_ -> minBound) (\_ _ x -> x) (tmEval t) emptyCHRMatchEnv (StackedVarLookup [s])
+-}
   chrPrioLift = Tm_Int . fromIntegral
 
 type instance CHRPrioEvaluatableVal P = Prio
@@ -374,11 +401,75 @@ instance CHRPrioEvaluatable E P S where
         PBOp_Add -> p1' + p2'
         PBOp_Sub -> p1' - p2'
         PBOp_Mul -> p1' * p2'
+        PBOp_Mod -> p1' `mod` p2'
       where p1' = chrPrioEval e s p1
             p2' = chrPrioEval e s p2
   chrPrioLift = P_Tm . chrPrioLift
 
 -- instance M.IsCHRSolvable E C G S where
+
+--------------------------------------------------------
+
+instance GTermAs C G P P Tm where
+  asHeadConstraint t = case t of
+    GTm_Con c a -> forM a asTm >>= (return . C_Con c)
+    t -> gtermasFail t "not a constraint"
+
+  asBodyConstraint t = case t of
+    GTm_Con "Fail" [] -> return CB_Fail
+    GTm_Con o [a,b] | isJust o' -> do
+        a <- asTm a
+        b <- asTm b
+        return $ fromJust o' a b
+      where o' = List.lookup o [("==", CB_Eq), ("/=", CB_Ne)]
+    t -> asHeadConstraint t
+
+  asGuard t = case t of
+    GTm_Con o [a,b] | isJust o' -> do
+        a <- asTm a
+        b <- asTm b
+        return $ fromJust o' a b
+      where o' = List.lookup o [("==", G_Eq), ("/=", G_Ne)]
+    t -> gtermasFail t "not a guard"
+    
+  asHeadBacktrackPrio = fmap P_Tm . asTm
+
+  asAltBacktrackPrio = asHeadBacktrackPrio
+  asRulePrio = asHeadBacktrackPrio
+
+  asTm t = case t of
+    GTm_Con "True" [] -> return $ Tm_Bool True
+    GTm_Con "False" [] -> return $ Tm_Bool False
+    GTm_Con o [a] | isJust o' -> do
+        a <- asTm a
+        return $ Tm_Op (fromJust o') [a]
+      where o' = List.lookup o [("Abs", PUOp_Abs)]
+    GTm_Con o [a,b] | isJust o' -> do
+        a <- asTm a
+        b <- asTm b
+        return $ Tm_Op (fromJust o') [a,b]
+      where o' = List.lookup o [("+", PBOp_Add), ("-", PBOp_Sub), ("*", PBOp_Mul), ("Mod", PBOp_Mod), ("<", PBOp_Lt), ("<=", PBOp_Le)]
+    GTm_Con c a -> forM a asTm >>= (return . Tm_Con c)
+    GTm_Var v -> return $ Tm_Var v
+    GTm_Int i -> return $ Tm_Int (fromInteger i)
+    t -> gtermasFail t "not a term"
+
+{-
+class GTermAs cnstr guard bprio prio | cnstr -> guard bprio prio, guard -> cnstr bprio prio, bprio -> cnstr guard prio, prio -> cnstr guard bprio  where
+  --
+  asHeadConstraint :: GTm -> GTermAsM cnstr
+  --
+  asBodyConstraint :: GTm -> GTermAsM cnstr
+  --
+  asGuard :: GTm -> GTermAsM guard
+  --
+  asHeadBacktrackPrio :: GTm -> GTermAsM bprio
+  --
+  asAltBacktrackPrio :: GTm -> GTermAsM bprio
+  --
+  asRulePrio :: GTm -> GTermAsM prio
+
+-}
 
 --------------------------------------------------------
 -- leq example, backtrack prio specific

@@ -368,17 +368,16 @@ chrmatcherLift f = do
 -}
 
 -- | Run a CHRMatcher
-chrmatcherRun' :: (CHREmptySubstitution subst) => (CHRMatcherFailure -> r) -> (subst -> CHRWaitForVarSet subst -> r) -> CHRMatcher subst () -> CHRMatchEnv (SubstVarKey subst) -> StackedVarLookup subst -> r -- Maybe (subst, CHRWaitForVarSet subst)
+chrmatcherRun' :: (CHREmptySubstitution subst) => (CHRMatcherFailure -> r) -> (subst -> CHRWaitForVarSet subst -> x -> r) -> CHRMatcher subst x -> CHRMatchEnv (SubstVarKey subst) -> StackedVarLookup subst -> r
 chrmatcherRun' fail succes mtch menv s = either
     fail
-    ((\(StackedVarLookup [s,_], w, _) -> succes s w) . unCHRMatcherState)
-    -- (\(CHRMatcherState {_chrmatcherstateVarLookup = StackedVarLookup [s,_], _chrmatcherstateWaitForVarSet = w}) -> Just (s,w))
-      $ flip execStateT (mkCHRMatcherState s Set.empty menv)
+    ((\(x,ms) -> let (StackedVarLookup s, w, _) = unCHRMatcherState ms in succes (head s) w x))
+      $ flip runStateT (mkCHRMatcherState s Set.empty menv)
       $ mtch
 
 -- | Run a CHRMatcher
 chrmatcherRun :: (CHREmptySubstitution subst) => CHRMatcher subst () -> CHRMatchEnv (SubstVarKey subst) -> subst -> Maybe (subst, CHRWaitForVarSet subst)
-chrmatcherRun mtch menv s = chrmatcherRun' (const Nothing) (\s w -> Just (s,w)) mtch menv (StackedVarLookup [chrEmptySubst,s])
+chrmatcherRun mtch menv s = chrmatcherRun' (const Nothing) (\s w _ -> Just (s,w)) mtch menv (StackedVarLookup [chrEmptySubst,s])
 
 {-
   either

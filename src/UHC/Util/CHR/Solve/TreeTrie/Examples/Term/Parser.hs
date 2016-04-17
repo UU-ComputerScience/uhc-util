@@ -31,8 +31,8 @@ instance CHRParsable C G P P (Rule C G P P) where
   pChrBacktrackPrio           =   pP
   pChrRulePrio                =   pP
   
-  scanChrExtraKeywordsTxt   _ = ["fail", "abs"]
-  scanChrExtraKeywordsOps   _ = ["==", "/="]
+  scanChrExtraKeywordsTxt   _ = ["fail", "abs", "mod"]
+  scanChrExtraKeywordsOps   _ = ["==", "/=", "+", "*", "-", "<", "<="]
   scanChrExtraSpecialChars  _ =  ""
   scanChrExtraOpChars       _ =  ""
 
@@ -60,11 +60,13 @@ pTm = pTm' addp
           addp pB p =
                   p
               <|> Tm_Op  <$> (PUOp_Abs <$ pKey "abs") <*> ((:[]) <$> pB)
+              <|> Tm_Op  <$> (PBOp_Mod <$ pKey "mod") <*> ((\x y -> [x,y]) <$> pB <*> pB)
               <|> pBOp (\o x y -> Tm_Op o [x,y]) pB
 
 pBOp :: (POp -> x -> x -> x) -> Pr x -> Pr x
 pBOp mkO pB
-  = pChainr_ng (mkO <$> (PBOp_Add <$ pKey "+" <|> PBOp_Sub <$ pKey "-"))
+  = pChainr_ng (mkO <$> (PBOp_Lt  <$ pKey "<" <|> PBOp_Le  <$ pKey "<="))
+  $ pChainr_ng (mkO <$> (PBOp_Add <$ pKey "+" <|> PBOp_Sub <$ pKey "-" ))
   $ pChainr_ng (mkO <$> (PBOp_Mul <$ pKey "*"))
   $ pB
 

@@ -40,6 +40,6 @@ Row r <=> Queen r 1 \/ Queen r 2 \/ Queen r 3 \/ Queen r 4 \/ Queen r 5 \/ Queen
 -}
 
 Queen r1 c1, Queen r2 c2 ==> c1 /= c2.
-Queen r1 c1, Queen r2 c2 ==> (abs(r1 - r2)) /= (abs(c1 - c2)).
+Queen r1 c1, Queen r2 c2 ==> Abs (r1 - r2) /= Abs (c1 - c2).
 
 ?Queens.

@@ -17,7 +17,7 @@ import           UU.Scanner
 
 import           UHC.Util.Pretty
 import           UHC.Util.CHR.Rule
-import           UHC.Util.CHR.Rule.Parser
+import           UHC.Util.CHR.GTerm.Parser
 import           UHC.Util.CHR.Solve.TreeTrie.MonoBacktrackPrio as MBP
 import           UHC.Util.CHR.Solve.TreeTrie.Examples.Term.AST
 import           UHC.Util.CHR.Solve.TreeTrie.Examples.Term.Parser
@@ -39,36 +39,42 @@ runFile :: [RunOpt] -> FilePath -> IO ()
 runFile runopts f = do
     -- scan, parse
     msg $ "READ " ++ f
+{-
     toks <- scanFile
       ([] ++ scanChrExtraKeywordsTxt dummy)
-      (["\\", "=>", "==>", "<=>", ".", "+", "*", "-", "::", "@", "|", "\\/", "?"] ++ scanChrExtraKeywordsOps dummy)
+      (["\\", "=>", "==>", "<=>", ".", "::", "@", "|", "\\/", "?"] ++ scanChrExtraKeywordsOps dummy)
       ("()," ++ scanChrExtraSpecialChars dummy)
       ("=/\\><.+*-@:|?" ++ scanChrExtraOpChars dummy)
       f
     (prog, query) <- parseIOMessage show pProg toks
+-}
     
-    -- print program
-    putPPLn $ "Rules" >-< indent 2 (vlist $ map pp prog)
-    putPPLn $ "Query" >-< indent 2 (vlist $ map pp query)
+    mbParse <- parseFile f
+    case mbParse of
+      Left e -> putPPLn e
+      Right (prog, query) -> do
+        -- print program
+        putPPLn $ "Rules" >-< indent 2 (vlist $ map pp prog)
+        putPPLn $ "Query" >-< indent 2 (vlist $ map pp query)
 
-    -- solve
-    msg $ "SOLVE " ++ f
-    let sopts = defaultCHRSolveOpts
-                  { chrslvOptSucceedOnLeftoverWork = RunOpt_SucceedOnLeftoverWork `elem` runopts
-                  , chrslvOptSucceedOnFailedSolve  = RunOpt_SucceedOnFailedSolve  `elem` runopts
-                  }
-        mbp :: CHRMonoBacktrackPrioT C G P P S E IO (SolverResult S)
-        mbp = do
-          mapM_ addRule prog
-          mapM_ addConstraintAsWork query
-          r <- chrSolve sopts ()
-          let verbosity = maximum $ [Verbosity_Quiet] ++ maybeToList (mbRunOptVerbosity runopts) ++ (if RunOpt_DebugTrace `elem` runopts then [Verbosity_ALot] else [])
-          ppSolverResult verbosity r >>= \sr -> liftIO $ putPPLn $ "Solution" >-< indent 2 sr
-          return r
-    runCHRMonoBacktrackPrioT (emptyCHRGlobState) (emptyCHRBackState {- _chrbstBacktrackPrio=0 -}) {- 0 -} mbp
+        -- solve
+        msg $ "SOLVE " ++ f
+        let sopts = defaultCHRSolveOpts
+                      { chrslvOptSucceedOnLeftoverWork = RunOpt_SucceedOnLeftoverWork `elem` runopts
+                      , chrslvOptSucceedOnFailedSolve  = RunOpt_SucceedOnFailedSolve  `elem` runopts
+                      }
+            mbp :: CHRMonoBacktrackPrioT C G P P S E IO (SolverResult S)
+            mbp = do
+              mapM_ addRule prog
+              mapM_ addConstraintAsWork query
+              r <- chrSolve sopts ()
+              let verbosity = maximum $ [Verbosity_Quiet] ++ maybeToList (mbRunOptVerbosity runopts) ++ (if RunOpt_DebugTrace `elem` runopts then [Verbosity_ALot] else [])
+              ppSolverResult verbosity r >>= \sr -> liftIO $ putPPLn $ "Solution" >-< indent 2 sr
+              return r
+        runCHRMonoBacktrackPrioT (emptyCHRGlobState) (emptyCHRBackState {- _chrbstBacktrackPrio=0 -}) {- 0 -} mbp
     
-    -- done
-    msg $ "DONE " ++ f
+        -- done
+        msg $ "DONE " ++ f
     
   where
     msg m = putStrLn $ "---------------- " ++ m ++ " ----------------"
@@ -78,7 +84,7 @@ runFile runopts f = do
 mainTerm = do
   forM_
       [
-        "leq"
+        "ruleprio2"
       -- , "queens"
       -- , "leq"
       -- , "var"
