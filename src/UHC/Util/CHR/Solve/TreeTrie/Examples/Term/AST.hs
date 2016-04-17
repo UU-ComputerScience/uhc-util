@@ -98,18 +98,6 @@ instance PP C where
 
 instance Serialize C
 
-{-
--- | Builtin
-data B
-  = B_Eq Tm Tm          -- ^ unification
-  deriving (Show, Eq, Ord, Typeable, Generic)
-
-instance PP B where
-  pp (B_Eq x y) = "unify" >#< ppParensCommas [x,y]
-
-instance Serialize B
--}
-
 -- | Guard
 data G
   = G_Eq Tm Tm          -- ^ check for equality
@@ -126,12 +114,6 @@ type instance TrTrKey Tm = Key
 type instance TrTrKey C = Key
 type instance TTKey Tm = Key
 type instance TTKey C = Key
-
-{-
-instance MkSolverConstraint C C where
-  toSolverConstraint = id
-  fromSolverConstraint = Just
--}
 
 instance TTKeyable Tm where
   toTTKeyParentChildren' o (Tm_Var v) | ttkoptsVarsAsWild o = (TT1K_Any, ttkChildren [])
@@ -171,14 +153,12 @@ instance PP POp where
   pp PBOp_Le  = pp "<="
   pp PUOp_Abs = pp "abs"
 
-data P
+newtype P
   = P_Tm Tm
-  | P_Op POp P P
   deriving (Eq, Ord, Show, Generic)
 
 instance PP P where
   pp (P_Tm t) = pp t
-  pp (P_Op o x y) = (x >#< o >#< y)
 
 instance Serialize POp
 
@@ -192,13 +172,6 @@ type S = Map.Map Var Tm
 
 type instance SubstVarKey S = Var
 type instance SubstVarVal S = Tm
-
-{-
-sLkup :: Var -> S -> Maybe Tm
-sLkup v s = Map.lookup v s >>= \t -> case t of
-  Tm_Var v -> sLkup v s
-  t        -> Just t
--}
 
 instance VarLookupBase S Var Tm where
   varlookupSingletonWithMetaLev _ = Map.singleton
@@ -233,7 +206,6 @@ instance VarUpdatable Tm S where
 instance VarUpdatable P S where
   s `varUpd` p = case p of
     P_Tm t -> P_Tm (s `varUpd` t)
-    P_Op o x1 x2 -> P_Op o (s `varUpd` x1) (s `varUpd` x2)
 
 instance VarUpdatable G S where
   s `varUpd` G_Eq x y = G_Eq (s `varUpd` x) (s `varUpd` y)
@@ -245,12 +217,6 @@ instance VarUpdatable C S where
     CB_Eq x y  -> CB_Eq (s `varUpd` x) (s `varUpd` y)
     CB_Ne x y  -> CB_Ne (s `varUpd` x) (s `varUpd` y)
     c          -> c
-
-{-
-instance VarUpdatable B S where
-  s `varUpd` c = case c of
-    B_Eq x y -> B_Eq (s `varUpd` x) (s `varUpd` y)
--}
 
 instance VarExtractable Tm where
   varFreeSet (Tm_Var v) = Set.singleton v
@@ -269,7 +235,6 @@ instance VarExtractable C where
 
 instance VarExtractable P where
   varFreeSet (P_Tm t) = varFreeSet t
-  varFreeSet (P_Op o x1 x2) = Set.unions [varFreeSet x1, varFreeSet x2]
 
 instance CHREmptySubstitution S where
   chrEmptySubst = Map.empty
@@ -362,11 +327,11 @@ instance CHRMatchable E C S where
   chrUnifyM how e c1 c2 = do
     case (c1, c2) of
       (C_Con c1 as1, C_Con c2 as2) | c1 == c2 && length as1 == length as2 
-                                                 -> sequence_ (zipWith (chrUnifyM how e) as1 as2)
-      _                                          -> chrMatchFail
+        -> sequence_ (zipWith (chrUnifyM how e) as1 as2)
+      _ -> chrMatchFail
   chrBuiltinSolveM e b = case b of
     CB_Eq x y -> chrUnifyM CHRMatchHow_Unify e x y
-    CB_Ne x y -> do -- chrUnifyM CHRMatchHow_Unify e x y
+    CB_Ne x y -> do
         menv <- getl chrmatcherstateEnv
         s <- getl chrmatcherstateVarLookup
         chrmatcherRun' (\_ -> chrMatchSuccess) (\_ _ _ -> chrMatchFail) (chrBuiltinSolveM e (CB_Eq x y)) menv s
@@ -375,8 +340,6 @@ instance CHRMatchable E P S where
   chrUnifyM how e p1 p2 = do
     case (p1, p2) of
       (P_Tm   t1     , P_Tm   t2     ) -> chrUnifyM how e t1  t2
-      (P_Op _ p11 p12, P_Op _ p21 p22) -> chrUnifyM how e p11 p21 >> chrUnifyM how e p12 p22
-      _                                -> chrMatchFail
 
 type instance CHRPrioEvaluatableVal Tm = Prio
 
@@ -384,12 +347,6 @@ instance CHRPrioEvaluatable E Tm S where
   chrPrioEval e s t = case chrmatcherRun' (\_ -> Tm_Int $ fromIntegral $ unPrio $ (minBound :: Prio)) (\_ _ x -> x) (tmEval t) emptyCHRMatchEnv (StackedVarLookup [s]) of
     Tm_Int i -> fromIntegral i
     t        -> minBound
-{-
-  chrPrioEval e s t = case t of
-    Tm_Int i -> fromIntegral i
-    Tm_Var v -> maybe minBound (chrPrioEval e s) $ varlookupResolveVar tmIsVar v s
-    t        -> chrmatcherRun' (\_ -> minBound) (\_ _ x -> x) (tmEval t) emptyCHRMatchEnv (StackedVarLookup [s])
--}
   chrPrioLift = Tm_Int . fromIntegral
 
 type instance CHRPrioEvaluatableVal P = Prio
@@ -397,16 +354,8 @@ type instance CHRPrioEvaluatableVal P = Prio
 instance CHRPrioEvaluatable E P S where
   chrPrioEval e s p = case p of
     P_Tm t -> chrPrioEval e s t
-    P_Op o p1 p2 -> case o of
-        PBOp_Add -> p1' + p2'
-        PBOp_Sub -> p1' - p2'
-        PBOp_Mul -> p1' * p2'
-        PBOp_Mod -> p1' `mod` p2'
-      where p1' = chrPrioEval e s p1
-            p2' = chrPrioEval e s p2
   chrPrioLift = P_Tm . chrPrioLift
 
--- instance M.IsCHRSolvable E C G S where
 
 --------------------------------------------------------
 
@@ -454,29 +403,10 @@ instance GTermAs C G P P Tm where
     GTm_Int i -> return $ Tm_Int (fromInteger i)
     t -> gtermasFail t "not a term"
 
-{-
-class GTermAs cnstr guard bprio prio | cnstr -> guard bprio prio, guard -> cnstr bprio prio, bprio -> cnstr guard prio, prio -> cnstr guard bprio  where
-  --
-  asHeadConstraint :: GTm -> GTermAsM cnstr
-  --
-  asBodyConstraint :: GTm -> GTermAsM cnstr
-  --
-  asGuard :: GTm -> GTermAsM guard
-  --
-  asHeadBacktrackPrio :: GTm -> GTermAsM bprio
-  --
-  asAltBacktrackPrio :: GTm -> GTermAsM bprio
-  --
-  asRulePrio :: GTm -> GTermAsM prio
-
--}
-
 --------------------------------------------------------
 -- leq example, backtrack prio specific
 
-instance MBP.IsCHRSolvable E C G P P S where
+instance MBP.IsCHRSolvable E C G P P S
 
 instance MBP.MonoBacktrackPrio C G P P S E IO
 
-
--- mainMBP = MBP.runCHRMonoBacktrackPrioT (MBP.emptyCHRGlobState) (MBP.emptyCHRBackState) mbp2
