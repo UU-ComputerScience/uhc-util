@@ -183,7 +183,7 @@ type instance VarLookupKey S = Var
 type instance VarLookupVal S = Tm
 
 instance PP S where
-  pp = ppAssocLH . Map.toList
+  pp = ppAssocLV . Map.toList
 
 type instance ExtrValVarKey G = Var
 type instance ExtrValVarKey C = Var

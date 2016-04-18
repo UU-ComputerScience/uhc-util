@@ -27,14 +27,14 @@ gamLookupNil     @ InGamma (x : t) (Nil               ) <=> Fail.
 -- % GENERATION
 -- % ==========
 
-typingInt @ Typing gamma l (Int x) (Con (Int) (Nil) : Star) <=> .
+typingInt @ Typing gamma l (TmInt x) t <=> t == (Con (Int) (Nil) : Star).
 
 -- 
 --     x : t \in Gamma
 -- ---------------------- [VAR]
 -- Gamma |-@L x : t ~~> -
 
-typingVar @ Typing gamma l (Var x) t <=> InGamma (x : t) gamma.
+typingVar @ Typing gamma l (TmVar x) t <=> InGamma (x : t) gamma.
 
 -- 
 -- alpha fresh   A := var(alpha,L) : *   Gamma, x : A |-@L e : t ~~> C
@@ -42,14 +42,21 @@ typingVar @ Typing gamma l (Var x) t <=> InGamma (x : t) gamma.
 --                Gamma |-@L \x. e : A -> t ~~> C
 
 -- ?freshness, piggyback on CHR vars?
-typingLam @ Typing gamma l (Lam x e) (a -> t) <=> Typing (Cons (x : a) gamma) l e t, a == (Var alpha l : Star).
+typingLam @ Typing gamma l (TmLam x e) t
+  <=> Typing (Cons (x : a) gamma) l e et
+    , a == (Var alpha l : Star)
+    , t == (a -> et)
+    .
 
 -- 
 --    Gamma, x : s |-@L e : t ~~> C
 -- --------------------------------------
 -- Gamma |-@L \(x :: s). e : s -> t ~~> C
 
-typingLamA @ Typing gamma l (LamA x s e) (s -> t) <=> Typing (Cons (x : s) gamma) l e t.
+typingLamA @ Typing gamma l (TmLamA x s e) t
+  <=> Typing (Cons (x : s) gamma) l e et
+    , t == (s -> et)
+    .
 
 -- 
 --   alpha, beta fresh   A := var(alpha,L) : *   B := var(beta,L) : *
@@ -59,9 +66,19 @@ typingLamA @ Typing gamma l (LamA x s e) (s -> t) <=> Typing (Cons (x : s) gamma
 -- Gamma |-@L e1 e2 : var(beta,L) ~~> C1, c(t1 <= A -i> B, L)
 --                                      , c(({gs} C2 => t2) <= A, L)
 
-typingApp @ Typing gamma l (App e1 e2) (Var beta l)
+-- ?Fv
+-- ?{gs} notation
+-- ?Binding of constraints to c1/c2 is lifting from meta to reifiable
+-- ?use of => reserved
+typingApp @ Typing gamma l (TmApp e1 e2) t
   <=> Typing gamma e1 t1
     , Typing gamma e2 t2
+    , a == (Var alpha l : Star)
+    , b == (Var beta  l : Star)
+    , gs == ((Fv t2 `FvUnion` Fv c2) `FvDifference` (Fv gamma `FvUnion` (Fv t1 `FvUnion` Fv c1)))
+    , C (                 t1  <= (a ->> b)) l
+    , C ((FvAnn gs c2 =>> t2) <=  a       ) l
+    , t == (Var beta l)
     .
 
 -- 
@@ -315,6 +332,7 @@ typeDeconClash @ C ((Con c as : k1) ~* (Con d bs : k2)) l <=> c /= d | Fail.
 -- # > To be applied once we are stuck in solving.
 
 
-? Typing (Nil) (LevZero) (App (Lam x x) (Int 1)) t.
+? Typing (Nil) (LevZero) (TmApp (TmLam x (TmVar x)) (TmInt 1)) t.
+-- ? Typing (Nil) (LevZero) (TmInt 1) t.
 -- ? Dummy .
 
