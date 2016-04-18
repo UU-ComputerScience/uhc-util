@@ -116,6 +116,9 @@ data VarMp' k v
       }
   deriving (Eq, Ord, Typeable, Generic)
 
+type instance VarLookupKey (VarMp' k v) = k
+type instance VarLookupVal (VarMp' k v) = v
+
 -- get the base meta level map, ignore the others
 varmpToMap :: VarMp' k v -> Map.Map k v
 varmpToMap (VarMp _ (m:_)) = m
@@ -131,12 +134,6 @@ emptyVarMp = mkVarMp Map.empty
 
 varmpIsEmpty :: VarMp' k v -> Bool
 varmpIsEmpty (VarMp {varmpMpL=l}) = all Map.null l
-
-instance VarLookupBase (VarMp' k v) k v where
-  varlookupEmpty = emptyVarMp
-  {-# INLINE varlookupEmpty #-}
-  varlookupSingletonWithMetaLev l k v = VarMp l [Map.singleton k v]
-  {-# INLINE varlookupSingletonWithMetaLev #-}
 
 varmpFilter :: Ord k => (k -> v -> Bool) -> VarMp' k v -> VarMp' k v
 varmpFilter f (VarMp l c) = VarMp l (map (Map.filterWithKey f) c)
@@ -191,13 +188,13 @@ varmpKeysSet (VarMp _ fm) = Set.unions $ map Map.keysSet fm
 
 {-# DEPRECATED varmpMetaLevSingleton "Use varlookupSingletonWithMetaLev" #-}
 -- | VarMp singleton
-varmpMetaLevSingleton :: MetaLev -> k -> v -> VarMp' k v
+varmpMetaLevSingleton :: Ord k => MetaLev -> k -> v -> VarMp' k v
 varmpMetaLevSingleton = varlookupSingletonWithMetaLev
 {-# INLINE varmpMetaLevSingleton #-}
 
 -- (not yet) {-# DEPRECATED varmpSingleton "Use varlookupSingleton" #-}
 -- | VarMp singleton
-varmpSingleton :: k -> v -> VarMp' k v
+varmpSingleton :: Ord k => k -> v -> VarMp' k v
 varmpSingleton = varlookupSingleton
 {-# INLINE varmpSingleton #-}
 
@@ -265,7 +262,7 @@ varmpInsertWith f k v = varmpUnionWith f (varmpSingleton k v)
 
 -- Lookup as VarLookup
 
-instance Ord k => VarLookup (VarMp' k v) k v where
+instance Ord k => VarLookup (VarMp' k v) where
   varlookupWithMetaLev l k    (VarMp vmlev ms) = lkup (l-vmlev) ms
                                                where lkup _ []     = Nothing
                                                      lkup 0 (m:_)  = Map.lookup k m
@@ -273,6 +270,10 @@ instance Ord k => VarLookup (VarMp' k v) k v where
   varlookup              k vm@(VarMp vmlev _ ) = varlookupWithMetaLev vmlev k vm
   varlookupKeysSetWithMetaLev l (VarMp vmlev ms) = Map.keysSet $ ms !! (l-vmlev)
   varlookupKeysSet              (VarMp _     ms) = Set.unions $ map Map.keysSet ms
+  varlookupEmpty = emptyVarMp
+  {-# INLINE varlookupEmpty #-}
+  varlookupSingletonWithMetaLev l k v = VarMp l [Map.singleton k v]
+  {-# INLINE varlookupSingletonWithMetaLev #-}
 
 
 instance Ord k => VarLookupCmb (VarMp' k v) (VarMp' k v) where
@@ -414,8 +415,8 @@ tyAsVarMp :: UID -> Ty -> (Ty,VarMp)
 tyAsVarMp = tyAsVarMp' (flip const)
 -}
 
-varmpLookup :: (VarLookup m k i,Ord k) => k -> m -> Maybe i
-varmpLookup = varlookupMap (Just . id)
+varmpLookup :: (VarLookup m, Ord (VarLookupKey m)) => VarLookupKey m -> m -> Maybe (VarLookupVal m)
+varmpLookup = varlookup -- varlookupMap (Just . id)
 {-# INLINE varmpLookup #-}
 
 {-

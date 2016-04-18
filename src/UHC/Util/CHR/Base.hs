@@ -264,7 +264,7 @@ emptyCHRMatchEnv = CHRMatchEnv {- CHRMatchHow_Check -} (const True)
 --- Wait for var
 -------------------------------------------------------------------------------------------
 
-type CHRWaitForVarSet s = Set.Set (SubstVarKey s)
+type CHRWaitForVarSet s = Set.Set (VarLookupKey s)
 
 -------------------------------------------------------------------------------------------
 --- CHRMatcher, call back API used during matching
@@ -296,7 +296,7 @@ data CHRMatcherFailure
 
 -- | Matching monad, keeping a stacked (pair) of subst (local + global), and a set of global variables upon which the solver has to wait in order to (possibly) match further/again
 -- type CHRMatcher subst = StateT (StackedVarLookup subst, CHRWaitForVarSet subst) (Either ())
-type CHRMatcher subst = StateT (CHRMatcherState subst (SubstVarKey subst)) (Either CHRMatcherFailure)
+type CHRMatcher subst = StateT (CHRMatcherState subst (VarLookupKey subst)) (Either CHRMatcherFailure)
 
 chrmatcherstateVarLookup     = fst3l
 chrmatcherstateWaitForVarSet = snd3l
@@ -314,14 +314,14 @@ type instance CHRMatchableKey (StackedVarLookup subst) = CHRMatchableKey subst
 -- | A Matchable participates in the reduction process as a reducable constraint.
 -- Unification may be incorporated as well, allowing matching to be expressed in terms of unification.
 -- This facilitates implementations of 'CHRBuiltinSolvable'.
-class (CHREmptySubstitution subst, VarLookupCmb subst subst, VarExtractable x, SubstVarKey subst ~ ExtrValVarKey x) => CHRMatchable env x subst where
+class (CHREmptySubstitution subst, VarLookupCmb subst subst, VarExtractable x, VarLookupKey subst ~ ExtrValVarKey x) => CHRMatchable env x subst where
   -- | One-directional (1st to 2nd 'x') unify
   chrMatchTo :: env -> subst -> x -> x -> Maybe subst
   chrMatchTo env s x1 x2 = chrUnify CHRMatchHow_Match (emptyCHRMatchEnv {chrmatchenvMetaMayBind = (`Set.member` varFreeSet x1)}) env s x1 x2
     -- where free = varFreeSet x1
   
   -- | One-directional (1st to 2nd 'x') unify
-  chrUnify :: CHRMatchHow -> CHRMatchEnv (SubstVarKey subst) -> env -> subst -> x -> x -> Maybe subst
+  chrUnify :: CHRMatchHow -> CHRMatchEnv (VarLookupKey subst) -> env -> subst -> x -> x -> Maybe subst
   chrUnify how menv e s x1 x2 = chrmatcherUnlift (chrUnifyM how e x1 x2) menv s
   
   -- | Match one-directional (from 1st to 2nd arg), under a subst, yielding a subst for the metavars in the 1st arg, waiting for those in the 2nd
@@ -347,7 +347,7 @@ class (CHREmptySubstitution subst, VarLookupCmb subst subst, VarExtractable x, S
 -------------------------------------------------------------------------------------------
 
 -- | Unlift/observe (or run) a CHRMatcher
-chrmatcherUnlift :: (CHREmptySubstitution subst) => CHRMatcher subst () -> CHRMatchEnv (SubstVarKey subst) -> (subst -> Maybe subst)
+chrmatcherUnlift :: (CHREmptySubstitution subst) => CHRMatcher subst () -> CHRMatchEnv (VarLookupKey subst) -> (subst -> Maybe subst)
 chrmatcherUnlift mtch menv s = do
     (s,w) <- chrmatcherRun mtch menv s
     if Set.null w then Just s else Nothing
@@ -368,7 +368,7 @@ chrmatcherLift f = do
 -}
 
 -- | Run a CHRMatcher
-chrmatcherRun' :: (CHREmptySubstitution subst) => (CHRMatcherFailure -> r) -> (subst -> CHRWaitForVarSet subst -> x -> r) -> CHRMatcher subst x -> CHRMatchEnv (SubstVarKey subst) -> StackedVarLookup subst -> r
+chrmatcherRun' :: (CHREmptySubstitution subst) => (CHRMatcherFailure -> r) -> (subst -> CHRWaitForVarSet subst -> x -> r) -> CHRMatcher subst x -> CHRMatchEnv (VarLookupKey subst) -> StackedVarLookup subst -> r
 chrmatcherRun' fail succes mtch menv s = either
     fail
     ((\(x,ms) -> let (StackedVarLookup s, w, _) = unCHRMatcherState ms in succes (head s) w x))
@@ -376,7 +376,7 @@ chrmatcherRun' fail succes mtch menv s = either
       $ mtch
 
 -- | Run a CHRMatcher
-chrmatcherRun :: (CHREmptySubstitution subst) => CHRMatcher subst () -> CHRMatchEnv (SubstVarKey subst) -> subst -> Maybe (subst, CHRWaitForVarSet subst)
+chrmatcherRun :: (CHREmptySubstitution subst) => CHRMatcher subst () -> CHRMatchEnv (VarLookupKey subst) -> subst -> Maybe (subst, CHRWaitForVarSet subst)
 chrmatcherRun mtch menv s = chrmatcherRun' (const Nothing) (\s w _ -> Just (s,w)) mtch menv (StackedVarLookup [chrEmptySubst,s])
 
 {-
@@ -403,8 +403,8 @@ chrMatchSubst :: CHRMatcher subst (StackedVarLookup subst)
 chrMatchSubst = getl chrmatcherstateVarLookup
 {-# INLINE chrMatchSubst #-}
 
-chrMatchBind :: forall subst k v . (VarLookupCmb subst subst, SubstMake subst, k ~ SubstVarKey subst, v ~ SubstVarVal subst) => CHRMatchEnv k -> k -> v -> CHRMatcher subst ()
-chrMatchBind menv k v = chrmatcherstateVarLookup =$: ((substSingleton k v :: subst) |+>)
+chrMatchBind :: forall subst k v . (VarLookupCmb subst subst, VarLookup subst, k ~ VarLookupKey subst, v ~ VarLookupVal subst) => CHRMatchEnv k -> k -> v -> CHRMatcher subst ()
+chrMatchBind menv k v = chrmatcherstateVarLookup =$: ((varlookupSingleton k v :: subst) |+>)
 {-
 chrMatchBind menv k v = do
     menv <- getl chrmatcherstateEnv
@@ -418,7 +418,7 @@ chrMatchBind menv k v
   | otherwise                     = return ()
 -}
 
-chrMatchWait :: (Ord k, k ~ SubstVarKey subst) => k -> CHRMatcher subst ()
+chrMatchWait :: (Ord k, k ~ VarLookupKey subst) => k -> CHRMatcher subst ()
 chrMatchWait k = chrMatchModifyWait (Set.insert k)
 {-# INLINE chrMatchWait #-}
 
@@ -459,7 +459,7 @@ chrMatchAndWaitToM wait env x1 x2 = chrUnifyM (if wait then CHRMatchHow_MatchAnd
 instance {-# OVERLAPPABLE #-} Ord (ExtrValVarKey ()) => VarExtractable () where
   varFreeSet _ = Set.empty
 
-instance {-# OVERLAPPABLE #-} (Ord (ExtrValVarKey ()), CHREmptySubstitution subst, VarLookupCmb subst subst, SubstVarKey subst ~ ExtrValVarKey ()) => CHRMatchable env () subst where
+instance {-# OVERLAPPABLE #-} (Ord (ExtrValVarKey ()), CHREmptySubstitution subst, VarLookupCmb subst subst, VarLookupKey subst ~ ExtrValVarKey ()) => CHRMatchable env () subst where
   chrUnifyM _ _ _ _ = chrMatchFail
 
 -------------------------------------------------------------------------------------------

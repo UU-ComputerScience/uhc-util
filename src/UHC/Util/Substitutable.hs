@@ -5,11 +5,15 @@ module UHC.Util.Substitutable
     VarUpdatable(..)
   , VarExtractable(..)
   
+{-
   , SubstMake(..)
   
   , SubstVarKey
   , SubstVarVal
+-}
   , ExtrValVarKey
+  
+  , VarTerm(..)
   )
   where
 
@@ -23,50 +27,38 @@ import           UHC.Util.VarMp
 infixr 6 `varUpd`
 infixr 6 `varUpdCyc`
 
--- | Invariant: SubstVarKey subst = ExtrValVarKey (SubstVarVal subst)
-type family SubstVarKey subst :: *
-type family SubstVarVal subst :: *
 type family ExtrValVarKey vv :: *
-
-type instance SubstVarKey (StackedVarLookup subst) = SubstVarKey subst
-type instance SubstVarVal (StackedVarLookup subst) = SubstVarVal subst
 
 type instance ExtrValVarKey [vv] = ExtrValVarKey vv
 
-class SubstMake subst where
-  substSingleton :: SubstVarKey subst -> SubstVarVal subst -> subst
-  substEmpty     :: subst
-
-instance {-# OVERLAPPABLE #-}
-         ( VarLookupBase subst k v
-         , k ~ SubstVarKey subst
-         , v ~ SubstVarVal subst
-         )
-    => SubstMake subst where
-  substSingleton     = varlookupSingleton
-  {-# INLINE substSingleton #-}
-  substEmpty         = varlookupEmpty
-  {-# INLINE substEmpty #-}
-
-instance SubstMake subst => SubstMake (StackedVarLookup subst) where
-  substSingleton k v = StackedVarLookup [substSingleton k v]
-  {-# INLINE substSingleton #-}
-  substEmpty         = StackedVarLookup [substEmpty]
-  {-# INLINE substEmpty #-}
-
 class VarUpdatable vv subst where
   varUpd            ::  subst -> vv -> vv
-  varUpdCyc         ::  subst -> vv -> (vv, VarMp' (SubstVarKey subst) (SubstVarVal subst))
+  varUpdCyc         ::  subst -> vv -> (vv, VarMp' (VarLookupKey subst) (VarLookupVal subst))
   s `varUpdCyc` x = (s `varUpd` x, emptyVarMp)
 
-class Ord (ExtrValVarKey vv) => VarExtractable vv where -- k | vv -> k where
+class Ord (ExtrValVarKey vv) => VarExtractable vv where
   varFree           ::  vv -> [ExtrValVarKey vv]
-  varFreeSet        ::  vv -> Set.Set (ExtrValVarKey vv)
-  
-  -- default
   varFree           =   Set.toList . varFreeSet
+  
+  varFreeSet        ::  vv -> Set.Set (ExtrValVarKey vv)
   varFreeSet        =   Set.fromList . varFree
+  
+{-
+  -- | Maybe is a key
+  varextrMbKey :: vv -> Maybe (ExtrValVarKey vv)
+  -- | Construct wrapper for key (i.e. lift, embed)
+  varextrMkKey :: ExtrValVarKey vv -> vv
+-}
 
 instance {-# OVERLAPPABLE #-} (VarExtractable vv, Ord (ExtrValVarKey vv)) => VarExtractable [vv] where
   varFreeSet        =   Set.unions . map varFreeSet
+
+-- | Term with a (substitutable, extractable, free, etc.) variable
+class VarTerm vv where
+  -- | Maybe is a key
+  varTermMbKey :: vv -> Maybe (ExtrValVarKey vv)
+  -- | Construct wrapper for key (i.e. lift, embed)
+  varTermMkKey :: ExtrValVarKey vv -> vv
+  
+
 

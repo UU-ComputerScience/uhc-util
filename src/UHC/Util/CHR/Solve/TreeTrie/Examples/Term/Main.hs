@@ -74,7 +74,7 @@ runFile runopts f = do
 mainTerm = do
   forM_
       [
-        "queens"
+        "gcd"
       -- , "queens"
       -- , "leq"
       -- , "var"

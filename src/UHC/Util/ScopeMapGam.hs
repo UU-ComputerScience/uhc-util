@@ -179,11 +179,11 @@ sgamMap :: (Ord k,Ord k') => ((k,v) -> (k',v')) -> SGam k v -> SGam k' v'
 sgamMap f g = sgamMapEltWithKey (\k e -> let (k',v') = f (k,sgeVal e) in (k',e {sgeVal = v'})) g
 
 -- | Construct singleton gam, on a particular meta level
-sgamMetaLevSingleton :: MetaLev -> k -> v -> SGam k v
+sgamMetaLevSingleton :: Ord k => MetaLev -> k -> v -> SGam k v
 sgamMetaLevSingleton mlev k v = mkSGam (varlookupSingletonWithMetaLev mlev k [SGamElt 0 v])
 
 -- | Construct singleton gam
-sgamSingleton :: k -> v -> SGam k v
+sgamSingleton :: Ord k => k -> v -> SGam k v
 sgamSingleton = sgamMetaLevSingleton metaLevVal
 
 -- | combine gam, g1 is added to g2 with scope of g2

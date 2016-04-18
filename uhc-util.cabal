@@ -59,6 +59,7 @@ library
     UHC.Util.Error,
     UHC.Util.FastSeq,
     UHC.Util.FPath,
+    UHC.Util.Fresh,
     UHC.Util.Hashable,
     UHC.Util.Lens,
     UHC.Util.Nm,

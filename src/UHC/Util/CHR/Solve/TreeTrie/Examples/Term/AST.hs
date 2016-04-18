@@ -67,9 +67,16 @@ data Tm
   | Tm_Op  POp    [Tm]      -- ^ interpretable (when solving) term structure
   deriving (Show, Eq, Ord, Typeable, Generic)
 
+{-
 tmIsVar :: Tm -> Maybe Var
 tmIsVar (Tm_Var v) = Just v
 tmIsVar _          = Nothing
+-}
+
+instance VarTerm Tm where
+  varTermMbKey (Tm_Var v) = Just v
+  varTermMbKey _          = Nothing
+  varTermMkKey            = Tm_Var
 
 instance PP Tm where
   pp (Tm_Var v        ) = pp v -- "v" >|< v
@@ -172,12 +179,8 @@ instance Bounded P where
 
 type S = Map.Map Var Tm
 
-type instance SubstVarKey S = Var
-type instance SubstVarVal S = Tm
-
-instance VarLookupBase S Var Tm where
-  varlookupSingletonWithMetaLev _ = Map.singleton
-  varlookupEmpty = Map.empty
+type instance VarLookupKey S = Var
+type instance VarLookupVal S = Tm
 
 instance PP S where
   pp = ppAssocLH . Map.toList
@@ -189,9 +192,11 @@ type instance ExtrValVarKey P = Var
 
 type instance CHRMatchableKey S = Key
 
-instance VarLookup S Var Tm where
+instance VarLookup S where
   varlookupWithMetaLev _ = Map.lookup
   varlookupKeysSetWithMetaLev _ = Map.keysSet
+  varlookupSingletonWithMetaLev _ = Map.singleton
+  varlookupEmpty = Map.empty
 
 instance VarLookupCmb S S where
   (|+>) = Map.union
@@ -200,7 +205,7 @@ instance VarUpdatable S S where
   varUpd = (|+>)
 
 instance VarUpdatable Tm S where
-  s `varUpd` t = case fromJust $ varlookupResolveVal tmIsVar t s <|> return t of
+  s `varUpd` t = case fromJust $ varlookupResolveVal varTermMbKey t s <|> return t of
       Tm_Con c as -> Tm_Con c $ map (s `varUpd`) as
       Tm_Op  o as -> Tm_Op  o $ map (s `varUpd`) as
       t -> t
@@ -307,14 +312,14 @@ instance CHRMatchable E Tm S where
                                        where maybind = chrmatchenvMetaMayBind menv v2
         _                                                                 -> chrMatchFail
     where
-      varContinue = varlookupResolveAndContinueM tmIsVar chrMatchSubst
+      varContinue = varlookupResolveAndContinueM varTermMbKey chrMatchSubst
       evop = tmEvalOp
       ev = tmEval
 
 tmEval :: Tm -> CHRMatcher S Tm
 tmEval x = case x of
           Tm_Int _    -> return x
-          Tm_Var v    -> varlookupResolveAndContinueM tmIsVar chrMatchSubst chrMatchFailNoBinding tmEval v
+          Tm_Var v    -> varlookupResolveAndContinueM varTermMbKey chrMatchSubst chrMatchFailNoBinding tmEval v
           Tm_Op  o xs -> tmEvalOp o xs
           _           -> chrMatchFail
 
