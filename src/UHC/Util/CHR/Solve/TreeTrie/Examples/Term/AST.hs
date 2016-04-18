@@ -102,11 +102,13 @@ instance Serialize C
 data G
   = G_Eq Tm Tm          -- ^ check for equality
   | G_Ne Tm Tm          -- ^ check for inequality
+  | G_Tm Tm             -- ^ determined by arithmetic evaluation
   deriving (Show, Typeable, Generic)
 
 instance PP G where
   pp (G_Eq x y) = "is-eq" >#< ppParensCommas [x,y]
   pp (G_Ne x y) = "is-ne" >#< ppParensCommas [x,y]
+  pp (G_Tm t  ) = "eval"  >#< ppParens t
 
 instance Serialize G
 
@@ -210,6 +212,7 @@ instance VarUpdatable P S where
 instance VarUpdatable G S where
   s `varUpd` G_Eq x y = G_Eq (s `varUpd` x) (s `varUpd` y)
   s `varUpd` G_Ne x y = G_Ne (s `varUpd` x) (s `varUpd` y)
+  s `varUpd` G_Tm x   = G_Tm (s `varUpd` x)
 
 instance VarUpdatable C S where
   s `varUpd` c = case c of
@@ -227,6 +230,7 @@ instance VarExtractable Tm where
 instance VarExtractable G where
   varFreeSet (G_Eq x y) = Set.unions [varFreeSet x, varFreeSet y]
   varFreeSet (G_Ne x y) = Set.unions [varFreeSet x, varFreeSet y]
+  varFreeSet (G_Tm x  ) = varFreeSet x
 
 instance VarExtractable C where
   varFreeSet (C_Con _ as) = Set.unions $ map varFreeSet as
@@ -264,6 +268,11 @@ instance CHRCheckable E G S where
           (\e -> case e of {CHRMatcherFailure -> chrMatchSuccess; _ -> chrMatchFail})
           (\_ _ _ -> chrMatchFail)
           (chrCheckM e (G_Eq t1 t2)) menv s
+      G_Tm t -> do
+        e <- tmEval t
+        case e of
+          Tm_Bool True -> chrMatchSuccess
+          _            -> chrMatchFail
 
 instance CHRMatchable E Tm S where
   chrUnifyM how e t1 t2 = do
@@ -379,7 +388,7 @@ instance GTermAs C G P P Tm where
         b <- asTm b
         return $ fromJust o' a b
       where o' = List.lookup o [("==", G_Eq), ("/=", G_Ne)]
-    t -> gtermasFail t "not a guard"
+    t -> fmap G_Tm $ asTm t
     
   asHeadBacktrackPrio = fmap P_Tm . asTm
 

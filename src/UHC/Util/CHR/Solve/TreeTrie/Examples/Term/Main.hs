@@ -38,17 +38,7 @@ mbRunOptVerbosity (_                  : r) = mbRunOptVerbosity r
 runFile :: [RunOpt] -> FilePath -> IO ()
 runFile runopts f = do
     -- scan, parse
-    msg $ "READ " ++ f
-{-
-    toks <- scanFile
-      ([] ++ scanChrExtraKeywordsTxt dummy)
-      (["\\", "=>", "==>", "<=>", ".", "::", "@", "|", "\\/", "?"] ++ scanChrExtraKeywordsOps dummy)
-      ("()," ++ scanChrExtraSpecialChars dummy)
-      ("=/\\><.+*-@:|?" ++ scanChrExtraOpChars dummy)
-      f
-    (prog, query) <- parseIOMessage show pProg toks
--}
-    
+    msg $ "READ " ++ f    
     mbParse <- parseFile f
     case mbParse of
       Left e -> putPPLn e
@@ -84,7 +74,7 @@ runFile runopts f = do
 mainTerm = do
   forM_
       [
-        "ruleprio2"
+        "queens"
       -- , "queens"
       -- , "leq"
       -- , "var"

@@ -1,12 +1,7 @@
-{-# LANGUAGE RankNTypes, ScopedTypeVariables #-}
+{-# LANGUAGE RankNTypes #-}
 
 module UHC.Util.CHR.GTerm.Parser
-  ( {- CHRParsable(..)
-  
-  , Pr
-  
-  , -}
-    parseFile
+  ( parseFile
   )
   where
 
@@ -45,7 +40,7 @@ scanOpts
 -------------------------------------------------------------------------------------------
 
 -- | Parse a file as a CHR spec + queries
-parseFile :: forall c g bp rp tm . GTermAs c g bp rp tm => FilePath -> IO (Either PP_Doc ([Rule c g bp rp], [c]))
+parseFile :: GTermAs c g bp rp tm => FilePath -> IO (Either PP_Doc ([Rule c g bp rp], [c]))
 parseFile f = do
     toks <- scanFile
       (Set.toList $ scoKeywordsTxt scanOpts)
@@ -56,13 +51,13 @@ parseFile f = do
     (prog, query) <- parseIOMessage show pProg toks
     return $ do
       prog <- forM prog $ \r@(Rule {ruleHead=hcs, ruleGuard=gs, ruleBodyAlts=as, ruleBacktrackPrio=mbp, rulePrio=mrp}) -> do
-        hcs <- forM hcs asHeadConstraint
-        gs  <- forM gs  asGuard
         mbp <- maybe (return Nothing) (fmap Just . asHeadBacktrackPrio) mbp
         mrp <- maybe (return Nothing) (fmap Just . asRulePrio) mrp
+        hcs <- forM hcs asHeadConstraint
+        gs  <- forM gs  asGuard
         as  <- forM as $ \a@(RuleBodyAlt {rbodyaltBacktrackPrio=mbp, rbodyaltBody=bs}) -> do
-          bs  <- forM bs asBodyConstraint
           mbp <- maybe (return Nothing) (fmap Just . asAltBacktrackPrio) mbp
+          bs  <- forM bs asBodyConstraint
           return $ a {rbodyaltBacktrackPrio=mbp, rbodyaltBody=bs}
         return $ r {ruleHead=hcs, ruleGuard=gs, ruleBodyAlts=as, ruleBacktrackPrio=mbp, rulePrio=mrp}
       query <- forM query asHeadConstraint
@@ -84,7 +79,7 @@ pProg =
                (   (   (\(g,b) h pre -> pre $ g $ mkR h (length h) b) <$ pKey "<=>"
                    <|> (\(g,b) h pre -> pre $ g $ mkR h 0          b) <$ (pKey "=>" <|> pKey "==>")
                    ) <*> pBody
-               <|> (   (\hr (g,b) hk pre -> pre $ mkR (hr ++ hk) (length hr) b)
+               <|> (   (\hr (g,b) hk pre -> pre $ g $ mkR (hr ++ hk) (length hr) b)
                        <$ pKey "\\" <*> pHead <* pKey "<=>" <*> pBody
                    )
                )
@@ -97,7 +92,7 @@ pProg =
                         )
                     <*> ((@=) <$> (pConid <|> pVarid) <* pKey "@" <|> pSucceed id)
              pHead = pList1Sep pComma pTm_Op
-             pGrd = flip (=|) <$> pList1Sep_ng pComma pTm_Op <* pKey "|" <|> pSucceed id
+             pGrd = flip (=|) <$> pList1Sep pComma pTm_Op <* pKey "|" <|> pSucceed id
              pBody = pGrd <+> pBodyAlts
              pBodyAlts = pListSep (pKey "\\/") pBodyAlt
              pBodyAlt

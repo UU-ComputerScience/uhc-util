@@ -182,6 +182,8 @@ emptyCHRStore = CHRStore TreeTrie.empty IntMap.empty
 
 type WorkInx = WorkTime
 
+type WorkInxSet = IntSet.IntSet
+
 data WorkStore cnstr
   = WorkStore
       { _wkstoreTrie     :: CHRTrie' cnstr [WorkInx]                -- ^ map from the search key of a constraint to index in table
@@ -194,13 +196,14 @@ emptyWorkStore = WorkStore TreeTrie.empty IntMap.empty
 
 data WorkQueue
   = WorkQueue
-      { _wkqueueSet      :: Set.Set WorkInx                -- ^ cached/derived from queue: as set (for check on being in the queue)
-      -- , _wkqueueQueue    :: Seq.Seq WorkInx                -- ^ queue holding the work to be done, as index into work table
+      { _wkqueueActive          :: !WorkInxSet                  -- ^ active queue, work will be taken off from this one
+      , _wkqueueRedo            :: !WorkInxSet                  -- ^ redo queue, holding work which could not immediately be reduced, but later on might be
+      , _wkqueueDidSomething    :: !Bool                        -- ^ flag indicating some work was done; if False and active queue is empty we stop solving
       }
   deriving (Typeable)
 
 emptyWorkQueue :: WorkQueue
-emptyWorkQueue = WorkQueue Set.empty -- Seq.empty
+emptyWorkQueue = WorkQueue IntSet.empty IntSet.empty True
 
 -------------------------------------------------------------------------------------------
 --- A matched combi of chr and work
@@ -441,9 +444,17 @@ addRule chr = do
     return ()
 
 -- | Add work to the rule work queue
-addWorkToRuleWorkQueue :: MonoBacktrackPrio c g bp p s e m => WorkInx -> CHRMonoBacktrackPrioT c g bp p s e m ()
-addWorkToRuleWorkQueue i = do
-    sndl ^* chrbstRuleWorkQueue ^* wkqueueSet =$: (Set.insert i)
+addToWorkQueue :: MonoBacktrackPrio c g bp p s e m => WorkInx -> CHRMonoBacktrackPrioT c g bp p s e m ()
+addToWorkQueue i = do
+    sndl ^* chrbstRuleWorkQueue ^* wkqueueActive =$: (IntSet.insert i)
+    sndl ^* chrbstRuleWorkQueue ^* wkqueueDidSomething =: True
+{-# INLINE addToWorkQueue #-}
+
+-- | Add redo work to the rule work queue
+addRedoToWorkQueue :: MonoBacktrackPrio c g bp p s e m => WorkInx -> CHRMonoBacktrackPrioT c g bp p s e m ()
+addRedoToWorkQueue i = do
+    sndl ^* chrbstRuleWorkQueue ^* wkqueueRedo =$: (IntSet.insert i)
+{-# INLINE addRedoToWorkQueue #-}
 
 -- | Add work to the wait for var queue
 addWorkToWaitForVarQueue :: (MonoBacktrackPrio c g bp p s e m, Ord (SubstVarKey s)) => CHRWaitForVarSet s -> WorkInx -> CHRMonoBacktrackPrioT c g bp p s e m ()
@@ -477,47 +488,53 @@ splitOffResolvedWaitForVarWork vars = do
 -- | Add work to the solve queue
 addWorkToSolveQueue :: MonoBacktrackPrio c g bp p s e m => WorkInx -> CHRMonoBacktrackPrioT c g bp p s e m ()
 addWorkToSolveQueue i = do
-    sndl ^* chrbstSolveQueue ^* wkqueueSet =$: (Set.insert i)
+    sndl ^* chrbstSolveQueue ^* wkqueueActive =$: (IntSet.insert i)
 
 -- | Split off work from the solve work queue, possible none left
 splitWorkFromSolveQueue :: MonoBacktrackPrio c g bp p s e m => CHRMonoBacktrackPrioT c g bp p s e m (Maybe (WorkInx))
 splitWorkFromSolveQueue = do
-    wq <- getl $ sndl ^* chrbstSolveQueue ^* wkqueueSet
-    case Set.minView wq of
+    wq <- getl $ sndl ^* chrbstSolveQueue ^* wkqueueActive
+    case IntSet.minView wq of
       Nothing ->
           return Nothing
       Just (workInx, wq') -> do
-          sndl ^* chrbstSolveQueue ^* wkqueueSet =: wq'
+          sndl ^* chrbstSolveQueue ^* wkqueueActive =: wq'
           return $ Just (workInx)
 
 -- | Remove work from the work queue
-deleteWorkFromQueue :: MonoBacktrackPrio c g bp p s e m => [WorkInx] -> CHRMonoBacktrackPrioT c g bp p s e m ()
-deleteWorkFromQueue is = do
-    -- sndl ^* chrbstRuleWorkQueue ^* wkqueueQueue =$: (Seq.|> i)
-    sndl ^* chrbstRuleWorkQueue ^* wkqueueSet =$: (\s -> foldr (Set.delete) s is)
+deleteFromWorkQueue :: MonoBacktrackPrio c g bp p s e m => WorkInxSet -> CHRMonoBacktrackPrioT c g bp p s e m ()
+deleteFromWorkQueue is = do
+    -- sndl ^* chrbstRuleWorkQueue ^* wkqueueActive =$: (\s -> foldr (IntSet.delete) s is)
+    sndl ^* chrbstRuleWorkQueue ^* wkqueueActive =$: flip IntSet.difference is
+    sndl ^* chrbstRuleWorkQueue ^* wkqueueRedo =$: flip IntSet.difference is
 
 -- | Extract the active work in the queue
-activeInQueue :: MonoBacktrackPrio c g bp p s e m => CHRMonoBacktrackPrioT c g bp p s e m (Set.Set WorkInx)
-activeInQueue = getl $ sndl ^* chrbstRuleWorkQueue ^* wkqueueSet
+waitingInWorkQueue :: MonoBacktrackPrio c g bp p s e m => CHRMonoBacktrackPrioT c g bp p s e m WorkInxSet
+waitingInWorkQueue = do
+    a <- getl $ sndl ^* chrbstRuleWorkQueue ^* wkqueueActive
+    r <- getl $ sndl ^* chrbstRuleWorkQueue ^* wkqueueRedo
+    return $ IntSet.union a r
 
 -- | Split off work from the work queue, possible none left
-splitWorkFromQueue :: MonoBacktrackPrio c g bp p s e m => CHRMonoBacktrackPrioT c g bp p s e m (Maybe (WorkInx, Set.Set WorkInx))
-splitWorkFromQueue = do
-    -- wq <- getl $ sndl ^* chrbstRuleWorkQueue ^* wkqueueQueue
-    wq <- getl $ sndl ^* chrbstRuleWorkQueue ^* wkqueueSet
-    case Set.minView wq of
-      -- If no more work, ready
-      -- Seq.EmptyL -> 
-      Nothing ->
-          return Nothing
+splitFromWorkQueue :: MonoBacktrackPrio c g bp p s e m => CHRMonoBacktrackPrioT c g bp p s e m (Maybe WorkInx)
+splitFromWorkQueue = do
+    wq <- getl $ sndl ^* chrbstRuleWorkQueue ^* wkqueueActive
+    case IntSet.minView wq of
+      -- If no more work, ready if nothing was done anymore
+      Nothing -> do
+          did <- modifyAndGet (sndl ^* chrbstRuleWorkQueue ^* wkqueueDidSomething) $ \d -> (d, False)
+          if did -- && not (IntSet.null wr)
+            then do
+              wr  <- modifyAndGet (sndl ^* chrbstRuleWorkQueue ^* wkqueueRedo) $ \r -> (r, IntSet.empty)
+              sndl ^* chrbstRuleWorkQueue ^* wkqueueActive =: wr
+              splitFromWorkQueue
+            else
+              return Nothing
       
       -- There is work in the queue
-      -- workInx Seq.:< wq' -> do
       Just (workInx, wq') -> do
-          -- sndl ^* chrbstRuleWorkQueue ^* wkqueueQueue =: wq'
-          sndl ^* chrbstRuleWorkQueue ^* wkqueueSet =: wq'
-          -- sndl ^* chrbstRuleWorkQueue ^* wkqueueSet =$: (Set.delete workInx)
-          return $ Just (workInx, wq')
+          sndl ^* chrbstRuleWorkQueue ^* wkqueueActive =: wq'
+          return $ Just workInx
 
 -- | Add a constraint to be solved or residualised
 addConstraintAsWork :: MonoBacktrackPrio c g bp p s e m => c -> CHRMonoBacktrackPrioT c g bp p s e m (ConstraintSolvesVia, WorkInx)
@@ -531,7 +548,7 @@ addConstraintAsWork c = do
         -- a plain rule is added to the work store
         ConstraintSolvesVia_Rule -> do
             fstl ^* chrgstWorkStore ^* wkstoreTrie =$: TreeTrie.insertByKeyWith (++) k [i]
-            addWorkToRuleWorkQueue i
+            addToWorkQueue i
             return $ Work k c i
           where k = chrToKey c -- chrToWorkKey c
         -- work for the solver is added to its own queue
@@ -872,7 +889,7 @@ chrSolve opts env = slv
                   case mbSlv of
                     Just (s,_) -> do
                           -- the newfound subst may reactivate waiting work
-                          splitOffResolvedWaitForVarWork (varlookupKeysSet s) >>= mapM_ addWorkToRuleWorkQueue
+                          splitOffResolvedWaitForVarWork (varlookupKeysSet s) >>= mapM_ addToWorkQueue
                           sndl ^* chrbstSolveSubst =$: (s |+>)
                           -- just continue with next work
                           slv
@@ -886,16 +903,28 @@ chrSolve opts env = slv
 
           -- If no more solve work, continue with normal work
           Nothing -> do
-              -- TBD: reactivate waiting work
-              activeWk <- activeInQueue
+              waitingWk <- waitingInWorkQueue
               visitedChrWkCombis <- getl $ sndl ^* chrbstMatchedCombis
-              mbWk <- splitWorkFromQueue
-              case {- trp "chrSolve.slv.mbWk" (pp mbWk >#< activeWk) -} mbWk of
-                -- If no more work, ready
-                Nothing -> slvSucces
+              mbWk <- splitFromWorkQueue
+              case {- trp "chrSolve.slv.mbWk" (pp mbWk >#< waitingWk) -} mbWk of
+                -- If no more work, ready or cannot proceed
+                Nothing -> do
+                    wr <- modifyAndGet (sndl ^* chrbstRuleWorkQueue ^* wkqueueRedo) $ \r -> (r, IntSet.empty)
+                    if IntSet.null wr
+                      then do
+                        -- really no work anymore
+                        slvSucces
+                      else do
+                        -- work left over, depending on what options specify as failure act accordingly
+                        if chrslvOptSucceedOnLeftoverWork opts
+                          then do
+                            sndl ^* chrbstLeftWorkQueue =$: (IntSet.toList wr ++)
+                            slvSucces
+                          else
+                            slvFail
       
                 -- There is work in the queue
-                Just (workInx, _) -> do
+                Just workInx -> do
                     -- lookup the work
                     work <- lkupWork workInx
           
@@ -907,7 +936,7 @@ chrSolve opts env = slv
 
                     -- found chrs for the work correspond to 1 single position in the head, find all combinations with work in the queue
                     foundWorkInxs <- sequence
-                      [ fmap (FoundWorkInx (CHRConstraintInx ci i) c) $ slvCandidate activeWk visitedChrWkCombis workInx c i
+                      [ fmap (FoundWorkInx (CHRConstraintInx ci i) c) $ slvCandidate waitingWk visitedChrWkCombis workInx c i
                       | FoundChr ci c is <- foundChrs, i <- is
                       ]
           
@@ -935,7 +964,7 @@ chrSolve opts env = slv
                     -- debug info
                     let dbg =      "bprio" >#< bprio
                                >-< "wk" >#< (work >-< subst `varUpd` workCnstr work)
-                               >-< "que" >#< ppBracketsCommas (Set.toList activeWk)
+                               >-< "que" >#< ppBracketsCommas (IntSet.toList waitingWk)
                                >-< "subst" >#< subst
                                >-< "wait" >#< ppAssocL (assocLMapElt (ppAssocL . map (\i -> (_waitForVarWorkInx i, ppCommas $ Set.toList $ _waitForVarVars i))) $ Map.toList dbgWaitInfo)
                                >-< "visited" >#< ppBracketsCommas (Set.toList visitedChrWkCombis)
@@ -950,13 +979,18 @@ chrSolve opts env = slv
                     case {- trp "chrSolve.slv.dbg" dbg $ -} {- sortOn (Set.size . foundWorkSortedMatchWaitForVars . snd) $ -} foundWorkSortedMatches of
                       ((_,fwsm@(FoundWorkSortedMatch {foundWorkSortedMatchWaitForVars = waitForVars})):_)
                         | Set.null waitForVars -> do
-                            addWorkToRuleWorkQueue workInx
+                            -- addRedoToWorkQueue workInx
+                            addToWorkQueue workInx
                             slv1 bprio fwsm
                         | otherwise -> do
                             -- put on wait queue if there are unresolved variables
                             addWorkToWaitForVarQueue waitForVars workInx
                             -- continue without reschedule
                             slv
+                      _ -> do
+                            addRedoToWorkQueue workInx
+                            slv
+{-
                       _ | chrslvOptSucceedOnLeftoverWork opts -> do
                             -- no chr applies for this work, so consider it to be residual
                             sndl ^* chrbstLeftWorkQueue =$: (workInx :)
@@ -965,6 +999,7 @@ chrSolve opts env = slv
                         | otherwise -> do
                             -- no chr applies for this work, can never be resolved, consider this a failure unless prevented by option
                             slvFail
+-}
 
     -- solve one step further, allowing a backtrack point here
     slv1 curbprio
@@ -977,7 +1012,7 @@ chrSolve opts env = slv
             -- , foundWorkSortedMatchWaitForVars = waitForVars
             }) = do
         -- remove the simplification part from the work queue
-        deleteWorkFromQueue $ take simpSz workInxs
+        deleteFromWorkQueue $ IntSet.fromList $ take simpSz workInxs
         -- depending on nr of alts continue slightly different
         case alts of
           -- just continue if no alts 
@@ -1037,7 +1072,7 @@ slvLookup key t =
 slvCandidate
   :: ( MonoBacktrackPrio c g bp p s e m
      -- , Ord (TTKey c), PP (TTKey c)
-     ) => Set.Set WorkInx                           -- ^ active in queue
+     ) => WorkInxSet                           -- ^ active in queue
        -> Set.Set MatchedCombi                      -- ^ already matched combis
        -> WorkInx                                   -- ^ work inx
        -> StoredCHR c g bp p                        -- ^ found chr for the work
@@ -1045,11 +1080,11 @@ slvCandidate
        -> CHRMonoBacktrackPrioT c g bp p s e m
             ( [[WorkInx]]                           -- All matches of the head, unfiltered w.r.t. deleted work
             )
-slvCandidate activeInQueue alreadyMatchedCombis wi (StoredCHR {_storedHeadKeys = ks, _storedChrInx = ci}) headInx = do
+slvCandidate waitingWk alreadyMatchedCombis wi (StoredCHR {_storedHeadKeys = ks, _storedChrInx = ci}) headInx = do
     let [ks1,_,ks2] = splitPlaces [headInx, headInx+1] ks
     ws1 <- forM ks1 lkup
     ws2 <- forM ks2 lkup
-    return $ filter (\wi ->    all (`Set.member` activeInQueue) wi
+    return $ filter (\wi ->    all (`IntSet.member` waitingWk) wi
                             && Set.notMember (MatchedCombi ci wi) alreadyMatchedCombis)
            $ combineToDistinguishedEltsBy (==) $ ws1 ++ [[wi]] ++ ws2
   where
