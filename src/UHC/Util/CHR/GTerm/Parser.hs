@@ -84,6 +84,14 @@ pProg =
                    )
                )
            )
+{-
+       = pPre <**>
+           ( pList1Sep pComma pTm_App <**>
+               (
+               <|>
+               )
+           )   
+-}
        where pPre = (\(bp,rp) lbl -> lbl . bp . rp) 
                     <$> (pParens ((,) <$> (flip (=!) <$> pTm_Var <|> pSucceed id)
                                       <*  pComma
@@ -91,14 +99,30 @@ pProg =
                                  ) <* pKey "::" <|> pSucceed (id,id)
                         )
                     <*> ((@=) <$> (pConid <|> pVarid) <* pKey "@" <|> pSucceed id)
-             pHead = pList1Sep pComma pTm_Op
+             pHead = pList1Sep pComma pTm_App
              pGrd = flip (=|) <$> pList1Sep pComma pTm_Op <* pKey "|" <|> pSucceed id
+{-
+             pBody'
+               = pTm_Op <**>
+                   (   () 
+                       <$ pKey "::" <*> pBodyAlt
+{-
+                            (pList1Sep pComma pTm_Op <**>
+                               (   ()
+                                   <$ pKey "|" <*> 
+                               <|>
+                               )
+                            )
+-}
+                   <|>
+                   )
+-}
              pBody = pGrd <+> pBodyAlts
              pBodyAlts = pListSep (pKey "\\/") pBodyAlt
              pBodyAlt
                = (\pre (c,b) -> pre $ (c ++ b) /\ [])
                  <$> (flip (\!) <$> pTm <* pKey "::" <|> pSucceed id)
-                 <*> (foldr ($) ([],[]) <$> pList1Sep pComma ((\c (cs,bs) -> (c:cs,bs)) <$> pTm_Op <|> (\b (cs,bs) -> (cs,b:bs)) <$> pTm_Op))
+                 <*> (foldr ($) ([],[]) <$> pList1Sep pComma ((\c (cs,bs) -> (c:cs,bs)) <$> pTm_Op))
              mkR h len b = Rule h len [] b Nothing Nothing Nothing
 
     pRules = pList (pR <* pKey ".")
@@ -113,7 +137,7 @@ pProg =
           (   (\o r l -> GTm_Con o [l,r]) <$> pOp <*> pTm_App
           <|> pSucceed id
           )
-      where pOp = pVarsym <|> pKey "`" *> pConid <* pKey "`"
+      where pOp = pConsym <|> pVarsym <|> pKey "`" *> pConid <* pKey "`"
 
     pTm_App
       =   GTm_Con <$> pConid <*> pList pTm_Base
@@ -124,6 +148,7 @@ pProg =
       =   pTm_Var
       <|> (GTm_Int . read) <$> pInteger
       <|> GTm_Str <$> pString
+      -- <|> flip GTm_Con [] <$> pConid
       <|> pParens pTm
 
     pTm_Var
