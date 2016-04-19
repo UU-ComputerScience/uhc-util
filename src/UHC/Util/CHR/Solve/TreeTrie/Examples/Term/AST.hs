@@ -280,6 +280,23 @@ instance CHRCheckable E G S where
           _            -> chrMatchFail
 
 instance CHRMatchable E Tm S where
+  chrUnifyM how e t1 t2 = chrMatchResolveCompareAndContinue how unif t1 t2
+    where
+      unif t1 t2  = 
+          case (t1, t2) of
+            (Tm_Con c1 as1, Tm_Con c2 as2) | c1 == c2 && length as1 == length as2 
+                                                                              -> sequence_ (zipWith (chrUnifyM how e) as1 as2)
+            (Tm_Op  o1 as1, Tm_Op  o2 as2) | how < CHRMatchHow_Unify && o1 == o2 && length as1 == length as2 
+                                                                              -> sequence_ (zipWith (chrUnifyM how e) as1 as2)
+            (Tm_Op  o1 as1, t2           ) | how == CHRMatchHow_Unify         -> evop o1 as1 >>= \t1 -> chrUnifyM how e t1 t2
+            (t1           , Tm_Op  o2 as2) | how == CHRMatchHow_Unify         -> evop o2 as2 >>= \t2 -> chrUnifyM how e t1 t2
+            (Tm_Int i1    , Tm_Int i2    ) | i1 == i2                         -> chrMatchSuccess
+            (Tm_Bool b1   , Tm_Bool b2   ) | b1 == b2                         -> chrMatchSuccess
+            _                                                                 -> chrMatchFail
+        where
+          evop = tmEvalOp
+          ev = tmEval
+{-
   chrUnifyM how e t1 t2 = do
       menv <- getl chrmatcherstateEnv
       case (t1, t2) of
@@ -315,6 +332,7 @@ instance CHRMatchable E Tm S where
       varContinue = varlookupResolveAndContinueM varTermMbKey chrMatchSubst
       evop = tmEvalOp
       ev = tmEval
+-}
 
 tmEval :: Tm -> CHRMatcher S Tm
 tmEval x = case x of

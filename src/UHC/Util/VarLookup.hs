@@ -17,6 +17,8 @@ module UHC.Util.VarLookup
     , varlookupResolveValWithMetaLev
     , varlookupResolveVal
     
+    -- , VarCompareHow(..)
+    
     , varlookupMap
     
     , varlookupResolveAndContinueM
@@ -98,34 +100,18 @@ class VarLookup m where
   varlookupSingleton = varlookupSingletonWithMetaLev metaLevVal
   {-# INLINE varlookupSingleton #-}
 
-{-
-class VarLookup m k v | m -> k v where
-  -- | Lookup a key at a level
-  varlookupWithMetaLev :: MetaLev -> k -> m -> Maybe v
+-------------------------------------------------------------------------------------------
+--- Util/convenience
+-------------------------------------------------------------------------------------------
 
-  -- | Lookup a key
-  varlookup :: k -> m -> Maybe v
-  varlookup = varlookupWithMetaLev metaLevVal
-  {-# INLINE varlookup #-}
-  
-  -- | Keys at a level
-  varlookupKeysSetWithMetaLev :: (Ord k) => MetaLev -> m -> Set.Set k
-  
-  -- | Keys as Set
-  varlookupKeysSet :: (Ord k) => m -> Set.Set k
-  varlookupKeysSet = varlookupKeysSetWithMetaLev metaLevVal
-  {-# INLINE varlookupKeysSet #-}
--}
+-- | Combine lookup with map; should be obsolete...
+varlookupMap :: VarLookup m => (VarLookupVal m -> Maybe res) -> VarLookupKey m -> m -> Maybe res
+varlookupMap get k m = varlookup k m >>= get
+{-# INLINE varlookupMap #-}
 
-{-
-instance (VarLookup m1, VarLookup m2, VarLookupKey m1 ~ VarLookupKey m2, VarLookupKey m1 ~ VarLookupKey (m1,m2)) => VarLookup (m1,m2) where
-  varlookupWithMetaLev l k (m1,m2)
-    = case varlookupWithMetaLev l k m1 of
-        r@(Just _) -> r
-        _          -> varlookupWithMetaLev l k m2
-  varlookupKeysSetWithMetaLev l (m1,m2)
-    = varlookupKeysSetWithMetaLev l m1 `Set.union` varlookupKeysSetWithMetaLev l m2
--}
+-------------------------------------------------------------------------------------------
+--- Lookup and resolution
+-------------------------------------------------------------------------------------------
 
 -- | Fully resolve lookup
 varlookupResolveVarWithMetaLev :: VarLookup m => MetaLev -> (VarLookupVal m -> Maybe (VarLookupKey m)) -> VarLookupKey m -> m -> Maybe (VarLookupVal m)
@@ -148,15 +134,6 @@ varlookupResolveVal = varlookupResolveValWithMetaLev metaLevVal
 -- | Monadically lookup a variable, resolve it, continue with either a fail or success monad continuation
 varlookupResolveAndContinueM :: (Monad m, VarLookup s) => (VarLookupVal s -> Maybe (VarLookupKey s)) -> (m s) -> (m a) -> (VarLookupVal s -> m a) -> VarLookupKey s -> m a
 varlookupResolveAndContinueM tmIsVar gets failFind okFind k = gets >>= \s -> maybe failFind okFind $ varlookupResolveVar tmIsVar k s
-
-{-
-instance VarLookup m k v => VarLookup [m] k v where
-  varlookupWithMetaLev l k ms = listToMaybe $ catMaybes $ map (varlookupWithMetaLev l k) ms
--}
-
-varlookupMap :: VarLookup m => (VarLookupVal m -> Maybe res) -> VarLookupKey m -> m -> Maybe res
-varlookupMap get k m = varlookup k m >>= get
-{-# INLINE varlookupMap #-}
 
 -------------------------------------------------------------------------------------------
 --- VarLookupFix
@@ -217,20 +194,17 @@ instance
 -}
 
 -------------------------------------------------------------------------------------------
---- VarLookupBase
+--- How to do the VarLookup part of matching/unification/comparing
 -------------------------------------------------------------------------------------------
 
 {-
-class VarLookupBase m where
-  -- | Make an empty VarLookup
-  varlookupEmpty :: m
-  -- | Make a singleton VarLookup at a level
-  varlookupSingletonWithMetaLev :: MetaLev -> VarLookupKey m -> VarLookupVal m -> m
-  
-  -- | Make a singleton VarLookup
-  varlookupSingleton :: VarLookupKey m -> VarLookupVal m -> m
-  varlookupSingleton = varlookupSingletonWithMetaLev metaLevVal
-  {-# INLINE varlookupSingleton #-}
+-- | How to match, increasingly more binding is allowed
+data VarCompareHow
+  = VarCompareHow_Check               -- ^ equality check only
+  | VarCompareHow_Match               -- ^ also allow one-directional (left to right) matching/binding of (meta)vars
+  | VarCompareHow_MatchAndWait        -- ^ also allow giving back of global vars on which we wait
+  | VarCompareHow_Unify               -- ^ also allow bi-directional matching, i.e. unification
+  deriving (Ord, Eq)
 -}
 
 -------------------------------------------------------------------------------------------

@@ -40,6 +40,7 @@ module UHC.Util.CHR.Base
   , chrmatcherstateEnv
   , chrmatcherstateVarLookup
   
+  , chrMatchResolveCompareAndContinue
   , chrMatchSubst
   , chrMatchBind
   , chrMatchFail
@@ -92,6 +93,128 @@ import           UHC.Util.Serialize
 import           UHC.Util.Substitutable
 
 import           UHC.Util.Debug
+
+-------------------------------------------------------------------------------------------
+--- CHRMatchHow
+-------------------------------------------------------------------------------------------
+
+-- | How to match, increasingly more binding is allowed
+data CHRMatchHow
+  = CHRMatchHow_Check               -- ^ equality check only
+  | CHRMatchHow_Match               -- ^ also allow one-directional (left to right) matching/binding of (meta)vars
+  | CHRMatchHow_MatchAndWait        -- ^ also allow giving back of global vars on which we wait
+  | CHRMatchHow_Unify               -- ^ also allow bi-directional matching, i.e. unification
+  deriving (Ord, Eq)
+
+-------------------------------------------------------------------------------------------
+--- CHRMatchEnv
+-------------------------------------------------------------------------------------------
+
+-- | Context/environment required for matching itself
+data CHRMatchEnv k
+  = CHRMatchEnv
+      { {- chrmatchenvHow          :: !CHRMatchHow
+      , -} 
+        chrmatchenvMetaMayBind  :: !(k -> Bool)
+      }
+
+emptyCHRMatchEnv :: CHRMatchEnv x
+emptyCHRMatchEnv = CHRMatchEnv {- CHRMatchHow_Check -} (const True)
+
+-------------------------------------------------------------------------------------------
+--- Wait for var
+-------------------------------------------------------------------------------------------
+
+type CHRWaitForVarSet s = Set.Set (VarLookupKey s)
+
+-------------------------------------------------------------------------------------------
+--- CHRMatcher, call back API used during matching
+-------------------------------------------------------------------------------------------
+
+{-
+data CHRMatcherState subst k
+  = CHRMatcherState
+      { _chrmatcherstateVarLookup       :: !(StackedVarLookup subst)
+      , _chrmatcherstateWaitForVarSet   :: !(CHRWaitForVarSet subst)
+      , _chrmatcherstateEnv             :: !(CHRMatchEnv k)
+      }
+  deriving Typeable
+-}
+type CHRMatcherState subst k = (StackedVarLookup subst, CHRWaitForVarSet subst, CHRMatchEnv k)
+
+mkCHRMatcherState :: StackedVarLookup subst -> CHRWaitForVarSet subst -> CHRMatchEnv k -> CHRMatcherState subst k
+mkCHRMatcherState s w e = (s, w, e)
+-- mkCHRMatcherState s w e = CHRMatcherState s w e
+{-# INLINE mkCHRMatcherState #-}
+
+unCHRMatcherState :: CHRMatcherState subst k -> (StackedVarLookup subst, CHRWaitForVarSet subst, CHRMatchEnv k)
+unCHRMatcherState = id
+-- unCHRMatcherState (CHRMatcherState s w e) = (s,w,e)
+{-# INLINE unCHRMatcherState #-}
+
+-- | Failure of CHRMatcher
+data CHRMatcherFailure
+  = CHRMatcherFailure
+  | CHRMatcherFailure_NoBinding         -- ^ absence of binding
+
+-- | Matching monad, keeping a stacked (pair) of subst (local + global), and a set of global variables upon which the solver has to wait in order to (possibly) match further/again
+-- type CHRMatcher subst = StateT (StackedVarLookup subst, CHRWaitForVarSet subst) (Either ())
+type CHRMatcher subst = StateT (CHRMatcherState subst (VarLookupKey subst)) (Either CHRMatcherFailure)
+
+-- instance (k ~ VarLookupKey subst) => MonadState (CHRMatcherState subst k) (CHRMatcher subst)
+
+chrmatcherstateVarLookup     = fst3l
+chrmatcherstateWaitForVarSet = snd3l
+chrmatcherstateEnv           = trd3l
+
+{-
+mkLabel ''CHRMatcherState
+-}
+
+-------------------------------------------------------------------------------------------
+--- Common part w.r.t. variable lookup
+-------------------------------------------------------------------------------------------
+
+-- | Do the resolution part of a comparison, continuing with a function which can assume variable resolution has been done for the terms being compared
+chrMatchResolveCompareAndContinue
+  :: forall s .
+     ( VarLookup s
+     , VarLookupCmb s s
+     , Ord (VarLookupKey s)
+     , VarTerm (VarLookupVal s)
+     , ExtrValVarKey (VarLookupVal s) ~ VarLookupKey s
+     )
+  => 
+        CHRMatchHow                                                     -- ^ how to do the resolution
+     -> (VarLookupVal s -> VarLookupVal s -> CHRMatcher s ())           -- ^ succeed with successful varlookup continuation
+     -> VarLookupVal s                                                  -- ^ left/fst val
+     -> VarLookupVal s                                                  -- ^ right/snd val
+     -> CHRMatcher s ()
+chrMatchResolveCompareAndContinue how okFind t1 t2
+  = cmp t1 t2
+  where cmp t1 t2 = do
+          menv <- getl chrmatcherstateEnv
+          case (varTermMbKey t1, varTermMbKey t2) of
+              (Just v1, Just v2) | v1 == v2                         -> chrMatchSuccess
+                                 | how == CHRMatchHow_Check         -> varContinue
+                                                                         (varContinue (waitv v1 >> waitv v2) (okFind t1) v2)
+                                                                         (\t1 -> varContinue (waitt t1 >> waitv v2) (\t2 -> okFind t1 t2) v2)
+                                                                         v1
+                                 where waitv v = unless (chrmatchenvMetaMayBind menv v) $ chrMatchWait v
+                                       waitt = maybe (return ()) waitv . varTermMbKey
+              (Just v1, _      ) | how == CHRMatchHow_Check         -> varContinue (if maybind then chrMatchFail else chrMatchWait v1) (\t1 -> okFind t1 t2) v1
+                                 | how >= CHRMatchHow_Match && maybind
+                                                                    -> varContinue (chrMatchBind menv v1 t2) (\t1 -> okFind t1 t2) v1
+                                 | otherwise                        -> varContinue chrMatchFail (\t1 -> okFind t1 t2) v1
+                                 where maybind = chrmatchenvMetaMayBind menv v1
+              (_      , Just v2) | how == CHRMatchHow_Check         -> varContinue (if maybind then chrMatchFail else chrMatchWait v2) (okFind t1) v2
+                                 | how == CHRMatchHow_MatchAndWait  -> varContinue (chrMatchWait v2) (okFind t1) v2
+                                 | how == CHRMatchHow_Unify && maybind
+                                                                    -> varContinue (chrMatchBind menv v2 t1) (okFind t1) v2
+                                 | otherwise                        -> varContinue chrMatchFail (okFind t1) v2
+                                 where maybind = chrmatchenvMetaMayBind menv v2
+              _                                                     -> okFind t1 t2
+        varContinue = varlookupResolveAndContinueM varTermMbKey chrMatchSubst
 
 -------------------------------------------------------------------------------------------
 --- CHRCheckable
@@ -238,71 +361,6 @@ class CHREmptySubstitution subst where
   chrEmptySubst :: subst
 
 -------------------------------------------------------------------------------------------
---- CHRMatchEnv
--------------------------------------------------------------------------------------------
-
--- | How to match, increasingly more binding is allowed
-data CHRMatchHow
-  = CHRMatchHow_Check               -- ^ equality check only
-  | CHRMatchHow_Match               -- ^ also allow one-directional (left to right) matching/binding of (meta)vars
-  | CHRMatchHow_MatchAndWait        -- ^ also allow giving back of global vars on which we wait
-  | CHRMatchHow_Unify               -- ^ also allow bi-directional matching, i.e. unification
-  deriving (Ord, Eq)
-
--- | Context/environment required for matching itself
-data CHRMatchEnv k
-  = CHRMatchEnv
-      { {- chrmatchenvHow          :: !CHRMatchHow
-      , -} 
-        chrmatchenvMetaMayBind  :: !(k -> Bool)
-      }
-
-emptyCHRMatchEnv :: CHRMatchEnv x
-emptyCHRMatchEnv = CHRMatchEnv {- CHRMatchHow_Check -} (const True)
-
--------------------------------------------------------------------------------------------
---- Wait for var
--------------------------------------------------------------------------------------------
-
-type CHRWaitForVarSet s = Set.Set (VarLookupKey s)
-
--------------------------------------------------------------------------------------------
---- CHRMatcher, call back API used during matching
--------------------------------------------------------------------------------------------
-
-{-
-data CHRMatcherState subst k
-  = CHRMatcherState
-      { _chrmatcherstateVarLookup       :: !(StackedVarLookup subst)
-      , _chrmatcherstateWaitForVarSet   :: !(CHRWaitForVarSet subst)
-      , _chrmatcherstateEnv             :: !(CHRMatchEnv k)
-      }
-  deriving Typeable
--}
-type CHRMatcherState subst k = (StackedVarLookup subst, CHRWaitForVarSet subst, CHRMatchEnv k)
-
-mkCHRMatcherState :: StackedVarLookup subst -> CHRWaitForVarSet subst -> CHRMatchEnv k -> CHRMatcherState subst k
-mkCHRMatcherState s w e = (s, w, e)
-{-# INLINE mkCHRMatcherState #-}
-
-unCHRMatcherState :: CHRMatcherState subst k -> (StackedVarLookup subst, CHRWaitForVarSet subst, CHRMatchEnv k)
-unCHRMatcherState = id
-{-# INLINE unCHRMatcherState #-}
-
--- | Failure of CHRMatcher
-data CHRMatcherFailure
-  = CHRMatcherFailure
-  | CHRMatcherFailure_NoBinding         -- ^ absence of binding
-
--- | Matching monad, keeping a stacked (pair) of subst (local + global), and a set of global variables upon which the solver has to wait in order to (possibly) match further/again
--- type CHRMatcher subst = StateT (StackedVarLookup subst, CHRWaitForVarSet subst) (Either ())
-type CHRMatcher subst = StateT (CHRMatcherState subst (VarLookupKey subst)) (Either CHRMatcherFailure)
-
-chrmatcherstateVarLookup     = fst3l
-chrmatcherstateWaitForVarSet = snd3l
-chrmatcherstateEnv           = trd3l
-
--------------------------------------------------------------------------------------------
 --- CHRMatchable
 -------------------------------------------------------------------------------------------
 
@@ -388,12 +446,6 @@ chrmatcherRun mtch menv s = chrmatcherRun' (const Nothing) (\s w _ -> Just (s,w)
       $ mtch
 -}
 
--------------------------------------------------------------------------------------------
---- Lens construction
--------------------------------------------------------------------------------------------
-
--- mkLabel ''CHRMatcherState
-
 
 -------------------------------------------------------------------------------------------
 --- CHRMatcher API, part II
@@ -444,7 +496,7 @@ chrMatchModifyWait :: (CHRWaitForVarSet subst -> CHRWaitForVarSet subst) -> CHRM
 chrMatchModifyWait f =
   -- modify (\st -> st {_chrmatcherstateWaitForVarSet = f $ _chrmatcherstateWaitForVarSet st})
   -- (chrmatcherstateWaitForVarSet =$:)
-  modify (\(s,w,e) -> (s, f w, e))
+  modify (\(s,w,e) -> (s,f w,e))
 {-# INLINE chrMatchModifyWait #-}
 
 -- | Match one-directional (from 1st to 2nd arg), under a subst, yielding a subst for the metavars in the 1st arg, waiting for those in the 2nd
