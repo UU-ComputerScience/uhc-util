@@ -296,6 +296,7 @@ instance CHRMatchable E Tm S where
         where
           evop = tmEvalOp
           ev = tmEval
+  {-# INLINE chrUnifyM #-}
 {-
   chrUnifyM how e t1 t2 = do
       menv <- getl chrmatcherstateEnv
