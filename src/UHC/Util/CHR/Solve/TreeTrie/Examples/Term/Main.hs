@@ -74,7 +74,7 @@ runFile runopts f = do
 mainTerm = do
   forM_
       [
-        "queens"
+        "leq", "queens"
       -- , "queens"
       -- , "leq"
       -- , "var"
@@ -84,7 +84,10 @@ mainTerm = do
       -- , "antisym"
       ] $ \f -> do
     let f' = "test/" ++ f ++ ".chr"
-    runFile [RunOpt_DebugTrace, RunOpt_SucceedOnLeftoverWork] f'
+    runFile
+      [ RunOpt_SucceedOnLeftoverWork
+      -- , RunOpt_DebugTrace
+      ] f'
   
 
 {-

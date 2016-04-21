@@ -287,8 +287,7 @@ instance CHRCheckable E G S where
           _            -> chrMatchFail
 
 instance CHRMatchable E Tm S where
-{-
-  chrUnifyM how e t1 t2 = chrMatchResolveCompareAndContinue how unif t1 t2
+  chrUnifyM how e t1 t2 = unif t1 t2 -- chrMatchResolveCompareAndContinue how unif t1 t2
     where
       unif t1 t2  = 
           case (t1, t2) of
@@ -300,11 +299,11 @@ instance CHRMatchable E Tm S where
             (t1           , Tm_Op  o2 as2) | how == CHRMatchHow_Unify         -> tmEvalOp o2 as2 >>= \t2 -> chrUnifyM how e t1 t2
             (Tm_Int i1    , Tm_Int i2    ) | i1 == i2                         -> chrMatchSuccess
             (Tm_Bool b1   , Tm_Bool b2   ) | b1 == b2                         -> chrMatchSuccess
-            _                                                                 -> chrMatchFail
+            _                                                                 -> chrMatchResolveCompareAndContinue how (chrUnifyM how e) t1 t2 -- chrMatchFail
   {-# INLINE chrUnifyM #-}
--}
 {-
 -}
+{-
   chrUnifyM how e t1 t2 = do
       menv <- getl chrmatcherstateEnv
       case (t1, t2) of
@@ -341,6 +340,7 @@ instance CHRMatchable E Tm S where
       evop = tmEvalOp
       ev = tmEval
       -- unif2 t1 t2 = chrUnifyM how e t1 t2 -- chrMatchResolveCompareAndContinue how (chrUnifyM how e) t1 t2
+-}
 {-
   chrUnifyM how e t1 t2 = do
       menv <- getl chrmatcherstateEnv

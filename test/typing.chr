@@ -20,7 +20,7 @@
 -- 
 
 gamLookupConsYes @ InGamma (x : t) [(x : t) : gamma] <=> .
-gamLookupConsNo  @ InGamma (x : t) [(x : s) : gamma] <=> x /= y | InGamma (x : t) gamma.
+gamLookupConsNo  @ InGamma (x : t) [(y : s) : gamma] <=> x /= y | InGamma (x : t) gamma.
 gamLookupNil     @ InGamma (x : t) []                <=> Fail.
 
 -- 
@@ -101,6 +101,8 @@ matchAssPrv @ C c (Ass l1) \ C c (Prv l2) <=> LevLT l1 l2 | .
 --     \ c(C[Var], L2)
 --   <=> L1 < L2, Var \in fv(Type)
 --     | c(C[Sigma]).
+
+-- C (var ~* sigma) l1 \ C (c ) l2 <=> l1 `LevLT` l2
 
 
 -- ?type

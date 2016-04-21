@@ -191,6 +191,7 @@ chrMatchResolveCompareAndContinue
      -> CHRMatcher s ()
 -- 20160421: does not work yet
 chrMatchResolveCompareAndContinue how ok t1 t2
+{-
   = cmp t1 t2
   where cmp t1 t2 = do
           menv <- getl chrmatcherstateEnv
@@ -219,7 +220,7 @@ chrMatchResolveCompareAndContinue how ok t1 t2
                       where maybind = chrmatchenvMetaMayBind menv v2
               _                                                     -> ok t1 t2
         varContinue = varlookupResolveAndContinueM varTermMbKey chrMatchSubst
-{-
+-}
   = cmp t1 t2
   where cmp t1 t2 = do
           menv <- getl chrmatcherstateEnv
@@ -242,8 +243,9 @@ chrMatchResolveCompareAndContinue how ok t1 t2
                                                                     -> varContinue (chrMatchBind menv v2 t1) (ok t1) v2
                                  | otherwise                        -> varContinue chrMatchFail (ok t1) v2
                                  where maybind = chrmatchenvMetaMayBind menv v2
-              _                                                     -> ok t1 t2
+              _                                                     -> chrMatchFail -- ok t1 t2
         varContinue = varlookupResolveAndContinueM varTermMbKey chrMatchSubst
+{-
 -}
 {-
   chrUnifyM how e t1 t2 = do
@@ -459,8 +461,6 @@ class (CHREmptySubstitution subst, VarLookupCmb subst subst, VarExtractable x, V
   chrBuiltinSolveM :: env -> x -> CHRMatcher subst ()
   chrBuiltinSolveM e x = return () -- chrmatcherLift $ \sg -> chrBuiltinSolve e sg x
 
-{-
--}
 instance {-# OVERLAPPABLE #-} (CHRMatchable env x subst) => CHRMatchable env (Maybe x) subst where
   chrUnifyM how e (Just x1) (Just x2) = chrUnifyM how e x1 x2
   chrUnifyM how e _         _         = chrMatchFail
@@ -485,15 +485,6 @@ chrmatcherLift f = do
     [sl,sg] <- fmap unStackedVarLookup $ getl chrmatcherstateVarLookup -- gets (unStackedVarLookup . _chrmatcherstateVarLookup)
     maybe chrMatchFail (\snew -> chrmatcherstateVarLookup =$: (snew |+>)) $ f sg
     
-{-
-chrmatcherLift f = do
-    -- [sl,sg] <- gets (unStackedVarLookup . _chrmatcherstateVarLookup)
-    [sl,sg] <- undefined -- gets (unStackedVarLookup . _chrmatcherstateVarLookup)
-    maybe (throwError ()) (undefined) $ f sg
-    -- maybe (throwError ()) (\snew -> modify (\st -> st {_chrmatcherstateVarLookup = snew |+> _chrmatcherstateVarLookup st})) $ f sg
-    -- maybe (throwError ()) (\snew -> modify (\(s,w) -> (snew |+> s,w))) $ f sg
--}
-
 -- | Run a CHRMatcher
 chrmatcherRun' :: (CHREmptySubstitution subst) => (CHRMatcherFailure -> r) -> (subst -> CHRWaitForVarSet subst -> x -> r) -> CHRMatcher subst x -> CHRMatchEnv (VarLookupKey subst) -> StackedVarLookup subst -> r
 chrmatcherRun' fail succes mtch menv s = either
@@ -506,16 +497,6 @@ chrmatcherRun' fail succes mtch menv s = either
 chrmatcherRun :: (CHREmptySubstitution subst) => CHRMatcher subst () -> CHRMatchEnv (VarLookupKey subst) -> subst -> Maybe (subst, CHRWaitForVarSet subst)
 chrmatcherRun mtch menv s = chrmatcherRun' (const Nothing) (\s w _ -> Just (s,w)) mtch menv (StackedVarLookup [chrEmptySubst,s])
 
-{-
-  either
-    (const Nothing)
-    ((\(StackedVarLookup [s,_], w, _) -> Just (s,w)) . unCHRMatcherState)
-    -- (\(CHRMatcherState {_chrmatcherstateVarLookup = StackedVarLookup [s,_], _chrmatcherstateWaitForVarSet = w}) -> Just (s,w))
-      $ flip execStateT (mkCHRMatcherState (StackedVarLookup [chrEmptySubst,s]) Set.empty menv)
-      $ mtch
--}
-
-
 -------------------------------------------------------------------------------------------
 --- CHRMatcher API, part II
 -------------------------------------------------------------------------------------------
@@ -525,19 +506,8 @@ chrMatchSubst = getl chrmatcherstateVarLookup
 {-# INLINE chrMatchSubst #-}
 
 chrMatchBind :: forall subst k v . (VarLookupCmb subst subst, VarLookup subst, k ~ VarLookupKey subst, v ~ VarLookupVal subst) => CHRMatchEnv k -> k -> v -> CHRMatcher subst ()
-chrMatchBind menv k v = chrmatcherstateVarLookup =$: ((varlookupSingleton k v :: subst) |+>)
-{-
-chrMatchBind menv k v = do
-    menv <- getl chrmatcherstateEnv
-    if chrmatchenvMetaMayBind menv k
-      then chrmatcherstateVarLookup =$: ((substSingleton k v :: subst) |+>) -- modify (\(s,w,e) -> ((substSingleton k v :: subst) |+> s,w,e))
-      else return ()
--}
-{-
-chrMatchBind menv k v
-  | chrmatchenvMetaMayBind menv k = modify (\(s,w,e) -> ((substSingleton k v :: subst) |+> s,w,e))
-  | otherwise                     = return ()
--}
+chrMatchBind _ k v = chrmatcherstateVarLookup =$: ((varlookupSingleton k v :: subst) |+>)
+{-# INLINE chrMatchBind #-}
 
 chrMatchWait :: (Ord k, k ~ VarLookupKey subst) => k -> CHRMatcher subst ()
 chrMatchWait k = chrMatchModifyWait (Set.insert k)
