@@ -108,7 +108,7 @@ matchAssPrv @ C c (Ass l1) \ C c (Prv l2) <=> LevLT l1 l2 | .
 -- ?c [var], lists, context?
 -- ?set membership, meta info like freevars
 -- ?Type, type
--- subst @ C (var ~* sigma) l1 \ C (c [var]) l2 <=> LevLT l1 l2, Member var (Fv type) | C (c [sigma]) .
+-- subst @ C (var ~* sigma) l1 \ C (c [var]) l2 <=> l1 `LevLT` l2, var `FvIn` Fv type | C (c [sigma]) .
 
 -- %%% Note: you might need to restrict applications
 -- %%%       of this rule to guarantee termination.
@@ -156,7 +156,8 @@ typeDeconClash @ C ((Con c as : k1) ~* (Con d bs : k2)) l <=> c /= d | Fail.
 --     | false.
 
 -- ?occur check is expensive, requires engineering to delay this...
--- occurCheck @ 
+-- ?2nd K, should be L?
+occurCheck @ C ((var ~* Con c as) : k) k <=> var `FvIn` Fv as | Fail .
 
 -- %% Forall types
 -- c((forall V. Q => T1) : K1 ~* (forall V. Q => T2) : K2, L)
@@ -168,10 +169,17 @@ typeDeconClash @ C ((Con c as : k1) ~* (Con d bs : k2)) l <=> c /= d | Fail.
 
 -- c((forall V. Q => T) : K1 ~N con(C, Args) : K2, L)
 --   <=> false.
+
+C ((Forall v q t : k1) ~* (Con c as : k2)) l <=> Fail .
+
 -- %% Variable lifting
 -- c(var(V1,L1) : K1 ~* var(V2,L2) : K2, L)
 --   <=> L' := min(L1,L2)
 --     | c(var(V1,L1) : K1 ~* var(V2,L2) : K2, L').
+
+-- ?guard also unifies?
+C ((Var v1 l1 : k1) ~* (Var v2 l2 : l2)) l <=> l' == (l1 `LevMin` l2) | C ((Var v1 l1 : k1) ~* (Var v2 l2 : l2)) l' .
+
 -- %% Skolem check
 -- c(var(V1,assume(L1)) : K1 ~* var(V2,assume(L2)) : K2, L)
 --   <=> V1 =/= V2
