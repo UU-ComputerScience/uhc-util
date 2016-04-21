@@ -189,38 +189,7 @@ chrMatchResolveCompareAndContinue
      -> VarLookupVal s                                                  -- ^ left/fst val
      -> VarLookupVal s                                                  -- ^ right/snd val
      -> CHRMatcher s ()
--- 20160421: does not work yet
 chrMatchResolveCompareAndContinue how ok t1 t2
-{-
-  = cmp t1 t2
-  where cmp t1 t2 = do
-          menv <- getl chrmatcherstateEnv
-          case (varTermMbKey t1, varTermMbKey t2) of
-              (Just v1, Just v2) | v1 == v2                         -> chrMatchSuccess
-                                 | how == CHRMatchHow_Check         -> varContinue
-                                                                         (varContinue (waitv v1 >> waitv v2) (cmp2 t1) v2)
-                                                                         (\t1 -> varContinue (waitt t1 >> waitv v2) (cmp2 t1) v2)
-                                                                         v1
-                                 where waitv v = unless (chrmatchenvMetaMayBind menv v) $ chrMatchWait v
-                                       waitt = maybe (return ()) waitv . varTermMbKey
-              (Just v1, _      ) | how == CHRMatchHow_Check         -> varContinue (if maybind then chrMatchFail else chrMatchWait v1) (flip cmp2 t2) v1
-                                 | how >= CHRMatchHow_Match && maybind
-                                                                    -> varContinue (chrMatchBind menv v1 t2) (flip cmp2 t2) v1
-                                 | otherwise                        -> varContinue chrMatchFail (flip cmp2 t2) v1
-                                 where maybind = chrmatchenvMetaMayBind menv v1
-              _                                                     -> cmp2 t1 t2
-        cmp2 t1 t2 = do
-          menv <- getl chrmatcherstateEnv
-          case varTermMbKey t2 of
-              Just v2 | how == CHRMatchHow_Check         -> varContinue (if maybind then chrMatchFail else chrMatchWait v2) (ok t1) v2
-                      | how == CHRMatchHow_MatchAndWait  -> varContinue (chrMatchWait v2) (ok t1) v2
-                      | how == CHRMatchHow_Unify && maybind
-                                                         -> varContinue (chrMatchBind menv v2 t1) (ok t1) v2
-                      | otherwise                        -> varContinue chrMatchFail (ok t1) v2
-                      where maybind = chrmatchenvMetaMayBind menv v2
-              _                                                     -> ok t1 t2
-        varContinue = varlookupResolveAndContinueM varTermMbKey chrMatchSubst
--}
   = cmp t1 t2
   where cmp t1 t2 = do
           menv <- getl chrmatcherstateEnv
@@ -234,57 +203,17 @@ chrMatchResolveCompareAndContinue how ok t1 t2
                                        waitt = maybe (return ()) waitv . varTermMbKey
               (Just v1, _      ) | how == CHRMatchHow_Check         -> varContinue (if maybind then chrMatchFail else chrMatchWait v1) (flip ok t2) v1
                                  | how >= CHRMatchHow_Match && maybind
-                                                                    -> varContinue (chrMatchBind menv v1 t2) (flip ok t2) v1
+                                                                    -> varContinue (chrMatchBind v1 t2) (flip ok t2) v1
                                  | otherwise                        -> varContinue chrMatchFail (flip ok t2) v1
                                  where maybind = chrmatchenvMetaMayBind menv v1
               (_      , Just v2) | how == CHRMatchHow_Check         -> varContinue (if maybind then chrMatchFail else chrMatchWait v2) (ok t1) v2
                                  | how == CHRMatchHow_MatchAndWait  -> varContinue (chrMatchWait v2) (ok t1) v2
                                  | how == CHRMatchHow_Unify && maybind
-                                                                    -> varContinue (chrMatchBind menv v2 t1) (ok t1) v2
+                                                                    -> varContinue (chrMatchBind v2 t1) (ok t1) v2
                                  | otherwise                        -> varContinue chrMatchFail (ok t1) v2
                                  where maybind = chrmatchenvMetaMayBind menv v2
               _                                                     -> chrMatchFail -- ok t1 t2
         varContinue = varlookupResolveAndContinueM varTermMbKey chrMatchSubst
-{-
--}
-{-
-  chrUnifyM how e t1 t2 = do
-      menv <- getl chrmatcherstateEnv
-      case (t1, t2) of
-        (Tm_Con c1 as1, Tm_Con c2 as2) | c1 == c2 && length as1 == length as2 
-                                                                          -> sequence_ (zipWith (chrUnifyM how e) as1 as2)
-        (Tm_Op  o1 as1, Tm_Op  o2 as2) | how < CHRMatchHow_Unify && o1 == o2 && length as1 == length as2 
-                                                                          -> sequence_ (zipWith (chrUnifyM how e) as1 as2)
-        (Tm_Op  o1 as1, t2           ) | how == CHRMatchHow_Unify         -> evop o1 as1 >>= \t1 -> chrUnifyM how e t1 t2
-        (t1           , Tm_Op  o2 as2) | how == CHRMatchHow_Unify         -> evop o2 as2 >>= \t2 -> chrUnifyM how e t1 t2
-        (Tm_Int i1    , Tm_Int i2    ) | i1 == i2                         -> chrMatchSuccess
-        (Tm_Bool b1   , Tm_Bool b2   ) | b1 == b2                         -> chrMatchSuccess
-        (Tm_Var v1    , Tm_Var v2    ) | v1 == v2                         -> chrMatchSuccess
-                                       | how == CHRMatchHow_Check         -> varContinue
-                                                                               (varContinue (waitv v1 >> waitv v2) (chrUnifyM how e t1) v2)
-                                                                               (\t1 -> varContinue (waitt t1 >> waitv v2) (\t2 -> chrUnifyM how e t1 t2) v2)
-                                                                               v1
-                                       where waitv v = unless (chrmatchenvMetaMayBind menv v) $ chrMatchWait v
-                                             waitt (Tm_Var v) = waitv v
-                                             waitt  _         = return ()
-        (Tm_Var v1    , t2           ) | how == CHRMatchHow_Check         -> varContinue (if maybind then chrMatchFail else chrMatchWait v1) (\t1 -> chrUnifyM how e t1 t2) v1
-                                       | how >= CHRMatchHow_Match && maybind
-                                                                          -> varContinue (chrMatchBind menv v1 t2) (\t1 -> chrUnifyM how e t1 t2) v1
-                                       | otherwise                        -> varContinue chrMatchFail {- chrMatchFailNoBinding -} (\t1 -> chrUnifyM how e t1 t2) v1
-                                       where maybind = chrmatchenvMetaMayBind menv v1
-        (t1           , Tm_Var v2    ) | how == CHRMatchHow_Check         -> varContinue (if maybind then chrMatchFail else chrMatchWait v2) (chrUnifyM how e t1) v2
-                                       | how == CHRMatchHow_MatchAndWait  -> varContinue (chrMatchWait v2) (chrUnifyM how e t1) v2
-                                       | how == CHRMatchHow_Unify && maybind
-                                                                          -> varContinue (chrMatchBind menv v2 t1) (chrUnifyM how e t1) v2
-                                       | otherwise                        -> varContinue chrMatchFail {- chrMatchFailNoBinding -} (chrUnifyM how e t1) v2
-                                       where maybind = chrmatchenvMetaMayBind menv v2
-        _                                                                 -> chrMatchFail
-    where
-      varContinue = varlookupResolveAndContinueM varTermMbKey chrMatchSubst
-      evop = tmEvalOp
-      ev = tmEval
--}
-
 
 -------------------------------------------------------------------------------------------
 --- CHRCheckable
@@ -505,8 +434,8 @@ chrMatchSubst :: CHRMatcher subst (StackedVarLookup subst)
 chrMatchSubst = getl chrmatcherstateVarLookup
 {-# INLINE chrMatchSubst #-}
 
-chrMatchBind :: forall subst k v . (VarLookupCmb subst subst, VarLookup subst, k ~ VarLookupKey subst, v ~ VarLookupVal subst) => CHRMatchEnv k -> k -> v -> CHRMatcher subst ()
-chrMatchBind _ k v = chrmatcherstateVarLookup =$: ((varlookupSingleton k v :: subst) |+>)
+chrMatchBind :: forall subst k v . (VarLookupCmb subst subst, VarLookup subst, k ~ VarLookupKey subst, v ~ VarLookupVal subst) => k -> v -> CHRMatcher subst ()
+chrMatchBind k v = chrmatcherstateVarLookup =$: ((varlookupSingleton k v :: subst) |+>)
 {-# INLINE chrMatchBind #-}
 
 chrMatchWait :: (Ord k, k ~ VarLookupKey subst) => k -> CHRMatcher subst ()
