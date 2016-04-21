@@ -49,6 +49,7 @@ data Key
   = Key_Int     !Int            
   | Key_Var     !Var            
   | Key_Str     !String   
+  | Key_Lst
   | Key_Op      !POp   
   deriving (Eq, Ord, Show)
 
@@ -56,6 +57,7 @@ instance PP Key where
   pp (Key_Int i) = "ki" >|< ppParens i
   pp (Key_Var v) = "kv" >|< ppParens v
   pp (Key_Str s) = "ks" >|< ppParens s
+  pp (Key_Lst  ) = pp "kl"
   pp (Key_Op  o) = "ko" >|< ppParens o
 
 -- | Terms
@@ -64,6 +66,7 @@ data Tm
   | Tm_Int Int              -- ^ int value (for arithmetic)
   | Tm_Bool Bool            -- ^ bool value
   | Tm_Con String [Tm]      -- ^ general term structure
+  | Tm_Lst [Tm] (Maybe Tm)  -- ^ special case: list with head segment and term tail
   | Tm_Op  POp    [Tm]      -- ^ interpretable (when solving) term structure
   deriving (Show, Eq, Ord, Typeable, Generic)
 
@@ -82,10 +85,16 @@ instance PP Tm where
   pp (Tm_Var v        ) = pp v -- "v" >|< v
   pp (Tm_Con c []     ) = pp c
   pp (Tm_Con c as     ) = ppParens $ c >#< ppSpaces as
+  pp (Tm_Lst h mt     ) = let l = ppBracketsCommas h in maybe l (\t -> ppParens $ l >#< ":" >#< t) mt
   pp (Tm_Op  o [a    ]) = ppParens $ o >#< a
   pp (Tm_Op  o [a1,a2]) = ppParens $ a1 >#< o >#< a2
   pp (Tm_Int i        ) = pp i
   pp (Tm_Bool b       ) = pp b
+
+{-
+ppMbPost :: (PP x, PP r) => (a -> x) -> Maybe a -> r -> PP_Doc
+ppMbPost p = maybe pp (\v rest -> rest >#< p v)
+-}
 
 instance Serialize Tm
 
@@ -130,6 +139,7 @@ instance TTKeyable Tm where
   toTTKeyParentChildren' o (Tm_Int i) = (TT1K_One $ Key_Int i, ttkChildren [])
   toTTKeyParentChildren' o (Tm_Bool i) = (TT1K_One $ Key_Int $ fromEnum i, ttkChildren [])
   toTTKeyParentChildren' o (Tm_Con c as) = (TT1K_One $ Key_Str c, ttkChildren $ map (toTTKey' o) as)
+  toTTKeyParentChildren' o (Tm_Lst h mt) = (TT1K_One $ Key_Lst  , ttkChildren $ map (toTTKey' o) $ maybeToList mt ++ h)
   toTTKeyParentChildren' o (Tm_Op op as) = (TT1K_One $ Key_Op op, ttkChildren $ map (toTTKey' o) as)
 
 instance TTKeyable C where
@@ -206,8 +216,9 @@ instance VarUpdatable S S where
 
 instance VarUpdatable Tm S where
   s `varUpd` t = case fromJust $ varlookupResolveVal varTermMbKey t s <|> return t of
-      Tm_Con c as -> Tm_Con c $ map (s `varUpd`) as
-      Tm_Op  o as -> Tm_Op  o $ map (s `varUpd`) as
+      Tm_Con c as -> Tm_Con c $ s `varUpd` as
+      Tm_Lst h mt -> Tm_Lst (s `varUpd` h) (s `varUpd` mt)
+      Tm_Op  o as -> Tm_Op  o $ s `varUpd` as
       t -> t
 
 instance VarUpdatable P S where
@@ -229,6 +240,7 @@ instance VarUpdatable C S where
 instance VarExtractable Tm where
   varFreeSet (Tm_Var v) = Set.singleton v
   varFreeSet (Tm_Con _ as) = Set.unions $ map varFreeSet as
+  varFreeSet (Tm_Lst h mt) = Set.unions $ map varFreeSet $ maybeToList mt ++ h
   varFreeSet (Tm_Op  _ as) = Set.unions $ map varFreeSet as
   varFreeSet _ = Set.empty
 
@@ -284,56 +296,16 @@ instance CHRMatchable E Tm S where
     where
       unif t1 t2  = 
           case (t1, t2) of
-            (Tm_Con c1 as1, Tm_Con c2 as2) | c1 == c2 && length as1 == length as2 
-                                                                              -> sequence_ (zipWith (chrUnifyM how e) as1 as2)
-            (Tm_Op  o1 as1, Tm_Op  o2 as2) | how < CHRMatchHow_Unify && o1 == o2 && length as1 == length as2 
-                                                                              -> sequence_ (zipWith (chrUnifyM how e) as1 as2)
-            (Tm_Op  o1 as1, t2           ) | how == CHRMatchHow_Unify         -> evop o1 as1 >>= \t1 -> chrUnifyM how e t1 t2
-            (t1           , Tm_Op  o2 as2) | how == CHRMatchHow_Unify         -> evop o2 as2 >>= \t2 -> chrUnifyM how e t1 t2
+            (Tm_Con c1 as1, Tm_Con c2 as2) | c1 == c2                         -> chrUnifyM how e as1 as2
+            (Tm_Lst h1 mt1, Tm_Lst h2 mt2)                                    -> chrUnifyM how e h1 h2 >> chrUnifyM how e mt1 mt2
+            (Tm_Op  o1 as1, Tm_Op  o2 as2) | how < CHRMatchHow_Unify && o1 == o2
+                                                                              -> chrUnifyM how e as1 as2
+            (Tm_Op  o1 as1, t2           ) | how == CHRMatchHow_Unify         -> tmEvalOp o1 as1 >>= \t1 -> chrUnifyM how e t1 t2
+            (t1           , Tm_Op  o2 as2) | how == CHRMatchHow_Unify         -> tmEvalOp o2 as2 >>= \t2 -> chrUnifyM how e t1 t2
             (Tm_Int i1    , Tm_Int i2    ) | i1 == i2                         -> chrMatchSuccess
             (Tm_Bool b1   , Tm_Bool b2   ) | b1 == b2                         -> chrMatchSuccess
             _                                                                 -> chrMatchFail
-        where
-          evop = tmEvalOp
-          ev = tmEval
   {-# INLINE chrUnifyM #-}
-{-
-  chrUnifyM how e t1 t2 = do
-      menv <- getl chrmatcherstateEnv
-      case (t1, t2) of
-        (Tm_Con c1 as1, Tm_Con c2 as2) | c1 == c2 && length as1 == length as2 
-                                                                          -> sequence_ (zipWith (chrUnifyM how e) as1 as2)
-        (Tm_Op  o1 as1, Tm_Op  o2 as2) | how < CHRMatchHow_Unify && o1 == o2 && length as1 == length as2 
-                                                                          -> sequence_ (zipWith (chrUnifyM how e) as1 as2)
-        (Tm_Op  o1 as1, t2           ) | how == CHRMatchHow_Unify         -> evop o1 as1 >>= \t1 -> chrUnifyM how e t1 t2
-        (t1           , Tm_Op  o2 as2) | how == CHRMatchHow_Unify         -> evop o2 as2 >>= \t2 -> chrUnifyM how e t1 t2
-        (Tm_Int i1    , Tm_Int i2    ) | i1 == i2                         -> chrMatchSuccess
-        (Tm_Bool b1   , Tm_Bool b2   ) | b1 == b2                         -> chrMatchSuccess
-        (Tm_Var v1    , Tm_Var v2    ) | v1 == v2                         -> chrMatchSuccess
-                                       | how == CHRMatchHow_Check         -> varContinue
-                                                                               (varContinue (waitv v1 >> waitv v2) (chrUnifyM how e t1) v2)
-                                                                               (\t1 -> varContinue (waitt t1 >> waitv v2) (\t2 -> chrUnifyM how e t1 t2) v2)
-                                                                               v1
-                                       where waitv v = unless (chrmatchenvMetaMayBind menv v) $ chrMatchWait v
-                                             waitt (Tm_Var v) = waitv v
-                                             waitt  _         = return ()
-        (Tm_Var v1    , t2           ) | how == CHRMatchHow_Check         -> varContinue (if maybind then chrMatchFail else chrMatchWait v1) (\t1 -> chrUnifyM how e t1 t2) v1
-                                       | how >= CHRMatchHow_Match && maybind
-                                                                          -> varContinue (chrMatchBind menv v1 t2) (\t1 -> chrUnifyM how e t1 t2) v1
-                                       | otherwise                        -> varContinue chrMatchFail {- chrMatchFailNoBinding -} (\t1 -> chrUnifyM how e t1 t2) v1
-                                       where maybind = chrmatchenvMetaMayBind menv v1
-        (t1           , Tm_Var v2    ) | how == CHRMatchHow_Check         -> varContinue (if maybind then chrMatchFail else chrMatchWait v2) (chrUnifyM how e t1) v2
-                                       | how == CHRMatchHow_MatchAndWait  -> varContinue (chrMatchWait v2) (chrUnifyM how e t1) v2
-                                       | how == CHRMatchHow_Unify && maybind
-                                                                          -> varContinue (chrMatchBind menv v2 t1) (chrUnifyM how e t1) v2
-                                       | otherwise                        -> varContinue chrMatchFail {- chrMatchFailNoBinding -} (chrUnifyM how e t1) v2
-                                       where maybind = chrmatchenvMetaMayBind menv v2
-        _                                                                 -> chrMatchFail
-    where
-      varContinue = varlookupResolveAndContinueM varTermMbKey chrMatchSubst
-      evop = tmEvalOp
-      ev = tmEval
--}
 
 tmEval :: Tm -> CHRMatcher S Tm
 tmEval x = case x of
@@ -434,6 +406,8 @@ instance GTermAs C G P P Tm where
     GTm_Con c a -> forM a asTm >>= (return . Tm_Con c)
     GTm_Var v -> return $ Tm_Var v
     GTm_Int i -> return $ Tm_Int (fromInteger i)
+    GTm_Nil   -> return $ Tm_Lst [] Nothing
+    t@(GTm_Cns _ _) -> asTmList t >>= (return . uncurry Tm_Lst)
     t -> gtermasFail t "not a term"
 
 --------------------------------------------------------

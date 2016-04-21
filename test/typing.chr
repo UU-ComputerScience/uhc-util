@@ -19,15 +19,15 @@
 --                  | TypeClass TypeList
 -- 
 
-gamLookupConsYes @ InGamma (x : t) (Cons (x : t) gamma) <=> .
-gamLookupConsNo  @ InGamma (x : t) (Cons (y : s) gamma) <=> x /= y | InGamma (x : t) gamma.
-gamLookupNil     @ InGamma (x : t) (Nil               ) <=> Fail.
+gamLookupConsYes @ InGamma (x : t) [(x : t) : gamma] <=> .
+gamLookupConsNo  @ InGamma (x : t) [(x : s) : gamma] <=> x /= y | InGamma (x : t) gamma.
+gamLookupNil     @ InGamma (x : t) []                <=> Fail.
 
 -- 
 -- % GENERATION
 -- % ==========
 
-typingInt @ Typing gamma l (TmInt x) t <=> t == (Con (Int) (Nil) : Star).
+typingInt @ Typing gamma l (TmInt x) t <=> t == (Con (Int) [] : Star).
 
 -- 
 --     x : t \in Gamma
@@ -43,7 +43,7 @@ typingVar @ Typing gamma l (TmVar x) t <=> InGamma (x : t) gamma.
 
 -- ?freshness, piggyback on CHR vars?
 typingLam @ Typing gamma l (TmLam x e) t
-  <=> Typing (Cons (x : a) gamma) l e et
+  <=> Typing [(x : a) : gamma] l e et
     , a == (Var alpha l : Star)
     , t == (a -> et)
     .
@@ -54,7 +54,7 @@ typingLam @ Typing gamma l (TmLam x e) t
 -- Gamma |-@L \(x :: s). e : s -> t ~~> C
 
 typingLamA @ Typing gamma l (TmLamA x s e) t
-  <=> Typing (Cons (x : s) gamma) l e et
+  <=> Typing [(x : s) : gamma] l e et
     , t == (s -> et)
     .
 
@@ -140,8 +140,8 @@ orientation @ C (x ~* y) l <=> y << x | C (y ~* x) l.
 -- c(con(C, [A1, ..., An]) : R1 ~N con(C, [B1, ..., Bn]) : R2, L)
 --   <=> c(A1 ~N B1, L), ..., c(An ~N Bn, L).
 
-typeDeconCons @ C ((Con c (Cons a as) : r1) ~* (Con c (Cons b bs) : r2)) l <=> C (a ~* b) l, C (as ~* bs) l.
-typeDeconNil  @ C ((Con c (Nil      ) : r1) ~* (Con c (Nil      ) : r2)) l <=> .
+typeDeconCons @ C ((Con c [a : as] : r1) ~* (Con c [b : bs] : r2)) l <=> C (a ~* b) l, C (as ~* bs) l.
+typeDeconNil  @ C ((Con c [      ] : r1) ~* (Con c [      ] : r2)) l <=> .
 
 -- c(con(C, As) : K1 ~N con(D, Bs) : K2, L)
 --   <=> C =/= D
@@ -155,13 +155,17 @@ typeDeconClash @ C ((Con c as : k1) ~* (Con d bs : k2)) l <=> c /= d | Fail.
 --   <=> Var \in fv(As)
 --     | false.
 
-
+-- ?occur check is expensive, requires engineering to delay this...
+-- occurCheck @ 
 
 -- %% Forall types
 -- c((forall V. Q => T1) : K1 ~* (forall V. Q => T2) : K2, L)
 --   <=> L' := extend-level(L), V' := freshen(V, L')
 --     | c([V -> V']Q, assume(L'))
 --     , c([V -> V']T1 : K1 ~* [V -> V']T2 : K2, prove(L')).
+
+-- ?how to deal with subst [ .. -> .. ], explicitly or implicitly via CHR machinery?
+
 -- c((forall V. Q => T) : K1 ~N con(C, Args) : K2, L)
 --   <=> false.
 -- %% Variable lifting
@@ -332,7 +336,7 @@ typeDeconClash @ C ((Con c as : k1) ~* (Con d bs : k2)) l <=> c /= d | Fail.
 -- # > To be applied once we are stuck in solving.
 
 
-? Typing (Nil) (LevZero) (TmApp (TmLam x (TmVar x)) (TmInt 1)) t.
--- ? Typing (Nil) (LevZero) (TmInt 1) t.
+? Typing [] (LevZero) (TmApp (TmLam x (TmVar x)) (TmInt 1)) t.
+-- ? Typing [] (LevZero) (TmInt 1) t.
 -- ? Dummy .
 

@@ -30,9 +30,9 @@ scanOpts :: ScanOpts
 scanOpts
   =  defaultScanOpts
         {   scoKeywordsTxt      =   Set.fromList []
-        ,   scoKeywordsOps      =   Set.fromList ["\\", "=>", "==>", "<=>", ".", "::", "@", "|", "\\/", "?"]
+        ,   scoKeywordsOps      =   Set.fromList ["\\", "=>", "==>", "<=>", ".", ":", "::", "@", "|", "\\/", "?"]
         ,   scoOpChars          =   Set.fromList "!#$%&*+/<=>?@\\^|-:.~"
-        ,   scoSpecChars        =   Set.fromList "(),`"
+        ,   scoSpecChars        =   Set.fromList "()[],`"
         }
 
 -------------------------------------------------------------------------------------------
@@ -84,14 +84,6 @@ pProg =
                    )
                )
            )
-{-
-       = pPre <**>
-           ( pList1Sep pComma pTm_App <**>
-               (
-               <|>
-               )
-           )   
--}
        where pPre = (\(bp,rp) lbl -> lbl . bp . rp) 
                     <$> (pParens ((,) <$> (flip (=!) <$> pTm_Var <|> pSucceed id)
                                       <*  pComma
@@ -101,28 +93,12 @@ pProg =
                     <*> ((@=) <$> (pConid <|> pVarid) <* pKey "@" <|> pSucceed id)
              pHead = pList1Sep pComma pTm_App
              pGrd = flip (=|) <$> pList1Sep pComma pTm_Op <* pKey "|" <|> pSucceed id
-{-
-             pBody'
-               = pTm_Op <**>
-                   (   () 
-                       <$ pKey "::" <*> pBodyAlt
-{-
-                            (pList1Sep pComma pTm_Op <**>
-                               (   ()
-                                   <$ pKey "|" <*> 
-                               <|>
-                               )
-                            )
--}
-                   <|>
-                   )
--}
              pBody = pGrd <+> pBodyAlts
              pBodyAlts = pListSep (pKey "\\/") pBodyAlt
              pBodyAlt
-               = (\pre (c,b) -> pre $ (c ++ b) /\ [])
+               = (\pre b -> pre $ b /\ [])
                  <$> (flip (\!) <$> pTm <* pKey "::" <|> pSucceed id)
-                 <*> (foldr ($) ([],[]) <$> pList1Sep pComma ((\c (cs,bs) -> (c:cs,bs)) <$> pTm_Op))
+                 <*> pList1Sep pComma pTm_Op
              mkR h len b = Rule h len [] b Nothing Nothing Nothing
 
     pRules = pList (pR <* pKey ".")
@@ -137,7 +113,11 @@ pProg =
           (   (\o r l -> GTm_Con o [l,r]) <$> pOp <*> pTm_App
           <|> pSucceed id
           )
-      where pOp = pConsym <|> pVarsym <|> pKey "`" *> pConid <* pKey "`"
+      where pOp
+              =   pConsym
+              <|> pVarsym
+              <|> pKey "`" *> pConid <* pKey "`"
+              <|> pCOLON
 
     pTm_App
       =   GTm_Con <$> pConid <*> pList pTm_Base
@@ -148,10 +128,19 @@ pProg =
       =   pTm_Var
       <|> (GTm_Int . read) <$> pInteger
       <|> GTm_Str <$> pString
-      -- <|> flip GTm_Con [] <$> pConid
       <|> pParens pTm
+      <|> pPacked (pKey "[") (pKey "]")
+            (   pTm_App <**>
+                  (   (\t h -> foldr1 GTm_Cns         (h:t)) <$ pCOLON   <*> pList1Sep  pCOLON    pTm_App
+                  <|> (\t h -> foldr  GTm_Cns GTm_Nil (h:t)) <$ pKey "," <*> pList1Sep (pKey ",") pTm_App
+                  <|> pSucceed (`GTm_Cns` GTm_Nil)
+                  )
+            <|> pSucceed GTm_Nil
+            )
 
     pTm_Var
       = GTm_Var <$> pVarid
+
+    pCOLON = pKey ":"
 
 

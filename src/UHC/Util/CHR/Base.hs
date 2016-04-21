@@ -184,36 +184,35 @@ chrMatchResolveCompareAndContinue
      , VarTerm (VarLookupVal s)
      , ExtrValVarKey (VarLookupVal s) ~ VarLookupKey s
      )
-  => 
-        CHRMatchHow                                                     -- ^ how to do the resolution
+  =>    CHRMatchHow                                                     -- ^ how to do the resolution
      -> (VarLookupVal s -> VarLookupVal s -> CHRMatcher s ())           -- ^ succeed with successful varlookup continuation
      -> VarLookupVal s                                                  -- ^ left/fst val
      -> VarLookupVal s                                                  -- ^ right/snd val
      -> CHRMatcher s ()
-chrMatchResolveCompareAndContinue how okFind t1 t2
+chrMatchResolveCompareAndContinue how ok t1 t2
   = cmp t1 t2
   where cmp t1 t2 = do
           menv <- getl chrmatcherstateEnv
           case (varTermMbKey t1, varTermMbKey t2) of
               (Just v1, Just v2) | v1 == v2                         -> chrMatchSuccess
                                  | how == CHRMatchHow_Check         -> varContinue
-                                                                         (varContinue (waitv v1 >> waitv v2) (okFind t1) v2)
-                                                                         (\t1 -> varContinue (waitt t1 >> waitv v2) (\t2 -> okFind t1 t2) v2)
+                                                                         (varContinue (waitv v1 >> waitv v2) (ok t1) v2)
+                                                                         (\t1 -> varContinue (waitt t1 >> waitv v2) (ok t1) v2)
                                                                          v1
                                  where waitv v = unless (chrmatchenvMetaMayBind menv v) $ chrMatchWait v
                                        waitt = maybe (return ()) waitv . varTermMbKey
-              (Just v1, _      ) | how == CHRMatchHow_Check         -> varContinue (if maybind then chrMatchFail else chrMatchWait v1) (\t1 -> okFind t1 t2) v1
+              (Just v1, _      ) | how == CHRMatchHow_Check         -> varContinue (if maybind then chrMatchFail else chrMatchWait v1) (flip ok t2) v1
                                  | how >= CHRMatchHow_Match && maybind
-                                                                    -> varContinue (chrMatchBind menv v1 t2) (\t1 -> okFind t1 t2) v1
-                                 | otherwise                        -> varContinue chrMatchFail (\t1 -> okFind t1 t2) v1
+                                                                    -> varContinue (chrMatchBind menv v1 t2) (flip ok t2) v1
+                                 | otherwise                        -> varContinue chrMatchFail (flip ok t2) v1
                                  where maybind = chrmatchenvMetaMayBind menv v1
-              (_      , Just v2) | how == CHRMatchHow_Check         -> varContinue (if maybind then chrMatchFail else chrMatchWait v2) (okFind t1) v2
-                                 | how == CHRMatchHow_MatchAndWait  -> varContinue (chrMatchWait v2) (okFind t1) v2
+              (_      , Just v2) | how == CHRMatchHow_Check         -> varContinue (if maybind then chrMatchFail else chrMatchWait v2) (ok t1) v2
+                                 | how == CHRMatchHow_MatchAndWait  -> varContinue (chrMatchWait v2) (ok t1) v2
                                  | how == CHRMatchHow_Unify && maybind
-                                                                    -> varContinue (chrMatchBind menv v2 t1) (okFind t1) v2
-                                 | otherwise                        -> varContinue chrMatchFail (okFind t1) v2
+                                                                    -> varContinue (chrMatchBind menv v2 t1) (ok t1) v2
+                                 | otherwise                        -> varContinue chrMatchFail (ok t1) v2
                                  where maybind = chrmatchenvMetaMayBind menv v2
-              _                                                     -> okFind t1 t2
+              _                                                     -> ok t1 t2
         varContinue = varlookupResolveAndContinueM varTermMbKey chrMatchSubst
 
 -------------------------------------------------------------------------------------------
@@ -262,7 +261,7 @@ instance Ord Prio where
   {-# INLINE compare #-}
   
 -------------------------------------------------------------------------------------------
---- Constraint, Guard, & Prio API
+--- Constraint API
 -------------------------------------------------------------------------------------------
 
 -- | (Class alias) API for constraint requirements
@@ -278,6 +277,10 @@ class ( CHRMatchable env c subst
       , PP c, PP (TTKey c)
       ) => IsCHRConstraint env c subst
 
+-------------------------------------------------------------------------------------------
+--- Guard API
+-------------------------------------------------------------------------------------------
+
 -- | (Class alias) API for guard requirements
 class ( CHRCheckable env g subst
       , VarExtractable g
@@ -287,16 +290,9 @@ class ( CHRCheckable env g subst
       , PP g
       ) => IsCHRGuard env g subst
 
-{-
--- | (Class alias) API for builtin solvable requirements
-class ( CHRBuiltinSolvable env b subst
-      , Typeable b
-      , Serialize b
-      , PP b
-      ) => IsCHRBuiltin env b subst
-
-instance {-# OVERLAPPABLE #-} (CHREmptySubstitution subst, VarLookupCmb subst subst) => IsCHRBuiltin env () subst
--}
+-------------------------------------------------------------------------------------------
+--- Prio API
+-------------------------------------------------------------------------------------------
 
 -- | (Class alias) API for priority requirements
 class ( CHRPrioEvaluatable env p subst
@@ -390,15 +386,17 @@ class (CHREmptySubstitution subst, VarLookupCmb subst subst, VarExtractable x, V
   chrUnifyM :: CHRMatchHow -> env -> x -> x -> CHRMatcher subst ()
   chrUnifyM how e x1 x2 = getl chrmatcherstateEnv >>= \menv -> chrmatcherLift $ \sg -> chrUnify how menv e sg x1 x2
 
-{-
-  -- | Solve a constraint which is categorized as 'ConstraintSolvesVia_Solve'
-  chrBuiltinSolve :: env -> subst -> x -> Maybe subst
-  chrBuiltinSolve e s x = getl chrmatcherstateEnv >>= \menv -> chrmatcherUnlift (chrBuiltinSolveM e x) menv s
--}
-
   -- | Solve a constraint which is categorized as 'ConstraintSolvesVia_Solve'
   chrBuiltinSolveM :: env -> x -> CHRMatcher subst ()
   chrBuiltinSolveM e x = return () -- chrmatcherLift $ \sg -> chrBuiltinSolve e sg x
+
+instance {-# OVERLAPPABLE #-} (CHRMatchable env x subst) => CHRMatchable env (Maybe x) subst where
+  chrUnifyM how e (Just x1) (Just x2) = chrUnifyM how e x1 x2
+  chrUnifyM how e _         _         = chrMatchFail
+
+instance {-# OVERLAPPABLE #-} (CHRMatchable env x subst) => CHRMatchable env [x] subst where
+  chrUnifyM how e x1 x2 | length x1 == length x2 = sequence_ $ zipWith (chrUnifyM how e) x1 x2
+  chrUnifyM how e _  _                           = chrMatchFail
 
 -------------------------------------------------------------------------------------------
 --- CHRMatcher API, part I
