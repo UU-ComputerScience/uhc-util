@@ -459,6 +459,8 @@ class (CHREmptySubstitution subst, VarLookupCmb subst subst, VarExtractable x, V
   chrBuiltinSolveM :: env -> x -> CHRMatcher subst ()
   chrBuiltinSolveM e x = return () -- chrmatcherLift $ \sg -> chrBuiltinSolve e sg x
 
+{-
+-}
 instance {-# OVERLAPPABLE #-} (CHRMatchable env x subst) => CHRMatchable env (Maybe x) subst where
   chrUnifyM how e (Just x1) (Just x2) = chrUnifyM how e x1 x2
   chrUnifyM how e _         _         = chrMatchFail

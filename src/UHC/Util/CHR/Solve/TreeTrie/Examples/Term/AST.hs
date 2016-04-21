@@ -303,6 +303,8 @@ instance CHRMatchable E Tm S where
             _                                                                 -> chrMatchFail
   {-# INLINE chrUnifyM #-}
 -}
+{-
+-}
   chrUnifyM how e t1 t2 = do
       menv <- getl chrmatcherstateEnv
       case (t1, t2) of
@@ -310,43 +312,42 @@ instance CHRMatchable E Tm S where
         (Tm_Lst h1 mt1, Tm_Lst h2 mt2)                                    -> chrUnifyM how e h1 h2 >> chrUnifyM how e mt1 mt2
         (Tm_Op  o1 as1, Tm_Op  o2 as2) | how < CHRMatchHow_Unify && o1 == o2
                                                                           -> chrUnifyM how e as1 as2
-        (Tm_Op  o1 as1, t2           ) | how == CHRMatchHow_Unify         -> evop o1 as1 >>= \t1 -> unif2 t1 t2
-        (t1           , Tm_Op  o2 as2) | how == CHRMatchHow_Unify         -> evop o2 as2 >>= \t2 -> unif2 t1 t2
+        (Tm_Op  o1 as1, t2           ) | how == CHRMatchHow_Unify         -> evop o1 as1 >>= \t1 -> chrUnifyM how e t1 t2
+        (t1           , Tm_Op  o2 as2) | how == CHRMatchHow_Unify         -> evop o2 as2 >>= \t2 -> chrUnifyM how e t1 t2
         (Tm_Int i1    , Tm_Int i2    ) | i1 == i2                         -> chrMatchSuccess
         (Tm_Bool b1   , Tm_Bool b2   ) | b1 == b2                         -> chrMatchSuccess
         (Tm_Var v1    , Tm_Var v2    ) | v1 == v2                         -> chrMatchSuccess
                                        | how == CHRMatchHow_Check         -> varContinue
-                                                                               (varContinue (waitv v1 >> waitv v2) (unif2 t1) v2)
-                                                                               (\t1 -> varContinue (waitt t1 >> waitv v2) (\t2 -> unif2 t1 t2) v2)
+                                                                               (varContinue (waitv v1 >> waitv v2) (chrUnifyM how e t1) v2)
+                                                                               (\t1 -> varContinue (waitt t1 >> waitv v2) (\t2 -> chrUnifyM how e t1 t2) v2)
                                                                                v1
                                        where waitv v = unless (chrmatchenvMetaMayBind menv v) $ chrMatchWait v
                                              waitt (Tm_Var v) = waitv v
                                              waitt  _         = return ()
-        (Tm_Var v1    , t2           ) | how == CHRMatchHow_Check         -> varContinue (if maybind then chrMatchFail else chrMatchWait v1) (\t1 -> unif2 t1 t2) v1
+        (Tm_Var v1    , t2           ) | how == CHRMatchHow_Check         -> varContinue (if maybind then chrMatchFail else chrMatchWait v1) (\t1 -> chrUnifyM how e t1 t2) v1
                                        | how >= CHRMatchHow_Match && maybind
-                                                                          -> varContinue (chrMatchBind menv v1 t2) (\t1 -> unif2 t1 t2) v1
-                                       | otherwise                        -> varContinue chrMatchFail {- chrMatchFailNoBinding -} (\t1 -> unif2 t1 t2) v1
+                                                                          -> varContinue (chrMatchBind menv v1 t2) (\t1 -> chrUnifyM how e t1 t2) v1
+                                       | otherwise                        -> varContinue chrMatchFail {- chrMatchFailNoBinding -} (\t1 -> chrUnifyM how e t1 t2) v1
                                        where maybind = chrmatchenvMetaMayBind menv v1
-        (t1           , Tm_Var v2    ) | how == CHRMatchHow_Check         -> varContinue (if maybind then chrMatchFail else chrMatchWait v2) (unif2 t1) v2
-                                       | how == CHRMatchHow_MatchAndWait  -> varContinue (chrMatchWait v2) (unif2 t1) v2
+        (t1           , Tm_Var v2    ) | how == CHRMatchHow_Check         -> varContinue (if maybind then chrMatchFail else chrMatchWait v2) (chrUnifyM how e t1) v2
+                                       | how == CHRMatchHow_MatchAndWait  -> varContinue (chrMatchWait v2) (chrUnifyM how e t1) v2
                                        | how == CHRMatchHow_Unify && maybind
-                                                                          -> varContinue (chrMatchBind menv v2 t1) (unif2 t1) v2
-                                       | otherwise                        -> varContinue chrMatchFail {- chrMatchFailNoBinding -} (unif2 t1) v2
+                                                                          -> varContinue (chrMatchBind menv v2 t1) (chrUnifyM how e t1) v2
+                                       | otherwise                        -> varContinue chrMatchFail {- chrMatchFailNoBinding -} (chrUnifyM how e t1) v2
                                        where maybind = chrmatchenvMetaMayBind menv v2
         _                                                                 -> chrMatchFail
     where
       varContinue = varlookupResolveAndContinueM varTermMbKey chrMatchSubst
       evop = tmEvalOp
       ev = tmEval
-      unif2 t1 t2 = chrUnifyM how e t1 t2 -- chrMatchResolveCompareAndContinue how (chrUnifyM how e) t1 t2
-{-
--}
+      -- unif2 t1 t2 = chrUnifyM how e t1 t2 -- chrMatchResolveCompareAndContinue how (chrUnifyM how e) t1 t2
 {-
   chrUnifyM how e t1 t2 = do
       menv <- getl chrmatcherstateEnv
       case (t1, t2) of
         (Tm_Con c1 as1, Tm_Con c2 as2) | c1 == c2 && length as1 == length as2 
                                                                           -> sequence_ (zipWith (chrUnifyM how e) as1 as2)
+--        (Tm_Lst h1 mt1, Tm_Lst h2 mt2)                                    -> chrUnifyM how e h1 h2 >> chrUnifyM how e mt1 mt2
         (Tm_Op  o1 as1, Tm_Op  o2 as2) | how < CHRMatchHow_Unify && o1 == o2 && length as1 == length as2 
                                                                           -> sequence_ (zipWith (chrUnifyM how e) as1 as2)
         (Tm_Op  o1 as1, t2           ) | how == CHRMatchHow_Unify         -> evop o1 as1 >>= \t1 -> chrUnifyM how e t1 t2

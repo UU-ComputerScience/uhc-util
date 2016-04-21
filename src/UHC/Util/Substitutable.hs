@@ -36,8 +36,8 @@ type family ExtrValVarKey vv :: *
 class VarUpdatable vv subst where
   -- | Update
   varUpd            ::  subst -> vv -> vv
-  s `varUpd` x = let (x',_) = s `varUpdCyc` x in x
-  {-# INLINE varUpd #-}
+  -- s `varUpd` x = let (x',_) = s `varUpdCyc` x in x
+  -- {-# INLINE varUpd #-}
 
   -- | Update with cycle detection
   varUpdCyc         ::  subst -> vv -> (vv, VarMp' (VarLookupKey subst) (VarLookupVal subst))
@@ -45,10 +45,13 @@ class VarUpdatable vv subst where
   {-# INLINE varUpdCyc #-}
 
 instance {-# OVERLAPPABLE #-} VarUpdatable vv subst => VarUpdatable (Maybe vv) subst where
+  s `varUpd`    m = fmap (s `varUpd`) m
+
   s `varUpdCyc` (Just x) = let (x',cm) = s `varUpdCyc` x in (Just x', cm)
   s `varUpdCyc` Nothing  = (Nothing, emptyVarMp)
 
 instance {-# OVERLAPPABLE #-} (Ord (VarLookupKey subst), VarUpdatable vv subst) => VarUpdatable [vv] subst where
+  s `varUpd`    l = map (s `varUpd`) l
   s `varUpdCyc` l = let (l',cms) = unzip $ map (s `varUpdCyc`) l in (l', varmpUnions cms)
 
 -------------------------------------------------------------------------------------------
