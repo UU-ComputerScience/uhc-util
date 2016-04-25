@@ -20,7 +20,7 @@ module UHC.Util.Binary
 
   , putEnum, getEnum
   , putEnum8, getEnum8
-  , putList, getList
+  -- , putList, getList
   )
   where
 
@@ -113,6 +113,7 @@ getEnum8 :: Enum x => Get x
 getEnum8 = do n <- getWord8
               return (toEnum $ fromIntegral n)
 
+{-
 -- | put a []
 putList :: (Binary a, Binary b) => (x -> Bool) -> (x -> (a,b)) -> x -> Put
 putList isNil getCons x | isNil x   = putWord8 0
@@ -125,4 +126,4 @@ getList nil cons
        case tag of
          0 -> return nil
          1 -> liftM2 cons get get
-
+-}
