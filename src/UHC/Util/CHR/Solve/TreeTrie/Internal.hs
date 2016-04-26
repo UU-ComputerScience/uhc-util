@@ -377,6 +377,7 @@ data SolveState' c r sr s
       , stMatchCache    :: !(SolveMatchCache' c sr s)
       , stHistoryCount  :: WorkTime
       , stLastQuery     :: (LastQuery c)
+      , stUsedRules     :: [r]
       }
 
 stDoneCnstrs :: SolveState' c r sr s -> [c]
@@ -384,7 +385,7 @@ stDoneCnstrs = Set.toList . stDoneCnstrSet
 {-# INLINE stDoneCnstrs #-}
 
 emptySolveState :: SolveState' c r sr s
-emptySolveState = SolveState emptyWorkList Set.empty [] Map.empty Map.empty initWorkTime emptyLastQuery
+emptySolveState = SolveState emptyWorkList Set.empty [] Map.empty Map.empty initWorkTime emptyLastQuery []
 {-# INLINE emptySolveState #-}
 
 solveStateResetDone :: SolveState' c r sr s -> SolveState' c r sr s
