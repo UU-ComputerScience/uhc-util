@@ -44,6 +44,9 @@ module UHC.Util.CHR.Solve.TreeTrie.MonoBacktrackPrio
   , CHRSolveOpts(..)
   , defaultCHRSolveOpts
   
+  , StoredCHR
+  , storedChrRule'
+  
   , chrSolve
   
   , getSolveTrace
@@ -153,6 +156,8 @@ data StoredCHR c g bp p
       -- , storedIdent     :: !(UsedByKey c)                       -- ^ the identification of a CHR, used for propagation rules (see remark at begin)
       }
   deriving (Typeable)
+storedChrRule' :: StoredCHR c g bp p -> Rule c g bp p
+storedChrRule' = _storedChrRule
 
 type instance TTKey (StoredCHR c g bp p) = TTKey c
 

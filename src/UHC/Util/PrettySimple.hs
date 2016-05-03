@@ -8,6 +8,7 @@ module UHC.Util.PrettySimple
   ( PP_Doc, PP(..)
   , disp
   , hPut
+  , Doc(..)
 
   , (>|<), (>-<)
   , (>#<)

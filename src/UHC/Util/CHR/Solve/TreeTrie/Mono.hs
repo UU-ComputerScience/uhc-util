@@ -18,6 +18,8 @@ module UHC.Util.CHR.Solve.TreeTrie.Mono
   ( CHRStore
   , emptyCHRStore
   
+  , StoredCHR(..)
+  
   , chrStoreFromElems
   , chrStoreUnion
   , chrStoreUnions

@@ -49,6 +49,7 @@ library
     UHC.Util.CHR.Solve.TreeTrie.Mono,
     UHC.Util.CHR.Solve.TreeTrie.MonoBacktrackPrio,
     UHC.Util.CHR.Solve.TreeTrie.Examples.Term.Main,
+    UHC.Util.CHR.Solve.TreeTrie.Visualizer,
     UHC.Util.CHR.GTerm,
     UHC.Util.CompileRun,
     UHC.Util.CompileRun2,
