@@ -991,7 +991,7 @@ chrSolve opts env = slv
     slv1 curbprio
          (FoundWorkSortedMatch
             { foundWorkSortedMatchInx = CHRConstraintInx {chrciInx = ci}
-            , foundWorkSortedMatchChr = StoredCHR {_storedChrRule = Rule {ruleSimpSz = simpSz}}
+            , foundWorkSortedMatchChr = chr@StoredCHR {_storedChrRule = Rule {ruleSimpSz = simpSz}}
             , foundWorkSortedMatchBodyAlts = alts
             , foundWorkSortedMatchWorkInx = workInxs
             , foundWorkSortedMatchSubst = matchSubst
@@ -1002,19 +1002,28 @@ chrSolve opts env = slv
         -- depending on nr of alts continue slightly different
         case alts of
           -- just continue if no alts 
-          [] -> slv
+          [] -> do
+            log
+            slv
           -- just reschedule
           [alt@(FoundBodyAlt {foundBodyAltBacktrackPrio=bprio})]
-            | curbprio == bprio -> nextwork bprio alt
+            | curbprio == bprio -> do
+                log
+                nextwork bprio alt
             | otherwise -> do
+                log
                 slvSchedule bprio $ nextwork bprio alt
                 slvScheduleRun
           -- otherwise backtrack and schedule all and then reschedule
           alts -> do
+                log
                 forM alts $ \alt@(FoundBodyAlt {foundBodyAltBacktrackPrio=bprio}) -> (backtrack $ nextwork bprio alt) >>= slvSchedule bprio
                 slvScheduleRun
 
       where
+        log = do
+          let step = SolveStep chr matchSubst [] [] -- TODO: Set stepNewTodo, stepNewDone (last two arguments)
+          fstl ^* chrgstTrace =$: (step:)
         nextwork bprio alt@(FoundBodyAlt {foundBodyAltAlt=(RuleBodyAlt {rbodyaltBody=body})}) = do
           -- set prio for this alt
           sndl ^* chrbstBacktrackPrio =: bprio
