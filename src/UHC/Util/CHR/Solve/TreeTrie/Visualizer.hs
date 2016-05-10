@@ -106,6 +106,7 @@ chrVisualize :: SolveTrace' C (MBP.StoredCHR C G P P) S -> PP_Doc
 chrVisualize trace = tag' "html" $
   tag' "head" (
     tag' "title" (text "CHR visualization")
+    >|< tag "script" (text "type=\"text/javascript\"") (text scripts)
     >|< tag' "style" (styles order)
   )
   >|< tag' "body" (
@@ -117,7 +118,29 @@ chrVisualize trace = tag' "html" $
     vars = nub (concatMap nodeVars nodes)
     order = vars -- TODO: Sort vars to minimize crossings
     showVarHeader var =
-      tag "div" (text $ "class=\"varheader var-" ++ var ++ "\"") (text var)
+      tag "a" (text $ "href=\"javascript:selectVar('" ++ var ++ "');\" class=\"varheader var-" ++ var ++ "\"") (text var)
+
+scripts :: String
+scripts =
+  "(function(){\n\
+  \  var selected = [];\n\
+  \  function setClass() {\n\
+  \    var name = selected.length\n\
+  \      ? 'selected-var ' + selected.map(function(item) {\n\
+  \          return 'selected-var-' + item;\n\
+  \        }).join(' ')\n\
+  \      : '';\n\
+  \    document.body.className = name;\n\
+  \  }\n\
+  \  function select(name) {\n\
+  \    var index = selected.indexOf(name);\n\
+  \    if (index === -1) selected.push(name);\n\
+  \    else selected.splice(index, 1);\n\
+  \    setClass();\n\
+  \  }\n\
+  \  window.selectVar = select;\n\
+  \}());\n\
+  \"
 
 styles :: [Var] -> PP_Doc
 styles vars =
@@ -163,6 +186,9 @@ styles vars =
        \  padding: 2px;\n\
        \  margin: 21px 0 12px;\n\
        \}\n\
+       \.selected-var .usage, .selected-var .varheader {\n\
+       \  opacity: 0.4;\n\
+       \}\n\
        \"
   >|< hlist (map styleVar varIndices)
   where
@@ -174,3 +200,12 @@ styles vars =
       >|< text "  margin-left: "
       >|< pp (id * 20)
       >|< text "px;\n}\n"
+      >|< text ".selected-var-"
+      >|< text var
+      >|< text " .usage.var-"
+      >|< text var
+      >|< text ", .selected-var-"
+      >|< text var
+      >|< text " .varheader.var-"
+      >|< text var
+      >|< text "{\n  opacity: 1;\n}\n"
