@@ -17,6 +17,32 @@ import           UHC.Util.CHR.Solve.TreeTrie.Examples.Term.AST
 import           UHC.Util.CHR.Solve.TreeTrie.Internal
 import           UHC.Util.CHR.Solve.TreeTrie.Internal.Shared
 
+data Node =
+  Node
+    { nodeName        :: String
+    , nodeVars        :: [Var]
+    , nodeHeadVars    :: [Var]
+    , nodeGuardVars   :: [Var]
+    , nodeBodyAltVars :: [Var]
+    }
+
+stepToNode :: SolveStep' C (MBP.StoredCHR C G P P) S -> Node
+stepToNode step
+  = Node
+    { nodeName = maybe "[untitled]" id (ruleName rule)
+    , nodeVars = vars
+    , nodeHeadVars = headVars
+    , nodeGuardVars = guardVars
+    , nodeBodyAltVars = bodyAltVars
+    }
+  where
+    schr = stepChr step
+    rule = MBP.storedChrRule' schr
+    vars = nub $ headVars ++ guardVars ++ bodyAltVars
+    headVars = nub $ concatMap variablesInConstraint (ruleHead rule)
+    guardVars = nub $ concatMap variablesInGuard (ruleGuard rule)
+    bodyAltVars = nub $ concatMap variablesInRuleBodyAlt (ruleBodyAlts rule)
+
 variablesInTerm :: Tm -> [Var]
 variablesInTerm (Tm_Var var)    = [var]
 variablesInTerm (Tm_Con _ tms)  = variablesInTerms tms
@@ -58,19 +84,17 @@ tag name attr content = (text ("<" ++ name)) >|< attributes attr >|< body conten
 tag' :: String -> PP_Doc -> PP_Doc
 tag' name = tag name Emp
 
-showRule :: MBP.StoredCHR C G P P -> PP_Doc
-showRule schr = tag "div" (text "class=\"" >|< className >|< text "\"") (
-    hlist (map (showUsage "usage constraint") inConstraints)
-    >|< hlist (map (showUsage "usage guard") inGuard)
-    >|< tag "div" (text "class=\"rule-text\"") (pp schr)
+showNode :: Node -> PP_Doc
+showNode node = tag "div" (text "class=\"" >|< className >|< text "\"") (
+    hlist (map (showUsage "usage constraint") (nodeHeadVars node))
+    >|< hlist (map (showUsage "usage guard") (nodeGuardVars node))
+    >|< tag "div" (text "class=\"rule-text\"") (
+      (text $ nodeName node)
+      >|< (hlist (map ((" " >|<) . pp) (nodeVars node)))
+    )
   )
   where
-    rule :: Rule C G P P
-    rule = MBP.storedChrRule' schr
-    inConstraints = nub $ concatMap variablesInConstraint (ruleHead rule)
-    inGuard = nub $ concatMap variablesInGuard (ruleGuard rule)
-    inBodyAlts = nub $ concatMap variablesInRuleBodyAlt (ruleBodyAlts rule)
-    className = text "rule" >|< maybe Emp ((text " var-" >|<)) (first $ inBodyAlts ++ inGuard ++ inConstraints)
+    className = text "rule" >|< maybe Emp ((text " var-" >|<)) (first $ nodeVars node)
     showUsage name var = tag "div" (text $ "class=\"" ++ className ++ "\"") (text " ")
       where
         className = name ++ " var-" ++ var
@@ -82,10 +106,10 @@ chrVisualize trace = tag' "html" $
     >|< tag' "style" (text styles)
   )
   >|< tag' "body" (
-    foldl' reduce Emp trace
+    hlist (map showNode nodes)
   )
   where
-    reduce left right = showRule (stepChr right) >|< left
+    nodes = map stepToNode trace
 
 styles :: String
 styles = "body {\n\
