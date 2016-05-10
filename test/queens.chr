@@ -18,28 +18,28 @@ sys	0m0.836s
 {-
 -}
 -- 4 Queens problem
-Queens <=> Row 1, Row 2, Row 3, Row 4.
-Row r <=> Queen r 1 \/ Queen r 2 \/ Queen r 3 \/ Queen r 4.
+queens @ Queens <=> Row 1, Row 2, Row 3, Row 4.
+row @ Row r <=> Queen r 1 \/ Queen r 2 \/ Queen r 3 \/ Queen r 4.
 
 {-
 -- 5 Queens problem
-Queens <=> Row 1, Row 2, Row 3, Row 4, Row 5.
-Row r <=> Queen r 1 \/ Queen r 2 \/ Queen r 3 \/ Queen r 4 \/ Queen r 5.
+queens @ Queens <=> Row 1, Row 2, Row 3, Row 4, Row 5.
+row @ Row r <=> Queen r 1 \/ Queen r 2 \/ Queen r 3 \/ Queen r 4 \/ Queen r 5.
 -}
 
 {-
 -- 6 Queens problem
-Queens <=> Row 1, Row 2, Row 3, Row 4, Row 5, Row 6.
-Row r <=> Queen r 1 \/ Queen r 2 \/ Queen r 3 \/ Queen r 4 \/ Queen r 5 \/ Queen r 6.
+queens @ Queens <=> Row 1, Row 2, Row 3, Row 4, Row 5, Row 6.
+row @ Row r <=> Queen r 1 \/ Queen r 2 \/ Queen r 3 \/ Queen r 4 \/ Queen r 5 \/ Queen r 6.
 -}
 
 {-
 -- 8 Queens problem
-Queens <=> Row 1, Row 2, Row 3, Row 4, Row 5, Row 6, Row 7, Row 8.
-Row r <=> Queen r 1 \/ Queen r 2 \/ Queen r 3 \/ Queen r 4 \/ Queen r 5 \/ Queen r 6 \/ Queen r 7 \/ Queen r 8.
+queens @ Queens <=> Row 1, Row 2, Row 3, Row 4, Row 5, Row 6, Row 7, Row 8.
+row @ Row r <=> Queen r 1 \/ Queen r 2 \/ Queen r 3 \/ Queen r 4 \/ Queen r 5 \/ Queen r 6 \/ Queen r 7 \/ Queen r 8.
 -}
 
-Queen r1 c1, Queen r2 c2 ==> c1 /= c2.
-Queen r1 c1, Queen r2 c2 ==> Abs (r1 - r2) /= Abs (c1 - c2).
+column @ Queen r1 c1, Queen r2 c2 ==> c1 /= c2.
+diagonal @ Queen r1 c1, Queen r2 c2 ==> Abs (r1 - r2) /= Abs (c1 - c2).
 
 ?Queens.
