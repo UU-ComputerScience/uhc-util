@@ -83,6 +83,9 @@ firstVar []     _    = Nothing
 firstVar _      []   = Nothing
 firstVar (x:xs) vars = if x `elem` vars then Just x else firstVar xs vars
 
+addIndices :: [a] -> [(a, Int)]
+addIndices as = zip as [0..]
+
 showNode :: [Var] -> Node -> PP_Doc
 showNode order node = tag "div" (text "class=\"rule\"") (
     hlist (map (showUsage "usage guard") (nodeGuardVars node))
@@ -106,18 +109,30 @@ chrVisualize trace = tag' "html" $
     >|< tag' "style" (styles order)
   )
   >|< tag' "body" (
-    hlist (map (showNode order) nodes)
+    hlist (map showVarHeader vars)
+    >|< tag "div" (text "class=\"content\"") (hlistReverse (map (showNode order) nodes))
   )
   where
     nodes = map stepToNode trace
     vars = nub (concatMap nodeVars nodes)
     order = vars -- TODO: Sort vars to minimize crossings
+    showVarHeader var =
+      tag "div" (text $ "class=\"varheader var-" ++ var ++ "\"") (text var)
 
 styles :: [Var] -> PP_Doc
 styles vars =
   text "body {\n\
        \  font-size: 9pt;\n\
        \  font-family: Arial;\n\
+       \}\n\
+       \.varheader {\n\
+       \  width: 19px;\n\
+       \  font-weight: 700;\n\
+       \  position: absolute;\n\
+       \  top: 5px;\n\
+       \}\n\
+       \.content {\n\
+       \  margin-top: 25px;\n\
        \}\n\
        \.rule {\n\
        \  position: relative;\n\
@@ -151,8 +166,7 @@ styles vars =
        \"
   >|< hlist (map styleVar varIndices)
   where
-    varIndices :: [(Var, Int)]
-    varIndices = zip vars [0..]
+    varIndices = addIndices vars
     styleVar (var, id) =
       text ".var-"
       >|< text var
