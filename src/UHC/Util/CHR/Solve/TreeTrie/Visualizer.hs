@@ -67,13 +67,7 @@ variablesInGuard (G_Tm x)   = variablesInTerm x
 variablesInRuleBodyAlt :: RuleBodyAlt C bprio -> [Var]
 variablesInRuleBodyAlt = (concatMap variablesInConstraint) . rbodyaltBody
 
-first :: [a] -> Maybe a
-first (x:_) = Just x
-first _     = Nothing
-
 tag :: String -> PP_Doc -> PP_Doc -> PP_Doc
--- tag name Emp  = (text ("<" ++ name)                 >|<) . end
--- tag name attr = (text ("<" ++ name ++ " ") >|< attr >|<) . end
 tag name attr content = (text ("<" ++ name)) >|< attributes attr >|< body content
   where
     attributes Emp = Emp
@@ -84,17 +78,23 @@ tag name attr content = (text ("<" ++ name)) >|< attributes attr >|< body conten
 tag' :: String -> PP_Doc -> PP_Doc
 tag' name = tag name Emp
 
-showNode :: Node -> PP_Doc
-showNode node = tag "div" (text "class=\"" >|< className >|< text "\"") (
-    hlist (map (showUsage "usage constraint") (nodeHeadVars node))
-    >|< hlist (map (showUsage "usage guard") (nodeGuardVars node))
-    >|< tag "div" (text "class=\"rule-text\"") (
+firstVar :: [Var] -> [Var] -> Maybe Var
+firstVar []     _    = Nothing
+firstVar _      []   = Nothing
+firstVar (x:xs) vars = if x `elem` vars then Just x else firstVar xs vars
+
+showNode :: [Var] -> Node -> PP_Doc
+showNode order node = tag "div" (text "class=\"rule\"") (
+    hlist (map (showUsage "usage guard") (nodeGuardVars node))
+    >|< hlist (map (showUsage "usage constraint") (nodeHeadVars node))
+    >|< tag "div" (text "class=\"" >|< className >|< text "\"") (
       (text $ nodeName node)
       >|< (hlist (map ((" " >|<) . pp) (nodeVars node)))
     )
+    >|< hlist (map (showUsage "usage body-alt") (nodeBodyAltVars node))
   )
   where
-    className = text "rule" >|< maybe Emp ((text " var-" >|<)) (first $ nodeVars node)
+    className = text "rule-text" >|< maybe Emp ((text " var-" >|<)) (firstVar order $ nodeVars node)
     showUsage name var = tag "div" (text $ "class=\"" ++ className ++ "\"") (text " ")
       where
         className = name ++ " var-" ++ var
@@ -103,26 +103,60 @@ chrVisualize :: SolveTrace' C (MBP.StoredCHR C G P P) S -> PP_Doc
 chrVisualize trace = tag' "html" $
   tag' "head" (
     tag' "title" (text "CHR visualization")
-    >|< tag' "style" (text styles)
+    >|< tag' "style" (styles order)
   )
   >|< tag' "body" (
-    hlist (map showNode nodes)
+    hlist (map (showNode order) nodes)
   )
   where
     nodes = map stepToNode trace
+    vars = nub (concatMap nodeVars nodes)
+    order = vars -- TODO: Sort vars to minimize crossings
 
-styles :: String
-styles = "body {\n\
-        \  font-size: 9pt;\n\
-        \  font-family: Arial;\n\
-        \}\n\
-        \.usage {\n\
-        \  background-color: #ccc;\n\
-        \  width: 8px;\n\
-        \  height: 8px;\n\
-        \  border-radius: 4px;\n\
-        \}\n\
-        \.rule {\n\
-        \  border: 1px solid #333;\n\
-        \}\n\
-        \"
+styles :: [Var] -> PP_Doc
+styles vars =
+  text "body {\n\
+       \  font-size: 9pt;\n\
+       \  font-family: Arial;\n\
+       \}\n\
+       \.rule {\n\
+       \  position: relative;\n\
+       \}\n\
+       \.usage {\n\
+       \  border: 1px solid #ccc;\n\
+       \  background-color: #eee;\n\
+       \  width: 12px;\n\
+       \  height: 12px;\n\
+       \  border-radius: 8px;\n\
+       \  position: absolute;\n\
+       \  top: 0px;\n\
+       \}\n\
+       \.usage.constraint {\n\
+       \  background-color: #6EAFC4;\n\
+       \  border: 1px solid #578999;\n\
+       \  top: 11px;\n\
+       \}\n\
+       \.usage.body-alt {\n\
+       \  background-color: #D1BE4F;\n\
+       \  border: 1px solid #A89942;\n\
+       \  top: 38px;\n\
+       \}\n\
+       \.rule-text {\n\
+       \  border: 1px solid #aaa;\n\
+       \  background-color: #fff;\n\
+       \  display: inline-block;\n\
+       \  padding: 2px;\n\
+       \  margin: 21px 0 12px;\n\
+       \}\n\
+       \"
+  >|< hlist (map styleVar varIndices)
+  where
+    varIndices :: [(Var, Int)]
+    varIndices = zip vars [0..]
+    styleVar (var, id) =
+      text ".var-"
+      >|< text var
+      >|< text "{\n"
+      >|< text "  margin-left: "
+      >|< pp (id * 20)
+      >|< text "px;\n}\n"
