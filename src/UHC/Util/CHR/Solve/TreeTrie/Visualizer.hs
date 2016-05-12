@@ -7,6 +7,7 @@ module UHC.Util.CHR.Solve.TreeTrie.Visualizer
 
 import           Prelude
 import           Data.List
+import           Data.Map as Map
 import           UHC.Util.Pretty
 import           UHC.Util.PrettySimple
 import           UHC.Util.CHR.Rule
@@ -20,28 +21,38 @@ import           UHC.Util.CHR.Solve.TreeTrie.Internal.Shared
 data Node =
   Node
     { nodeName        :: String
-    , nodeVars        :: [Var]
-    , nodeHeadVars    :: [Var]
-    , nodeGuardVars   :: [Var]
-    , nodeBodyAltVars :: [Var]
+    , nodeBody        :: [RuleBodyAlt C P]
     }
+type Edge = (Node, Node)
 
-stepToNode :: SolveStep' C (MBP.StoredCHR C G P P) S -> Node
-stepToNode step
-  = Node
-    { nodeName = maybe "[untitled]" id (ruleName rule)
-    , nodeVars = vars
-    , nodeHeadVars = headVars
-    , nodeGuardVars = guardVars
-    , nodeBodyAltVars = bodyAltVars
-    }
+stateMap :: (a -> b -> (c, b)) -> b -> [a] -> ([c], b)
+stateMap _  state []     = ([], state)
+stateMap cb state (x:xs) = (y:ys, newState)
+  where
+    (ys,tmpState) = stateMap cb state xs
+    (y,newState)  = cb x tmpState
+
+data BuildState = BuildState [Edge] (Map.Map Tm Node)
+
+emptyBuildState :: BuildState
+emptyBuildState = BuildState [] Map.empty
+
+stepToNode :: SolveStep' C (MBP.StoredCHR C G P P) S -> BuildState -> (Node, BuildState)
+stepToNode step (BuildState edges nodeMap)
+  = ( Node
+        { nodeName = maybe "[untitled]" id (ruleName rule)
+        , nodeBody = ruleBodyAlts rule
+        }
+    , BuildState edges nodeMap
+    )
   where
     schr = stepChr step
     rule = MBP.storedChrRule' schr
-    vars = nub $ headVars ++ guardVars ++ bodyAltVars
-    headVars = nub $ concatMap variablesInConstraint (ruleHead rule)
-    guardVars = nub $ concatMap variablesInGuard (ruleGuard rule)
-    bodyAltVars = nub $ concatMap variablesInRuleBodyAlt (ruleBodyAlts rule)
+
+createGraph :: [SolveStep' C (MBP.StoredCHR C G P P) S] -> ([Node], [Edge])
+createGraph steps = (nodes, edges)
+  where
+    (nodes, (BuildState edges _)) = stateMap stepToNode emptyBuildState steps
 
 variablesInTerm :: Tm -> [Var]
 variablesInTerm (Tm_Var var)    = [var]
@@ -86,7 +97,7 @@ firstVar (x:xs) vars = if x `elem` vars then Just x else firstVar xs vars
 addIndices :: [a] -> [(a, Int)]
 addIndices as = zip as [0..]
 
-showNode :: [Var] -> Node -> PP_Doc
+{- showNode :: [Var] -> Node -> PP_Doc
 showNode order node = tag "div" (text "class=\"rule\"") (
     hlist (map (showUsage "usage guard") (nodeGuardVars node))
     >|< hlist (map (showUsage "usage constraint") (nodeHeadVars node))
@@ -100,25 +111,26 @@ showNode order node = tag "div" (text "class=\"rule\"") (
     className = text "rule-text" >|< maybe Emp ((text " var-" >|<)) (firstVar order $ nodeVars node)
     showUsage name var = tag "div" (text $ "class=\"" ++ className ++ "\"") (text " ")
       where
-        className = name ++ " var-" ++ var
+        className = name ++ " var-" ++ var -}
 
 chrVisualize :: SolveTrace' C (MBP.StoredCHR C G P P) S -> PP_Doc
 chrVisualize trace = tag' "html" $
   tag' "head" (
     tag' "title" (text "CHR visualization")
-    >|< tag "script" (text "type=\"text/javascript\"") (text scripts)
-    >|< tag' "style" (styles order)
+    -- >|< tag "script" (text "type=\"text/javascript\"") (text scripts)
+    -- >|< tag' "style" (styles order)
   )
   >|< tag' "body" (
-    hlist (map showVarHeader vars)
-    >|< tag "div" (text "class=\"content\"") (hlistReverse (map (showNode order) nodes))
+    Emp
+    -- hlist (map showVarHeader vars)
+    -- >|< tag "div" (text "class=\"content\"") (hlistReverse (map (showNode order) nodes))
   )
   where
-    nodes = map stepToNode trace
-    vars = nub (concatMap nodeVars nodes)
-    order = vars -- TODO: Sort vars to minimize crossings
-    showVarHeader var =
-      tag "a" (text $ "href=\"javascript:selectVar('" ++ var ++ "');\" class=\"varheader var-" ++ var ++ "\"") (text var)
+    -- nodes = map stepToNode trace
+    -- vars = nub (concatMap nodeVars nodes)
+    -- order = vars -- TODO: Sort vars to minimize crossings
+    -- showVarHeader var =
+    --  tag "a" (text $ "href=\"javascript:selectVar('" ++ var ++ "');\" class=\"varheader var-" ++ var ++ "\"") (text var)
 
 scripts :: String
 scripts =
@@ -190,7 +202,7 @@ styles vars =
        \  opacity: 0.4;\n\
        \}\n\
        \"
-  >|< hlist (map styleVar varIndices)
+  >|< hlist (fmap styleVar varIndices)
   where
     varIndices = addIndices vars
     styleVar (var, id) =
