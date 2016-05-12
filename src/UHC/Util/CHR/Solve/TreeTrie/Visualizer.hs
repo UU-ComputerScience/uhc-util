@@ -6,7 +6,7 @@ module UHC.Util.CHR.Solve.TreeTrie.Visualizer
   where
 
 import           Prelude
-import           Data.List
+import           Data.List as List
 import           Data.Map as Map
 import           UHC.Util.Pretty
 import           UHC.Util.PrettySimple
@@ -36,6 +36,34 @@ data BuildState = BuildState [Edge] (Map.Map Tm Node)
 
 emptyBuildState :: BuildState
 emptyBuildState = BuildState [] Map.empty
+
+tmInC :: C -> [Tm]
+tmInC (C_Con s tms) = [Tm_Con s tms]
+tmInC _             = []
+
+tmsInG :: G -> [Tm]
+tmsInG (G_Tm tm) = tmsInTm tm
+tmsInG _         = []
+
+precedentTms :: Rule C G P P -> [Tm]
+precedentTms rule
+  =  concatMap tmInC  (ruleHead rule)
+  ++ concatMap tmsInG (ruleGuard rule)
+
+tmsInBodyAlt :: RuleBodyAlt C bprio -> [Tm]
+tmsInBodyAlt = concatMap tmInC . rbodyaltBody
+
+tmsInTm :: Tm -> [Tm]
+tmsInTm tm = tm : children tm
+  where
+    children (Tm_Lst as Nothing)  = as
+    children (Tm_Lst as (Just a)) = as ++ [a]
+    children _                    = [] 
+
+addConstraints :: Node -> (Map.Map Tm Node) -> [Tm] -> (Map.Map Tm Node)
+addConstraints node = List.foldl cb
+  where
+    cb m tm = Map.insert tm node m
 
 stepToNode :: SolveStep' C (MBP.StoredCHR C G P P) S -> BuildState -> (Node, BuildState)
 stepToNode step (BuildState edges nodeMap)
