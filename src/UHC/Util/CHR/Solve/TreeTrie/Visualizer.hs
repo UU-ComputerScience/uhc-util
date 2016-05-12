@@ -17,13 +17,13 @@ import           UHC.Util.CHR.Solve.TreeTrie.MonoBacktrackPrio as MBP
 import           UHC.Util.CHR.Solve.TreeTrie.Examples.Term.AST
 import           UHC.Util.CHR.Solve.TreeTrie.Internal
 import           UHC.Util.CHR.Solve.TreeTrie.Internal.Shared
+import           Data.Graph.Inductive.Graph
 
-data Node =
-  Node
+data NodeData =
+  NodeData
     { nodeName        :: String
     , nodeBody        :: [RuleBodyAlt C P]
     }
-type Edge = (Node, Node)
 
 stateMap :: (a -> b -> (c, b)) -> b -> [a] -> ([c], b)
 stateMap _  state []     = ([], state)
@@ -32,27 +32,27 @@ stateMap cb state (x:xs) = (y:ys, newState)
     (ys,tmpState) = stateMap cb state xs
     (y,newState)  = cb x tmpState
 
-data BuildState = BuildState [Edge] (Map.Map Tm Node)
+data BuildState = BuildState [Edge] (Map.Map Tm Node) Int
 
 emptyBuildState :: BuildState
-emptyBuildState = BuildState [] Map.empty
+emptyBuildState = BuildState [] Map.empty 0
 
-stepToNode :: SolveStep' C (MBP.StoredCHR C G P P) S -> BuildState -> (Node, BuildState)
-stepToNode step (BuildState edges nodeMap)
-  = ( Node
+stepToNode :: SolveStep' C (MBP.StoredCHR C G P P) S -> BuildState -> ((LNode NodeData), BuildState)
+stepToNode step (BuildState edges nodeMap no)
+  = ((no, NodeData
         { nodeName = maybe "[untitled]" id (ruleName rule)
         , nodeBody = ruleBodyAlts rule
-        }
-    , BuildState edges nodeMap
+        })
+    , BuildState edges nodeMap (no + 1)
     )
   where
     schr = stepChr step
     rule = MBP.storedChrRule' schr
 
-createGraph :: [SolveStep' C (MBP.StoredCHR C G P P) S] -> ([Node], [Edge])
+createGraph :: [SolveStep' C (MBP.StoredCHR C G P P) S] -> ([LNode NodeData], [Edge])
 createGraph steps = (nodes, edges)
   where
-    (nodes, (BuildState edges _)) = stateMap stepToNode emptyBuildState steps
+    (nodes, (BuildState edges _ _)) = stateMap stepToNode emptyBuildState steps
 
 variablesInTerm :: Tm -> [Var]
 variablesInTerm (Tm_Var var)    = [var]
