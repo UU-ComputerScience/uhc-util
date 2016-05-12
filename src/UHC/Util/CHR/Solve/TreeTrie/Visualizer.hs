@@ -18,6 +18,7 @@ import           UHC.Util.CHR.Solve.TreeTrie.Examples.Term.AST
 import           UHC.Util.CHR.Solve.TreeTrie.Internal
 import           UHC.Util.CHR.Solve.TreeTrie.Internal.Shared
 import           Data.Graph.Inductive.Graph
+import           Data.Graph.Inductive.Tree
 
 data NodeData =
   NodeData
@@ -53,6 +54,9 @@ createGraph :: [SolveStep' C (MBP.StoredCHR C G P P) S] -> ([LNode NodeData], [E
 createGraph steps = (nodes, edges)
   where
     (nodes, (BuildState edges _ _)) = stateMap stepToNode emptyBuildState steps
+    
+makeGraph :: ([LNode NodeData], [Edge]) -> (Gr NodeData ())
+makeGraph (nodes, edges) = mkGraph nodes (fmap ((flip toLEdge) ()) edges)
 
 variablesInTerm :: Tm -> [Var]
 variablesInTerm (Tm_Var var)    = [var]
