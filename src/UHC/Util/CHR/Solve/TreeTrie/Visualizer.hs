@@ -89,13 +89,10 @@ stepToNode step (BuildState edges nodeMap nodeId)
       )
       ++ edges
 
-createGraph :: [SolveStep' C (MBP.StoredCHR C G P P) S] -> ([LNode NodeData], [Edge])
-createGraph steps = (nodes, edges)
+createGraph :: [SolveStep' C (MBP.StoredCHR C G P P) S] -> (Gr NodeData ())
+createGraph steps = mkGraph nodes (fmap ((flip toLEdge) ()) edges)
   where
     (nodes, (BuildState edges _ _)) = stateMap stepToNode emptyBuildState steps
-    
-makeGraph :: ([LNode NodeData], [Edge]) -> (Gr NodeData ())
-makeGraph (nodes, edges) = mkGraph nodes (fmap ((flip toLEdge) ()) edges)
 
 variablesInTerm :: Tm -> [Var]
 variablesInTerm (Tm_Var var)    = [var]
