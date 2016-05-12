@@ -6,6 +6,7 @@ module UHC.Util.CHR.Solve.TreeTrie.Visualizer
   where
 
 import           Prelude
+import           Data.Maybe as Maybe
 import           Data.List as List
 import           Data.Map as Map
 import           UHC.Util.Pretty
@@ -66,16 +67,26 @@ addConstraints node = List.foldl cb
     cb m tm = Map.insert tm node m
 
 stepToNode :: SolveStep' C (MBP.StoredCHR C G P P) S -> BuildState -> ((LNode NodeData), BuildState)
-stepToNode step (BuildState edges nodeMap no)
-  = ((no, NodeData
+stepToNode step (BuildState edges nodeMap nodeId)
+  = ( (nodeId
+      , NodeData
         { nodeName = maybe "[untitled]" id (ruleName rule)
-        , nodeBody = ruleBodyAlts rule
-        })
-    , BuildState edges nodeMap (no + 1)
+        , nodeBody = body
+        }
+      )
+    , BuildState edges' nodeMap' (nodeId + 1)
     )
   where
     schr = stepChr step
     rule = MBP.storedChrRule' schr
+    body = ruleBodyAlts rule
+    altTms = concatMap tmsInBodyAlt body
+    nodeMap' = addConstraints nodeId nodeMap altTms
+    edges' =
+      ( List.map (\n -> (n, nodeId))
+        $ Maybe.mapMaybe (\tm -> Map.lookup tm nodeMap) (precedentTms rule)
+      )
+      ++ edges
 
 createGraph :: [SolveStep' C (MBP.StoredCHR C G P P) S] -> ([LNode NodeData], [Edge])
 createGraph steps = (nodes, edges)
