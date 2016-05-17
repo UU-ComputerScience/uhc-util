@@ -18,6 +18,7 @@ import           UHC.Util.CHR.Solve.TreeTrie.MonoBacktrackPrio as MBP
 import           UHC.Util.CHR.Solve.TreeTrie.Examples.Term.AST
 import           UHC.Util.CHR.Solve.TreeTrie.Internal
 import           UHC.Util.CHR.Solve.TreeTrie.Internal.Shared
+import           UHC.Util.Substitutable
 import           Data.Graph.Inductive.Graph
 import           Data.Graph.Inductive.Tree
 
@@ -25,7 +26,7 @@ data NodeData =
   NodeData
     { nodeName        :: String
     , nodeVars        :: [Tm]
-    , nodeBody        :: [RuleBodyAlt C P]
+    , nodeAlt         :: [C]
     }
 type Node' = LNode NodeData
 
@@ -41,9 +42,9 @@ data BuildState = BuildState [Edge] (Map.Map Tm Node) Int
 emptyBuildState :: BuildState
 emptyBuildState = BuildState [] Map.empty 0
 
-tmInC :: C -> [Tm]
-tmInC (C_Con s tms) = [Tm_Con s tms]
-tmInC _             = []
+tmsInC :: C -> [Tm]
+tmsInC (C_Con s tms) = [Tm_Con s tms]
+tmsInC _             = []
 
 tmsInG :: G -> [Tm]
 tmsInG (G_Tm tm) = tmsInTm tm
@@ -51,11 +52,11 @@ tmsInG _         = []
 
 precedentTms :: Rule C G P P -> [Tm]
 precedentTms rule
-  =  concatMap tmInC  (ruleHead rule)
+  =  concatMap tmsInC  (ruleHead rule)
   ++ concatMap tmsInG (ruleGuard rule)
 
 tmsInBodyAlt :: RuleBodyAlt C bprio -> [Tm]
-tmsInBodyAlt = concatMap tmInC . rbodyaltBody
+tmsInBodyAlt = concatMap tmsInC . rbodyaltBody
 
 tmsInTm :: Tm -> [Tm]
 tmsInTm tm = tm : children tm
@@ -75,7 +76,7 @@ stepToNode step (BuildState edges nodeMap nodeId)
       , NodeData
         { nodeName = maybe "[untitled]" id (ruleName rule)
         , nodeVars = Map.elems (stepSubst step)
-        , nodeBody = body
+        , nodeAlt  = alt
         }
       )
     , BuildState edges' nodeMap' (nodeId + 1)
@@ -83,12 +84,13 @@ stepToNode step (BuildState edges nodeMap nodeId)
   where
     schr = stepChr step
     rule = MBP.storedChrRule' schr
-    body = ruleBodyAlts rule
-    altTms = concatMap tmsInBodyAlt body
+    updRule = varUpd (stepSubst step) rule
+    alt = maybe [] (fmap $ varUpd $ stepSubst step) $ stepAlt step
+    altTms = concatMap tmsInC alt
     nodeMap' = addConstraints nodeId nodeMap altTms
     edges' =
       ( List.map (\n -> (n, nodeId))
-        $ Maybe.mapMaybe (\tm -> Map.lookup tm nodeMap) (precedentTms rule)
+        $ Maybe.mapMaybe (\tm -> Map.lookup tm nodeMap) (precedentTms updRule)
       )
       ++ edges
 
@@ -144,13 +146,21 @@ showNode :: [Tm] -> Node' -> PP_Doc
 showNode order (_, node) = tag "div" (text "class=\"rule\"") (
     -- hlist (map (showUsage "usage guard") (nodeGuardVars node))
     -- >|< hlist (map (showUsage "usage constraint") (nodeHeadVars node))
-    tag "div" (text "class=\"" >|< className >|< text "\"") (
+    tag "span" (text "class=\"" >|< className >|< text "\"") (
       (text $ nodeName node)
       >|< (hlist (fmap ((" " >|<) . pp) (nodeVars node)))
     )
+    >|< text "&rarr;"
+    >|< tag "span" (text "class=\"rule-alt\"") altText
+    -- (text $ show $ nodeAlt node)
     -- >|< hlist (map (showUsage "usage body-alt") (nodeBodyAltVars node))
   )
   where
+    alt = nodeAlt node
+    altText = case alt of
+      []   -> text "."
+      x:xs -> showAlt x >|< (hlist . fmap ((text ", " >|<) . pp)) xs
+    showAlt = tag' "div" . pp 
     className = text "rule-text" -- >|< maybe Emp ((text " var-" >|<)) (firstVar order $ nodeVars node)
     showUsage name var = tag "div" (text $ "class=\"" ++ className ++ "\"") (text " ")
       where
@@ -161,7 +171,7 @@ chrVisualize trace = tag' "html" $
   tag' "head" (
     tag' "title" (text "CHR visualization")
     -- >|< tag "script" (text "type=\"text/javascript\"") (text scripts)
-    -- >|< tag' "style" (styles order)
+    >|< tag' "style" styles
   )
   >|< tag' "body" (
     body
@@ -202,55 +212,29 @@ scripts =
   \}());\n\
   \"
 
-styles :: [Var] -> PP_Doc
-styles vars =
+styles :: PP_Doc
+styles =
   text "body {\n\
        \  font-size: 9pt;\n\
        \  font-family: Arial;\n\
        \}\n\
-       \.varheader {\n\
-       \  width: 19px;\n\
-       \  font-weight: 700;\n\
-       \  position: absolute;\n\
-       \  top: 5px;\n\
-       \}\n\
-       \.content {\n\
-       \  margin-top: 25px;\n\
-       \}\n\
        \.rule {\n\
-       \  position: relative;\n\
-       \}\n\
-       \.usage {\n\
-       \  border: 1px solid #ccc;\n\
-       \  background-color: #eee;\n\
-       \  width: 12px;\n\
-       \  height: 12px;\n\
-       \  border-radius: 8px;\n\
-       \  position: absolute;\n\
-       \  top: 0px;\n\
-       \}\n\
-       \.usage.constraint {\n\
-       \  background-color: #6EAFC4;\n\
-       \  border: 1px solid #578999;\n\
-       \  top: 11px;\n\
-       \}\n\
-       \.usage.body-alt {\n\
-       \  background-color: #D1BE4F;\n\
-       \  border: 1px solid #A89942;\n\
-       \  top: 38px;\n\
        \}\n\
        \.rule-text {\n\
        \  border: 1px solid #aaa;\n\
        \  background-color: #fff;\n\
        \  display: inline-block;\n\
        \  padding: 2px;\n\
-       \  margin: 21px 0 12px;\n\
+       \  margin: 1px;\n\
        \}\n\
-       \.selected-var .usage, .selected-var .varheader {\n\
-       \  opacity: 0.4;\n\
+       \.rule-alt {\n\
+       \  display: inline-block;\n\
+       \  padding: 3px;\n\
+       \  color: #A89942;\n\
+       \  margin: 1px;\n\
        \}\n\
        \"
-  >|< hlist (fmap styleVar varIndices)
+  {- >|< hlist (fmap styleVar varIndices)
   where
     varIndices = addIndices vars
     styleVar (var, id) =
@@ -268,4 +252,4 @@ styles vars =
       >|< text var
       >|< text " .varheader.var-"
       >|< text var
-      >|< text "{\n  opacity: 1;\n}\n"
+      >|< text "{\n  opacity: 1;\n}\n" -}

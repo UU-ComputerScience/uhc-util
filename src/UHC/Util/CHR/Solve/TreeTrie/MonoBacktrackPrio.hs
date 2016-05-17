@@ -1003,26 +1003,28 @@ chrSolve opts env = slv
         case alts of
           -- just continue if no alts 
           [] -> do
-            log
+            log Nothing
             slv
           -- just reschedule
           [alt@(FoundBodyAlt {foundBodyAltBacktrackPrio=bprio})]
             | curbprio == bprio -> do
-                log
+                log (Just alt)
                 nextwork bprio alt
             | otherwise -> do
-                log
+                log (Just alt)
                 slvSchedule bprio $ nextwork bprio alt
                 slvScheduleRun
           -- otherwise backtrack and schedule all and then reschedule
           alts -> do
-                log
-                forM alts $ \alt@(FoundBodyAlt {foundBodyAltBacktrackPrio=bprio}) -> (backtrack $ nextwork bprio alt) >>= slvSchedule bprio
+                forM alts $ \alt@(FoundBodyAlt {foundBodyAltBacktrackPrio=bprio}) -> do
+                  log (Just alt)
+                  (backtrack $ nextwork bprio alt) >>= slvSchedule bprio
                 slvScheduleRun
 
       where
-        log = do
-          let step = SolveStep chr matchSubst [] [] -- TODO: Set stepNewTodo, stepNewDone (last two arguments)
+        log alt = do
+          let a = (fmap (rbodyaltBody . foundBodyAltAlt) alt)
+          let step = SolveStep chr matchSubst a [] [] -- TODO: Set stepNewTodo, stepNewDone (last two arguments)
           fstl ^* chrgstTrace =$: (step:)
         nextwork bprio alt@(FoundBodyAlt {foundBodyAltAlt=(RuleBodyAlt {rbodyaltBody=body})}) = do
           -- set prio for this alt
