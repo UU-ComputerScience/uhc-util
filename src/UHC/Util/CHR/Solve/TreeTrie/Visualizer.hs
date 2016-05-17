@@ -94,7 +94,7 @@ stepToNode step (BuildState edges nodeMap nodeId)
       )
       ++ edges
 
-createGraph :: [SolveStep' C (MBP.StoredCHR C G P P) S] -> (Gr NodeData ())
+createGraph :: [SolveStep' C (MBP.StoredCHR C G P P) S] -> Gr NodeData ()
 createGraph steps = mkGraph nodes (fmap ((flip toLEdge) ()) edges)
   where
     (nodes, (BuildState edges _ _)) = stateMap stepToNode emptyBuildState steps
@@ -142,29 +142,63 @@ firstVar (x:xs) vars = if x `elem` vars then Just x else firstVar xs vars
 addIndices :: [a] -> [(a, Int)]
 addIndices as = zip as [0..]
 
-showNode :: [Tm] -> Node' -> PP_Doc
-showNode order (_, node) = tag "div" (text "class=\"rule\"") (
-    -- hlist (map (showUsage "usage guard") (nodeGuardVars node))
-    -- >|< hlist (map (showUsage "usage constraint") (nodeHeadVars node))
+showNode :: (Node -> (Int, Int)) -> Node' -> PP_Doc
+showNode pos (node, nodeData) = tag "div"
+  (
+    text "class=\"rule\" style=\"top: "
+    >|< pp y 
+    >|< text "px; left: "
+    >|< pp x
+    >|< text "px;\""
+  )
+  (
     tag "span" (text "class=\"" >|< className >|< text "\"") (
-      (text $ nodeName node)
-      >|< (hlist (fmap ((" " >|<) . pp) (nodeVars node)))
+      (text $ nodeName nodeData)
+      >|< (hlist (fmap ((" " >|<) . pp) (nodeVars nodeData)))
     )
-    >|< text "&rarr;"
+    >|< tag' "br" Emp
+    >|< text "&#8627;"
     >|< tag "span" (text "class=\"rule-alt\"") altText
-    -- (text $ show $ nodeAlt node)
-    -- >|< hlist (map (showUsage "usage body-alt") (nodeBodyAltVars node))
   )
   where
-    alt = nodeAlt node
+    (x, y) = pos node
+    alt = nodeAlt nodeData
     altText = case alt of
       []   -> text "."
       x:xs -> showAlt x >|< (hlist . fmap ((text ", " >|<) . pp)) xs
     showAlt = tag' "div" . pp 
-    className = text "rule-text" -- >|< maybe Emp ((text " var-" >|<)) (firstVar order $ nodeVars node)
+    className = text "rule-text"
     showUsage name var = tag "div" (text $ "class=\"" ++ className ++ "\"") (text " ")
       where
         className = name ++ " var-" ++ var
+
+showEdge :: (Node -> (Int, Int)) -> Edge -> PP_Doc
+showEdge pos (from, to) =
+  tag "div"
+    (
+      text "class=\"edge-ver\" style=\"top: "
+      >|< pp y1
+      >|< "px; left: "
+      >|< pp x1
+      >|< "px; height: "
+      >|< (y2 - y1)
+      >|< "px;\""
+    )
+    (text " ")
+  >|< tag "div"
+    (
+      text "class=\"edge-hor\" style=\"top: "
+      >|< pp y2
+      >|< "px; left: "
+      >|< pp x1
+      >|< "px; width: "
+      >|< (x2 - x1)
+      >|< "px;\""
+    )
+    (text " ")
+  where
+    (x1, y1) = pos from
+    (x2, y2) = pos to
 
 chrVisualize :: SolveTrace' C (MBP.StoredCHR C G P P) S -> PP_Doc
 chrVisualize trace = tag' "html" $
@@ -180,10 +214,11 @@ chrVisualize trace = tag' "html" $
   )
   where
     graph = createGraph trace
-    allTms = [] -- TODO
-    order = allTms -- TODO
-    body = ufold reduce Emp graph
-    reduce (inn, id, node, out) right = showNode order (id, node) >|< right
+    body = ufold reduce Emp graph >|< hlist (fmap (showEdge pos) $ edges graph)
+    reduce (inn, id, node, out) right = showNode pos (id, node) >|< right
+    pos :: Node -> (Int, Int)
+    pos node = (node * 30, node * 38)
+      -- text "margin-left: " >|< pp (node * 30) >|< text "px"
     -- nodes = map stepToNode trace
     -- vars = nub (concatMap nodeVars nodes)
     -- order = vars -- TODO: Sort vars to minimize crossings
@@ -219,19 +254,28 @@ styles =
        \  font-family: Arial;\n\
        \}\n\
        \.rule {\n\
+       \  position: absolute;\n\
        \}\n\
        \.rule-text {\n\
        \  border: 1px solid #aaa;\n\
        \  background-color: #fff;\n\
        \  display: inline-block;\n\
        \  padding: 2px;\n\
-       \  margin: 1px;\n\
+       \  margin: 3px 1px 0;\n\
        \}\n\
        \.rule-alt {\n\
        \  display: inline-block;\n\
-       \  padding: 3px;\n\
        \  color: #A89942;\n\
-       \  margin: 1px;\n\
+       \}\n\
+       \.edge-ver, .edge-hor {\n\
+       \  position: absolute;\n\
+       \  width: 6px;\n\
+       \  height: 6px;\n\
+       \  background-color: #578999;\n\
+       \  opacity: 0.6;\n\
+       \  margin-left: 15px;\n\
+       \  margin-top: 8px;\n\
+       \  z-index: -1;\n\
        \}\n\
        \"
   {- >|< hlist (fmap styleVar varIndices)
