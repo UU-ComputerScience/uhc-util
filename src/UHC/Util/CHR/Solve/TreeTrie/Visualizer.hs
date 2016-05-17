@@ -24,8 +24,10 @@ import           Data.Graph.Inductive.Tree
 data NodeData =
   NodeData
     { nodeName        :: String
+    , nodeVars        :: [Tm]
     , nodeBody        :: [RuleBodyAlt C P]
     }
+type Node' = LNode NodeData
 
 stateMap :: (a -> b -> (c, b)) -> b -> [a] -> ([c], b)
 stateMap _  state []     = ([], state)
@@ -67,11 +69,12 @@ addConstraints node = List.foldl cb
   where
     cb m tm = Map.insert tm node m
 
-stepToNode :: SolveStep' C (MBP.StoredCHR C G P P) S -> BuildState -> ((LNode NodeData), BuildState)
+stepToNode :: SolveStep' C (MBP.StoredCHR C G P P) S -> BuildState -> ((Node'), BuildState)
 stepToNode step (BuildState edges nodeMap nodeId)
   = ( (nodeId
       , NodeData
         { nodeName = maybe "[untitled]" id (ruleName rule)
+        , nodeVars = Map.elems (stepSubst step)
         , nodeBody = body
         }
       )
@@ -137,21 +140,21 @@ firstVar (x:xs) vars = if x `elem` vars then Just x else firstVar xs vars
 addIndices :: [a] -> [(a, Int)]
 addIndices as = zip as [0..]
 
-{- showNode :: [Var] -> Node -> PP_Doc
-showNode order node = tag "div" (text "class=\"rule\"") (
-    hlist (map (showUsage "usage guard") (nodeGuardVars node))
-    >|< hlist (map (showUsage "usage constraint") (nodeHeadVars node))
-    >|< tag "div" (text "class=\"" >|< className >|< text "\"") (
+showNode :: [Tm] -> Node' -> PP_Doc
+showNode order (_, node) = tag "div" (text "class=\"rule\"") (
+    -- hlist (map (showUsage "usage guard") (nodeGuardVars node))
+    -- >|< hlist (map (showUsage "usage constraint") (nodeHeadVars node))
+    tag "div" (text "class=\"" >|< className >|< text "\"") (
       (text $ nodeName node)
-      >|< (hlist (map ((" " >|<) . pp) (nodeVars node)))
+      >|< (hlist (fmap ((" " >|<) . pp) (nodeVars node)))
     )
-    >|< hlist (map (showUsage "usage body-alt") (nodeBodyAltVars node))
+    -- >|< hlist (map (showUsage "usage body-alt") (nodeBodyAltVars node))
   )
   where
-    className = text "rule-text" >|< maybe Emp ((text " var-" >|<)) (firstVar order $ nodeVars node)
+    className = text "rule-text" -- >|< maybe Emp ((text " var-" >|<)) (firstVar order $ nodeVars node)
     showUsage name var = tag "div" (text $ "class=\"" ++ className ++ "\"") (text " ")
       where
-        className = name ++ " var-" ++ var -}
+        className = name ++ " var-" ++ var
 
 chrVisualize :: SolveTrace' C (MBP.StoredCHR C G P P) S -> PP_Doc
 chrVisualize trace = tag' "html" $
@@ -161,11 +164,16 @@ chrVisualize trace = tag' "html" $
     -- >|< tag' "style" (styles order)
   )
   >|< tag' "body" (
-    Emp
+    body
     -- hlist (map showVarHeader vars)
     -- >|< tag "div" (text "class=\"content\"") (hlistReverse (map (showNode order) nodes))
   )
   where
+    graph = createGraph trace
+    allTms = [] -- TODO
+    order = allTms -- TODO
+    body = ufold reduce Emp graph
+    reduce (inn, id, node, out) right = showNode order (id, node) >|< right
     -- nodes = map stepToNode trace
     -- vars = nub (concatMap nodeVars nodes)
     -- order = vars -- TODO: Sort vars to minimize crossings
