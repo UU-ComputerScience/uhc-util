@@ -94,10 +94,12 @@ stepToNode step (BuildState edges nodeMap nodeId)
       )
       ++ edges
 
-createGraph :: [SolveStep' C (MBP.StoredCHR C G P P) S] -> Gr NodeData ()
-createGraph steps = mkGraph nodes (fmap ((flip toLEdge) ()) edges)
+createGraph :: [C] -> [SolveStep' C (MBP.StoredCHR C G P P) S] -> Gr NodeData ()
+createGraph query steps = mkGraph (nodes ++ [queryNode]) (fmap ((flip toLEdge) ()) edges)
   where
-    (nodes, (BuildState edges _ _)) = stateMap stepToNode emptyBuildState steps
+    queryNode = (0, NodeData "?" [] query)
+    state     = BuildState [] (addConstraints 0 Map.empty $ concatMap tmsInC query) 1
+    (nodes, (BuildState edges _ _)) = stateMap stepToNode state steps
 
 variablesInTerm :: Tm -> [Var]
 variablesInTerm (Tm_Var var)    = [var]
@@ -165,8 +167,7 @@ showNode pos (node, nodeData) = tag "div"
     alt = nodeAlt nodeData
     altText = case alt of
       []   -> text "."
-      x:xs -> showAlt x >|< (hlist . fmap ((text ", " >|<) . pp)) xs
-    showAlt = tag' "div" . pp 
+      x:xs -> pp x >|< (hlist . fmap ((text ", " >|<) . pp)) xs
     className = text "rule-text"
     showUsage name var = tag "div" (text $ "class=\"" ++ className ++ "\"") (text " ")
       where
@@ -181,18 +182,20 @@ showEdge pos (from, to) =
       >|< "px; left: "
       >|< pp x1
       >|< "px; height: "
-      >|< (y2 - y1)
+      >|< (y2 - y1 - 20)
       >|< "px;\""
     )
     (text " ")
   >|< tag "div"
     (
-      text "class=\"edge-hor\" style=\"top: "
-      >|< pp y2
+      text "class=\"edge-hor edge-hor-"
+      >|< text (if x2 > x1 then "left" else "right")
+      >|< text "\" style=\"top: "
+      >|< pp (y2 - 20)
       >|< "px; left: "
-      >|< pp x1
+      >|< pp (min x1 x2)
       >|< "px; width: "
-      >|< (x2 - x1)
+      >|< abs (x2 - x1)
       >|< "px;\""
     )
     (text " ")
@@ -200,8 +203,8 @@ showEdge pos (from, to) =
     (x1, y1) = pos from
     (x2, y2) = pos to
 
-chrVisualize :: SolveTrace' C (MBP.StoredCHR C G P P) S -> PP_Doc
-chrVisualize trace = tag' "html" $
+chrVisualize :: [C] -> SolveTrace' C (MBP.StoredCHR C G P P) S -> PP_Doc
+chrVisualize query trace = tag' "html" $
   tag' "head" (
     tag' "title" (text "CHR visualization")
     -- >|< tag "script" (text "type=\"text/javascript\"") (text scripts)
@@ -213,11 +216,17 @@ chrVisualize trace = tag' "html" $
     -- >|< tag "div" (text "class=\"content\"") (hlistReverse (map (showNode order) nodes))
   )
   where
-    graph = createGraph trace
+    graph = createGraph query trace
     body = ufold reduce Emp graph >|< hlist (fmap (showEdge pos) $ edges graph)
     reduce (inn, id, node, out) right = showNode pos (id, node) >|< right
+    nodeCount = length $ nodes graph
+    column :: Node -> Int
+    column x
+      | x `mod` 2 == 0         = x
+      | nodeCount `mod` 2 == 0 = nodeCount - x
+      | otherwise              = nodeCount - 1 - x
     pos :: Node -> (Int, Int)
-    pos node = (node * 30, node * 38)
+    pos node = ((column node) * 60, node * 38)
       -- text "margin-left: " >|< pp (node * 30) >|< text "px"
     -- nodes = map stepToNode trace
     -- vars = nub (concatMap nodeVars nodes)
@@ -255,6 +264,7 @@ styles =
        \}\n\
        \.rule {\n\
        \  position: absolute;\n\
+       \  white-space: nowrap;\n\
        \}\n\
        \.rule-text {\n\
        \  border: 1px solid #aaa;\n\
@@ -262,20 +272,38 @@ styles =
        \  display: inline-block;\n\
        \  padding: 2px;\n\
        \  margin: 3px 1px 0;\n\
+       \  min-width: 30px;\n\
+       \  text-align: center;\n\
        \}\n\
        \.rule-alt {\n\
        \  display: inline-block;\n\
        \  color: #A89942;\n\
        \}\n\
-       \.edge-ver, .edge-hor {\n\
+       \.edge-ver {\n\
        \  position: absolute;\n\
        \  width: 6px;\n\
-       \  height: 6px;\n\
        \  background-color: #578999;\n\
-       \  opacity: 0.6;\n\
+       \  opacity: 0.4;\n\
        \  margin-left: 15px;\n\
        \  margin-top: 8px;\n\
        \  z-index: -1;\n\
+       \}\n\
+       \.edge-hor {\n\
+       \  position: absolute;\n\
+       \  height: 20px;\n\
+       \  border-bottom: 6px solid #578999;\n\
+       \  opacity: 0.4;\n\
+       \  margin-left: 15px;\n\
+       \  margin-top: 8px;\n\
+       \  z-index: -1;\n\
+       \}\n\
+       \.edge-hor-left {\n\
+       \  border-bottom-left-radius: 16px;\n\
+       \  border-left: 6px solid #578999;\n\
+       \}\n\
+       \.edge-hor-right {\n\
+       \  border-bottom-right-radius: 16px;\n\
+       \  border-right: 6px solid #578999;\n\
        \}\n\
        \"
   {- >|< hlist (fmap styleVar varIndices)
