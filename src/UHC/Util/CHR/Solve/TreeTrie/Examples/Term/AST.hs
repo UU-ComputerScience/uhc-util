@@ -51,6 +51,7 @@ data Key
   | Key_Str     !String   
   | Key_Lst
   | Key_Op      !POp   
+  | Key_Con     !String   
   deriving (Eq, Ord, Show)
 
 instance PP Key where
@@ -59,6 +60,7 @@ instance PP Key where
   pp (Key_Str s) = "ks" >|< ppParens s
   pp (Key_Lst  ) = pp "kl"
   pp (Key_Op  o) = "ko" >|< ppParens o
+  pp (Key_Con s) = "kc" >|< ppParens s
 
 -- | Terms
 data Tm
@@ -130,6 +132,14 @@ type instance TrTrKey C = Key
 type instance TTKey Tm = Key
 type instance TTKey C = Key
 
+type instance TrTrKey (Maybe x) = TTKey x
+
+{-
+instance (TTKeyable x, Key ~ TTKey (Maybe x)) => TTKeyable (Maybe x) where
+  toTTKeyParentChildren' o Nothing  = (TT1K_One $ Key_Con "Noth", ttkChildren [])
+  toTTKeyParentChildren' o (Just x) = (TT1K_One $ Key_Con "Just", ttkChildren [toTTKey' o x])
+-}
+
 instance TTKeyable Tm where
   toTTKeyParentChildren' o (Tm_Var v) | ttkoptsVarsAsWild o = (TT1K_Any, ttkChildren [])
                                       | otherwise           = (TT1K_One $ Key_Var v, ttkChildren [])
@@ -137,7 +147,7 @@ instance TTKeyable Tm where
   toTTKeyParentChildren' o (Tm_Str s) = (TT1K_One $ Key_Str s, ttkChildren [])
   toTTKeyParentChildren' o (Tm_Bool i) = (TT1K_One $ Key_Int $ fromEnum i, ttkChildren [])
   toTTKeyParentChildren' o (Tm_Con c as) = (TT1K_One $ Key_Str c, ttkChildren $ map (toTTKey' o) as)
-  toTTKeyParentChildren' o (Tm_Lst h mt) = (TT1K_One $ Key_Lst  , ttkChildren $ map (toTTKey' o) $ maybeToList mt ++ h)
+  toTTKeyParentChildren' o (Tm_Lst h mt) = (TT1K_One $ Key_Lst  , ttkChildren $ {- [toTTKey' o mt] ++ -} map (toTTKey' o) h) -- map (toTTKey' o) $ maybeToList mt ++ h)
   toTTKeyParentChildren' o (Tm_Op op as) = (TT1K_One $ Key_Op op, ttkChildren $ map (toTTKey' o) as)
 
 instance TTKeyable C where
@@ -292,7 +302,10 @@ instance CHRCheckable E G S where
 instance CHRMatchable E Tm S where
   chrUnifyM how e t1 t2 = case (t1, t2) of
       (Tm_Con c1 as1, Tm_Con c2 as2) | c1 == c2                 -> chrUnifyM how e as1 as2
-      (Tm_Lst h1 mt1, Tm_Lst h2 mt2)                            -> chrUnifyM how e h1 h2 >> chrUnifyM how e mt1 mt2
+      (Tm_Lst (h1:t1) mt1, Tm_Lst (h2:t2) mt2)                  -> chrUnifyM how e h1 h2 >> chrUnifyM how e (Tm_Lst t1 mt1) (Tm_Lst t2 mt2)
+      (Tm_Lst [] (Just t1), l2@(Tm_Lst {}))                     -> chrUnifyM how e t1 l2
+      (l1@(Tm_Lst {}), Tm_Lst [] (Just t2))                     -> chrUnifyM how e l1 t2
+      (Tm_Lst [] mt1, Tm_Lst [] mt2)                            -> chrUnifyM how e mt1 mt2
       (Tm_Op  o1 as1, Tm_Op  o2 as2) | how < CHRMatchHow_Unify && o1 == o2
                                                                 -> chrUnifyM how e as1 as2
       (Tm_Op  o1 as1, t2           ) | how == CHRMatchHow_Unify -> tmEvalOp o1 as1 >>= \t1 -> chrUnifyM how e t1 t2
