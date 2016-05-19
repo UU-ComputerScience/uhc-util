@@ -2,7 +2,7 @@
 
 ## 0.1.6.6
 
-- [chr] examples
+- [chr] examples, debugging, ...
 - [libs] removed dependency on syb (and Data instances)
 
 ## 0.1.6.5

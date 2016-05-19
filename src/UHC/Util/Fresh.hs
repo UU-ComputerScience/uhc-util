@@ -20,16 +20,25 @@ class Monad m => MonadFresh f m where
 -}
 
 class Fresh fs f where
+  -- | Fresh single 'f', and modifier 'upd' for freshly created value
+  freshWith :: Maybe f -> fs -> (f,fs)
+  freshWith = freshInfWith
+
   -- | Fresh single 'f'
   fresh :: fs -> (f,fs)
-  fresh = freshInf
+  fresh = freshWith Nothing
+
+  -- | Fresh infinite range of 'f', and modifier 'upd' for freshly created value
+  freshInfWith :: Maybe f -> fs -> (f,fs)
+  freshInfWith = freshWith
 
   -- | Fresh infinite range of 'f'
   freshInf :: fs -> (f,fs)
-  freshInf = fresh
+  freshInf = freshInfWith Nothing
 
 instance Fresh Int Int where
-  fresh i = (i, i+1)
+  freshWith _ i = (i, i+1)
 
 instance Fresh Int String where
-  fresh i = ("$" ++ show i, i+1)
+  freshWith orig i = (maybe f (\o -> f ++ "_" ++ o) orig, i+1)
+    where f = "$" ++ show i

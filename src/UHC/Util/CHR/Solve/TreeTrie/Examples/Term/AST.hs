@@ -64,6 +64,7 @@ instance PP Key where
 data Tm
   = Tm_Var Var              -- ^ variable (to be substituted)
   | Tm_Int Int              -- ^ int value (for arithmetic)
+  | Tm_Str String
   | Tm_Bool Bool            -- ^ bool value
   | Tm_Con String [Tm]      -- ^ general term structure
   | Tm_Lst [Tm] (Maybe Tm)  -- ^ special case: list with head segment and term tail
@@ -89,6 +90,7 @@ instance PP Tm where
   pp (Tm_Op  o [a    ]) = ppParens $ o >#< a
   pp (Tm_Op  o [a1,a2]) = ppParens $ a1 >#< o >#< a2
   pp (Tm_Int i        ) = pp i
+  pp (Tm_Str s        ) = pp $ show s
   pp (Tm_Bool b       ) = pp b
 
 instance Serialize Tm
@@ -132,6 +134,7 @@ instance TTKeyable Tm where
   toTTKeyParentChildren' o (Tm_Var v) | ttkoptsVarsAsWild o = (TT1K_Any, ttkChildren [])
                                       | otherwise           = (TT1K_One $ Key_Var v, ttkChildren [])
   toTTKeyParentChildren' o (Tm_Int i) = (TT1K_One $ Key_Int i, ttkChildren [])
+  toTTKeyParentChildren' o (Tm_Str s) = (TT1K_One $ Key_Str s, ttkChildren [])
   toTTKeyParentChildren' o (Tm_Bool i) = (TT1K_One $ Key_Int $ fromEnum i, ttkChildren [])
   toTTKeyParentChildren' o (Tm_Con c as) = (TT1K_One $ Key_Str c, ttkChildren $ map (toTTKey' o) as)
   toTTKeyParentChildren' o (Tm_Lst h mt) = (TT1K_One $ Key_Lst  , ttkChildren $ map (toTTKey' o) $ maybeToList mt ++ h)
@@ -207,7 +210,7 @@ instance VarLookupCmb S S where
   (|+>) = Map.union
 
 instance VarUpdatable S S where
-  varUpd = (|+>)
+  varUpd s = Map.map (s `varUpd`) -- (|+>)
 
 instance VarUpdatable Tm S where
   s `varUpd` t = case fromJust $ varlookupResolveVal varTermMbKey t s <|> return t of
@@ -295,6 +298,7 @@ instance CHRMatchable E Tm S where
       (Tm_Op  o1 as1, t2           ) | how == CHRMatchHow_Unify -> tmEvalOp o1 as1 >>= \t1 -> chrUnifyM how e t1 t2
       (t1           , Tm_Op  o2 as2) | how == CHRMatchHow_Unify -> tmEvalOp o2 as2 >>= \t2 -> chrUnifyM how e t1 t2
       (Tm_Int i1    , Tm_Int i2    ) | i1 == i2                 -> chrMatchSuccess
+      (Tm_Str s1    , Tm_Str s2    ) | s1 == s2                 -> chrMatchSuccess
       (Tm_Bool b1   , Tm_Bool b2   ) | b1 == b2                 -> chrMatchSuccess
       _                                                         -> chrMatchResolveCompareAndContinue how (chrUnifyM how e) t1 t2
 {-
@@ -434,10 +438,11 @@ instance GTermAs C G P P Tm where
       where o' = List.lookup o [("+", PBOp_Add), ("-", PBOp_Sub), ("*", PBOp_Mul), ("Mod", PBOp_Mod), ("<", PBOp_Lt), ("<=", PBOp_Le)]
     GTm_Con c a -> forM a asTm >>= (return . Tm_Con c)
     GTm_Var v -> return $ Tm_Var v
+    GTm_Str v -> return $ Tm_Str v
     GTm_Int i -> return $ Tm_Int (fromInteger i)
     GTm_Nil   -> return $ Tm_Lst [] Nothing
     t@(GTm_Cns _ _) -> asTmList t >>= (return . uncurry Tm_Lst)
-    t -> gtermasFail t "not a term"
+    -- t -> gtermasFail t "not a term"
 
 --------------------------------------------------------
 -- leq example, backtrack prio specific

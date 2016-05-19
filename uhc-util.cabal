@@ -74,6 +74,7 @@ library
     UHC.Util.RLList.LexScope,
     UHC.Util.ScanUtils,
     UHC.Util.ScopeMapGam,
+    UHC.Util.ScopeVarMp,
     UHC.Util.Serialize,
     UHC.Util.Substitutable,
     UHC.Util.Time,

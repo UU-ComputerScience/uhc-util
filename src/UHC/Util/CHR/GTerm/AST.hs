@@ -42,6 +42,7 @@ instance PP GTm where
   pp (GTm_Nil          ) = pp "[]"
   pp (GTm_Cns h t      ) = "[" >|< h >#< ":" >#< t >|< "]"
   pp (GTm_Int i        ) = pp i
+  pp (GTm_Str s        ) = pp $ show s
 
 -------------------------------------------------------------------------------------------
 --- Term interpretation in context of CHR
