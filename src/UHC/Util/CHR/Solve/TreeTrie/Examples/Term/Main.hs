@@ -77,7 +77,7 @@ runFile runopts f = do
 mainTerm = do
   forM_
       [
-        "bug2"
+        "typing2"
       -- , "queens"
       -- , "leq"
       -- , "var"
