@@ -22,12 +22,18 @@ import           UHC.Util.Substitutable
 import           Data.Graph.Inductive.Graph
 import           Data.Graph.Inductive.Tree
 
-data NodeData =
-  NodeData
-    { nodeName        :: String
-    , nodeVars        :: [Tm]
-    , nodeAlt         :: [C]
+data NodeData
+  = NodeRule -- Rule with first alt
+    { nrLevel       :: Int
+    , nrName        :: String
+    , nrRuleVars    :: [Tm]
+    , nrFirstAlt    :: Maybe C
     }
+  | NodeAlt  -- Additional alts of a rule
+    { naLevel       :: Int
+    , naConstraint  :: C
+    }
+      
 type Node' = LNode NodeData
 
 stateMap :: (a -> b -> (c, b)) -> b -> [a] -> ([c], b)
@@ -37,10 +43,10 @@ stateMap cb state (x:xs) = (y:ys, newState)
     (ys,tmpState) = stateMap cb state xs
     (y,newState)  = cb x tmpState
 
-data BuildState = BuildState [Edge] (Map.Map Tm Node) Int
+data BuildState = BuildState [Edge] (Map.Map Tm Node) Int Int
 
 emptyBuildState :: BuildState
-emptyBuildState = BuildState [] Map.empty 0
+emptyBuildState = BuildState [] Map.empty 0 0
 
 tmsInC :: C -> [Tm]
 tmsInC (C_Con s tms) = [Tm_Con s tms]
@@ -70,36 +76,69 @@ addConstraints node = List.foldl cb
   where
     cb m tm = Map.insert tm node m
 
-stepToNode :: SolveStep' C (MBP.StoredCHR C G P P) S -> BuildState -> ((Node'), BuildState)
-stepToNode step (BuildState edges nodeMap nodeId)
-  = ( (nodeId
-      , NodeData
-        { nodeName = maybe "[untitled]" id (ruleName rule)
-        , nodeVars = Map.elems (stepSubst step)
-        , nodeAlt  = alt
-        }
-      )
-    , BuildState edges' nodeMap' (nodeId + 1)
-    )
+first :: [a] -> Maybe a
+first []    = Nothing
+first (x:_) = Just x
+
+stepToNodes :: SolveStep' C (MBP.StoredCHR C G P P) S -> BuildState -> ([Node'], BuildState)
+stepToNodes step state@(BuildState edges nodeMap nodeId level)
+  = ( nodes
+    , BuildState edges'' nodeMap' nodeId' level'
+  )
   where
     schr = stepChr step
     rule = MBP.storedChrRule' schr
     updRule = varUpd (stepSubst step) rule
     alt = maybe [] (fmap $ varUpd $ stepSubst step) $ stepAlt step
-    altTms = concatMap tmsInC alt
-    nodeMap' = addConstraints nodeId nodeMap altTms
-    edges' =
+    (nodes, BuildState edges' nodeMap' nodeId' level') =
+      createNodes
+        (maybe "[untitled]" id (ruleName rule))
+        (Map.elems (stepSubst step))
+        alt
+        state
+    edges'' =
       ( List.map (\n -> (n, nodeId))
         $ Maybe.mapMaybe (\tm -> Map.lookup tm nodeMap) (precedentTms updRule)
       )
+      ++ edges'
+
+createNodes :: String -> [Tm] -> [C] -> BuildState -> ([Node'], BuildState)
+createNodes name vars alts (BuildState edges nodeMap nodeId level)
+  = ( nodes
+    , BuildState edges' nodeMap' (nodeId + max 1 (length alts)) (level + 1)
+    )
+  where
+    nodes =
+      (nodeId, NodeRule
+        { nrLevel    = level
+        , nrName     = name
+        , nrRuleVars = vars
+        , nrFirstAlt = first alts
+        }
+      )
+      : altNodes
+    altTms = concatMap tmsInC alts
+    nodeMap' = List.foldl updateMap nodeMap nodes
+    -- Updates node map for a new node
+    updateMap :: Map.Map Tm Node -> Node' -> Map.Map Tm Node
+    updateMap map (id, NodeRule{ nrFirstAlt = Just alt }) = addConstraints id map $ tmsInC alt
+    updateMap map (id, NodeAlt{ naConstraint = alt }) = addConstraints id map $ tmsInC alt
+    updateMap map _ = map
+    
+    altNode (constraint, i) = (nodeId + i, NodeAlt level constraint)
+    altNodes = fmap altNode (drop 1 $ addIndices alts)
+    edges' =
+      (fmap (\(n, _) -> (nodeId, n)) altNodes)
       ++ edges
 
 createGraph :: [C] -> [SolveStep' C (MBP.StoredCHR C G P P) S] -> Gr NodeData ()
-createGraph query steps = mkGraph (nodes ++ [queryNode]) (fmap ((flip toLEdge) ()) edges)
+createGraph query steps = mkGraph (nodes ++ queryNodes) (fmap ((flip toLEdge) ()) edges)
   where
-    queryNode = (0, NodeData "?" [] query)
-    state     = BuildState [] (addConstraints 0 Map.empty $ concatMap tmsInC query) 1
-    (nodes, (BuildState edges _ _)) = stateMap stepToNode state steps
+    (queryNodes, state) = createNodes "?" [] query emptyBuildState
+    -- queryNode = (0, NodeRule 0 "?" [] $ first query)
+    -- state     = BuildState [] (addConstraints 0 Map.empty $ concatMap tmsInC query) 1 1
+    (nodes', (BuildState edges _ _ _)) = stateMap stepToNodes state steps
+    nodes     = concat nodes'
 
 variablesInTerm :: Tm -> [Var]
 variablesInTerm (Tm_Var var)    = [var]
@@ -144,8 +183,8 @@ firstVar (x:xs) vars = if x `elem` vars then Just x else firstVar xs vars
 addIndices :: [a] -> [(a, Int)]
 addIndices as = zip as [0..]
 
-showNode :: (Node -> (Int, Int)) -> Node' -> PP_Doc
-showNode pos (node, nodeData) = tag "div"
+showNode :: (Node' -> (Int, Int)) -> Node' -> PP_Doc
+showNode pos node@(_, NodeRule{nrLevel = level, nrName = name, nrRuleVars = vars, nrFirstAlt = alt}) = tag "div"
   (
     text "class=\"rule\" style=\"top: "
     >|< pp y 
@@ -155,8 +194,8 @@ showNode pos (node, nodeData) = tag "div"
   )
   (
     tag "span" (text "class=\"" >|< className >|< text "\"") (
-      (text $ nodeName nodeData)
-      >|< (hlist (fmap ((" " >|<) . pp) (nodeVars nodeData)))
+      (text name)
+      >|< (hlist (fmap ((" " >|<) . pp) vars))
     )
     >|< tag' "br" Emp
     >|< text "&#8627;"
@@ -164,41 +203,66 @@ showNode pos (node, nodeData) = tag "div"
   )
   where
     (x, y) = pos node
-    alt = nodeAlt nodeData
-    altText = case alt of
-      []   -> text "."
-      x:xs -> pp x >|< (hlist . fmap ((text ", " >|<) . pp)) xs
+    altText = maybe (text ".") pp alt
     className = text "rule-text"
     showUsage name var = tag "div" (text $ "class=\"" ++ className ++ "\"") (text " ")
       where
         className = name ++ " var-" ++ var
+showNode pos node@(_, NodeAlt{ naConstraint = constraint }) = tag "div"
+  (
+    text "class=\"rule-additional-alt\" style=\"top: "
+    >|< pp y 
+    >|< text "px; left: "
+    >|< pp x
+    >|< text "px;\""
+  )
+  (
+    text "&#8627;"
+    >|< tag "span" (text "class=\"rule-alt\"") (pp constraint)
+  )
+  where
+    (x, y) = pos node
 
 showEdge :: (Node -> (Int, Int)) -> Edge -> PP_Doc
 showEdge pos (from, to) =
-  tag "div"
-    (
-      text "class=\"edge-ver\" style=\"top: "
-      >|< pp y1
-      >|< "px; left: "
-      >|< pp x1
-      >|< "px; height: "
-      >|< (y2 - y1 - 20)
-      >|< "px;\""
-    )
-    (text " ")
-  >|< tag "div"
-    (
-      text "class=\"edge-hor edge-hor-"
-      >|< text (if x2 > x1 then "left" else "right")
-      >|< text "\" style=\"top: "
-      >|< pp (y2 - 20)
-      >|< "px; left: "
-      >|< pp (min x1 x2)
-      >|< "px; width: "
-      >|< abs (x2 - x1)
-      >|< "px;\""
-    )
-    (text " ")
+  if y1 == y2 then
+    -- Edge between rule and alt of same rule
+    tag "div"
+      (
+        text "class=\"edge-alt\" style=\"top: "
+        >|< pp y1
+        >|< "px; left: "
+        >|< pp (min x1 x2)
+        >|< "px; width: "
+        >|< abs (x2 - x1 - 20)
+        >|< "px;\""
+      )
+      (text " ")
+  else
+    tag "div"
+      (
+        text "class=\"edge-ver\" style=\"top: "
+        >|< pp (y1 + 17)
+        >|< "px; left: "
+        >|< pp x1
+        >|< "px; height: "
+        >|< (y2 - y1 - 37)
+        >|< "px;\""
+      )
+      (text " ")
+    >|< tag "div"
+      (
+        text "class=\"edge-hor edge-hor-"
+        >|< text (if x2 > x1 then "left" else "right")
+        >|< text "\" style=\"top: "
+        >|< pp (y2 - 20)
+        >|< "px; left: "
+        >|< pp (min x1 x2)
+        >|< "px; width: "
+        >|< abs (x2 - x1)
+        >|< "px;\""
+      )
+      (text " ")
   where
     (x1, y1) = pos from
     (x2, y2) = pos to
@@ -217,7 +281,7 @@ chrVisualize query trace = tag' "html" $
   )
   where
     graph = createGraph query trace
-    body = ufold reduce Emp graph >|< hlist (fmap (showEdge pos) $ edges graph)
+    body = ufold reduce Emp graph >|< hlist (fmap (showEdge posId) $ edges graph)
     reduce (inn, id, node, out) right = showNode pos (id, node) >|< right
     nodeCount = length $ nodes graph
     column :: Node -> Int
@@ -225,8 +289,11 @@ chrVisualize query trace = tag' "html" $
       | x `mod` 2 == 0         = x
       | nodeCount `mod` 2 == 0 = nodeCount - x
       | otherwise              = nodeCount - 1 - x
-    pos :: Node -> (Int, Int)
-    pos node = ((column node) * 60, node * 38)
+    pos :: Node' -> (Int, Int)
+    pos (id, NodeRule{nrLevel = level}) = ((column id) * 70, level * 38)
+    pos (id, NodeAlt{naLevel = level}) = ((column id) * 70, level * 38)
+    posId :: Node -> (Int, Int)
+    posId node = pos (node, fromJust $ lab graph node)
       -- text "margin-left: " >|< pp (node * 30) >|< text "px"
     -- nodes = map stepToNode trace
     -- vars = nub (concatMap nodeVars nodes)
@@ -278,6 +345,12 @@ styles =
        \.rule-alt {\n\
        \  display: inline-block;\n\
        \  color: #A89942;\n\
+       \  background: #fff;\n\
+       \}\n\
+       \.rule-additional-alt {\n\
+       \  position: absolute;\n\
+       \  white-space: nowrap;\n\
+       \  margin-top: 24px;\n\
        \}\n\
        \.edge-ver {\n\
        \  position: absolute;\n\
@@ -304,6 +377,14 @@ styles =
        \.edge-hor-right {\n\
        \  border-bottom-right-radius: 16px;\n\
        \  border-right: 6px solid #578999;\n\
+       \}\n\
+       \.edge-alt {\n\
+       \  height: 1px;\n\
+       \  background-color: #aaa;\n\
+       \  position: absolute;\n\
+       \  margin-top: 19px;\n\
+       \  z-index: -1;\n\
+       \  padding-right: 22px;\n\
        \}\n\
        \"
   {- >|< hlist (fmap styleVar varIndices)
