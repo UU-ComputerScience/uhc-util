@@ -21,7 +21,6 @@ import           UHC.Util.CHR.Rule
 import           UHC.Util.CHR.GTerm.Parser
 import           UHC.Util.CHR.Solve.TreeTrie.MonoBacktrackPrio as MBP
 import           UHC.Util.CHR.Solve.TreeTrie.Examples.Term.AST
--- import           UHC.Util.CHR.Solve.TreeTrie.Examples.Term.Parser
 
 data RunOpt
   = RunOpt_DebugTrace               -- ^ include debugging trace in output
@@ -71,7 +70,7 @@ runFile runopts f = do
     
   where
     msg m = putStrLn $ "---------------- " ++ m ++ " ----------------"
-    dummy = undefined :: Rule C G P P
+    -- dummy = undefined :: Rule C G P P
 
 -- | run some test programs
 mainTerm = do

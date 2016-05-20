@@ -1100,7 +1100,7 @@ slvMatch
        CHREmptySubstitution s
      , VarLookupCmb s s
      , -}
-       MonoBacktrackPrio c g bp p s e m
+       MonoBacktrackPrio c g bp p s env m
      {- these below should not be necessary as they are implied (via superclasses) by MonoBacktrackPrio, but deeper nested superclasses seem not to be picked up...
      -}
      , CHRMatchable env c s
@@ -1114,7 +1114,7 @@ slvMatch
        -> StoredCHR c g bp p
        -> [c]
        -> Int                                       -- ^ position in the head where work was found, on that work specifically we might have to wait
-       -> CHRMonoBacktrackPrioT c g bp p s e m (Maybe (FoundSlvMatch c g bp p s))
+       -> CHRMonoBacktrackPrioT c g bp p s env m (Maybe (FoundSlvMatch c g bp p s))
 slvMatch env chr@(StoredCHR {_storedChrRule = Rule {rulePrio = mbpr, ruleHead = hc, ruleGuard = gd, ruleBacktrackPrio = mbbpr, ruleBodyAlts = alts}}) cnstrs headInx = do
     subst <- getl $ sndl ^* chrbstSolveSubst
     curbprio <- fmap chrPrioLift $ getl $ sndl ^* chrbstBacktrackPrio
