@@ -18,14 +18,23 @@ import           UHC.Util.CHR.Solve.TreeTrie.MonoBacktrackPrio as MBP
 import           UHC.Util.CHR.Solve.TreeTrie.Examples.Term.AST
 import           UHC.Util.CHR.Solve.TreeTrie.Internal
 import           UHC.Util.CHR.Solve.TreeTrie.Internal.Shared
+import           UHC.Util.Substitutable
 import           Data.Graph.Inductive.Graph
 import           Data.Graph.Inductive.Tree
 
-data NodeData =
-  NodeData
-    { nodeName        :: String
-    , nodeBody        :: [RuleBodyAlt C P]
+data NodeData
+  = NodeRule -- Rule with first alt
+    { nrLevel       :: Int
+    , nrName        :: String
+    , nrRuleVars    :: [Tm]
+    , nrFirstAlt    :: Maybe C
     }
+  | NodeAlt  -- Additional alts of a rule
+    { naLevel       :: Int
+    , naConstraint  :: C
+    }
+      
+type Node' = LNode NodeData
 
 stateMap :: (a -> b -> (c, b)) -> b -> [a] -> ([c], b)
 stateMap _  state []     = ([], state)
@@ -34,14 +43,31 @@ stateMap cb state (x:xs) = (y:ys, newState)
     (ys,tmpState) = stateMap cb state xs
     (y,newState)  = cb x tmpState
 
-data BuildState = BuildState [Edge] (Map.Map Tm Node) Int
+type NodeMap = Map.Map Tm (Node, [Node])
+data BuildState = BuildState [Edge] NodeMap Int Int
+
+replaceInTm :: Tm -> Tm -> Tm -> [Tm]
+replaceInTm a b tm
+  | tm == a || tm == b = [a, b]
+  | otherwise          = case tm of
+    Tm_Con name tms -> fmap (Tm_Con name) (replaceList tms)
+    Tm_Lst tms ltm  -> do
+      tms' <- replaceList tms
+      ltm' <- replaceMaybe ltm
+      return $ Tm_Lst tms' ltm'
+    Tm_Op op tms    -> fmap (Tm_Op op) (replaceList tms)
+    x               -> [x]
+    where
+      replaceList = sequence . fmap (replaceInTm a b)
+      replaceMaybe Nothing  = [Nothing]
+      replaceMaybe (Just y) = fmap Just $ replaceInTm a b y
 
 emptyBuildState :: BuildState
-emptyBuildState = BuildState [] Map.empty 0
+emptyBuildState = BuildState [] Map.empty 0 0
 
-tmInC :: C -> [Tm]
-tmInC (C_Con s tms) = [Tm_Con s tms]
-tmInC _             = []
+tmsInC :: C -> [Tm]
+tmsInC (C_Con s tms) = [Tm_Con s tms]
+tmsInC _             = []
 
 tmsInG :: G -> [Tm]
 tmsInG (G_Tm tm) = tmsInTm tm
@@ -49,11 +75,11 @@ tmsInG _         = []
 
 precedentTms :: Rule C G P P -> [Tm]
 precedentTms rule
-  =  concatMap tmInC  (ruleHead rule)
+  =  concatMap tmsInC  (ruleHead rule)
   ++ concatMap tmsInG (ruleGuard rule)
 
 tmsInBodyAlt :: RuleBodyAlt C bprio -> [Tm]
-tmsInBodyAlt = concatMap tmInC . rbodyaltBody
+tmsInBodyAlt = concatMap tmsInC . rbodyaltBody
 
 tmsInTm :: Tm -> [Tm]
 tmsInTm tm = tm : children tm
@@ -62,37 +88,87 @@ tmsInTm tm = tm : children tm
     children (Tm_Lst as (Just a)) = as ++ [a]
     children _                    = [] 
 
-addConstraints :: Node -> (Map.Map Tm Node) -> [Tm] -> (Map.Map Tm Node)
-addConstraints node = List.foldl cb
-  where
-    cb m tm = Map.insert tm node m
+addConstraint :: C -> Node -> NodeMap -> NodeMap
+addConstraint (CB_Eq a b)   = addUnify a b
+addConstraint (C_Con s tms) = addTerm $ Tm_Con s tms
+addConstraint c             = const id
 
-stepToNode :: SolveStep' C (MBP.StoredCHR C G P P) S -> BuildState -> ((LNode NodeData), BuildState)
-stepToNode step (BuildState edges nodeMap nodeId)
-  = ( (nodeId
-      , NodeData
-        { nodeName = maybe "[untitled]" id (ruleName rule)
-        , nodeBody = body
-        }
-      )
-    , BuildState edges' nodeMap' (nodeId + 1)
-    )
+addTerm :: Tm -> Node -> NodeMap -> NodeMap
+addTerm tm node =  Map.insert tm (node, [])
+
+addUnify :: Tm -> Tm -> Node -> NodeMap -> NodeMap
+addUnify a b node map = Map.foldlWithKey cb map map
+  where
+    cb :: NodeMap -> Tm -> (Node, [Node]) -> NodeMap
+    cb map' tm (n, nodes) = List.foldl (\map'' key -> insertWith compare key (n, node : nodes) map'') map' (replaceInTm a b tm)
+    compare x@(_, nodes1) y@(_, nodes2)
+      | length nodes1 <= length nodes2 = x
+      | otherwise                      = y
+
+first :: [a] -> Maybe a
+first []    = Nothing
+first (x:_) = Just x
+
+stepToNodes :: SolveStep' C (MBP.StoredCHR C G P P) S -> BuildState -> ([Node'], BuildState)
+stepToNodes step state@(BuildState edges nodeMap nodeId level)
+  = ( nodes
+    , BuildState edges'' nodeMap' nodeId' level'
+  )
   where
     schr = stepChr step
     rule = MBP.storedChrRule' schr
-    body = ruleBodyAlts rule
-    altTms = concatMap tmsInBodyAlt body
-    nodeMap' = addConstraints nodeId nodeMap altTms
-    edges' =
+    updRule = varUpd (stepSubst step) rule
+    alt = maybe [] (fmap $ varUpd $ stepSubst step) $ stepAlt step
+    (nodes, BuildState edges' nodeMap' nodeId' level') =
+      createNodes
+        (maybe "[untitled]" id (ruleName rule))
+        (Map.elems (stepSubst step))
+        alt
+        state
+    edges'' =
       ( List.map (\n -> (n, nodeId))
-        $ Maybe.mapMaybe (\tm -> Map.lookup tm nodeMap) (precedentTms rule)
+        $ concatMap (\(n, ns) -> n : ns)
+        $ Maybe.mapMaybe (\tm -> Map.lookup tm nodeMap) (precedentTms updRule)
       )
+      ++ edges'
+
+createNodes :: String -> [Tm] -> [C] -> BuildState -> ([Node'], BuildState)
+createNodes name vars alts (BuildState edges nodeMap nodeId level)
+  = ( nodes
+    , BuildState edges' nodeMap' (nodeId + max 1 (length alts)) (level + 1)
+    )
+  where
+    nodes =
+      (nodeId, NodeRule
+        { nrLevel    = level
+        , nrName     = name
+        , nrRuleVars = vars
+        , nrFirstAlt = first alts
+        }
+      )
+      : altNodes
+    altTms = concatMap tmsInC alts
+    nodeMap' = List.foldl updateMap nodeMap nodes
+    -- Updates node map for a new node
+    updateMap :: NodeMap -> Node' -> NodeMap
+    updateMap map (id, NodeRule{ nrFirstAlt = Just alt }) = addConstraint alt id map
+    updateMap map (id, NodeAlt{ naConstraint = alt }) = addConstraint alt id map
+    updateMap map _ = map
+    
+    altNode (constraint, i) = (nodeId + i, NodeAlt level constraint)
+    altNodes = fmap altNode (drop 1 $ addIndices alts)
+    edges' =
+      (fmap (\(n, _) -> (nodeId, n)) altNodes)
       ++ edges
 
-createGraph :: [SolveStep' C (MBP.StoredCHR C G P P) S] -> (Gr NodeData ())
-createGraph steps = mkGraph nodes (fmap ((flip toLEdge) ()) edges)
+createGraph :: [C] -> [SolveStep' C (MBP.StoredCHR C G P P) S] -> Gr NodeData ()
+createGraph query steps = mkGraph (nodes ++ queryNodes) (fmap ((flip toLEdge) ()) edges)
   where
-    (nodes, (BuildState edges _ _)) = stateMap stepToNode emptyBuildState steps
+    (queryNodes, state) = createNodes "?" [] query emptyBuildState
+    -- queryNode = (0, NodeRule 0 "?" [] $ first query)
+    -- state     = BuildState [] (addConstraints 0 Map.empty $ concatMap tmsInC query) 1 1
+    (nodes', (BuildState edges _ _ _)) = stateMap stepToNodes state steps
+    nodes     = concat nodes'
 
 variablesInTerm :: Tm -> [Var]
 variablesInTerm (Tm_Var var)    = [var]
@@ -137,35 +213,118 @@ firstVar (x:xs) vars = if x `elem` vars then Just x else firstVar xs vars
 addIndices :: [a] -> [(a, Int)]
 addIndices as = zip as [0..]
 
-{- showNode :: [Var] -> Node -> PP_Doc
-showNode order node = tag "div" (text "class=\"rule\"") (
-    hlist (map (showUsage "usage guard") (nodeGuardVars node))
-    >|< hlist (map (showUsage "usage constraint") (nodeHeadVars node))
-    >|< tag "div" (text "class=\"" >|< className >|< text "\"") (
-      (text $ nodeName node)
-      >|< (hlist (map ((" " >|<) . pp) (nodeVars node)))
+showNode :: (Node' -> (Int, Int)) -> Node' -> PP_Doc
+showNode pos node@(_, NodeRule{nrLevel = level, nrName = name, nrRuleVars = vars, nrFirstAlt = alt}) = tag "div"
+  (
+    text "class=\"rule\" style=\"top: "
+    >|< pp y 
+    >|< text "px; left: "
+    >|< pp x
+    >|< text "px;\""
+  )
+  (
+    tag "span" (text "class=\"" >|< className >|< text "\"") (
+      (text name)
+      >|< (hlist (fmap ((" " >|<) . pp) vars))
     )
-    >|< hlist (map (showUsage "usage body-alt") (nodeBodyAltVars node))
+    >|< tag' "br" Emp
+    >|< text "&#8627;"
+    >|< tag "span" (text "class=\"rule-alt\"") altText
   )
   where
-    className = text "rule-text" >|< maybe Emp ((text " var-" >|<)) (firstVar order $ nodeVars node)
+    (x, y) = pos node
+    altText = maybe (text ".") pp alt
+    className = text "rule-text"
     showUsage name var = tag "div" (text $ "class=\"" ++ className ++ "\"") (text " ")
       where
-        className = name ++ " var-" ++ var -}
+        className = name ++ " var-" ++ var
+showNode pos node@(_, NodeAlt{ naConstraint = constraint }) = tag "div"
+  (
+    text "class=\"rule-additional-alt\" style=\"top: "
+    >|< pp y 
+    >|< text "px; left: "
+    >|< pp x
+    >|< text "px;\""
+  )
+  (
+    text "&#8627;"
+    >|< tag "span" (text "class=\"rule-alt\"") (pp constraint)
+  )
+  where
+    (x, y) = pos node
 
-chrVisualize :: SolveTrace' C (MBP.StoredCHR C G P P) S -> PP_Doc
-chrVisualize trace = tag' "html" $
+showEdge :: (Node -> (Int, Int)) -> Edge -> PP_Doc
+showEdge pos (from, to) =
+  if y1 == y2 then
+    -- Edge between rule and alt of same rule
+    tag "div"
+      (
+        text "class=\"edge-alt\" style=\"top: "
+        >|< pp y1
+        >|< "px; left: "
+        >|< pp (min x1 x2)
+        >|< "px; width: "
+        >|< abs (x2 - x1 - 20)
+        >|< "px;\""
+      )
+      (text " ")
+  else
+    tag "div"
+      (
+        text "class=\"edge-ver\" style=\"top: "
+        >|< pp (y1 + 17)
+        >|< "px; left: "
+        >|< pp x1
+        >|< "px; height: "
+        >|< (y2 - y1 - 37)
+        >|< "px;\""
+      )
+      (text " ")
+    >|< tag "div"
+      (
+        text "class=\"edge-hor edge-hor-"
+        >|< text (if x2 > x1 then "left" else "right")
+        >|< text "\" style=\"top: "
+        >|< pp (y2 - 20)
+        >|< "px; left: "
+        >|< pp (min x1 x2)
+        >|< "px; width: "
+        >|< abs (x2 - x1)
+        >|< "px;\""
+      )
+      (text " ")
+  where
+    (x1, y1) = pos from
+    (x2, y2) = pos to
+
+chrVisualize :: [C] -> SolveTrace' C (MBP.StoredCHR C G P P) S -> PP_Doc
+chrVisualize query trace = tag' "html" $
   tag' "head" (
     tag' "title" (text "CHR visualization")
     -- >|< tag "script" (text "type=\"text/javascript\"") (text scripts)
-    -- >|< tag' "style" (styles order)
+    >|< tag' "style" styles
   )
   >|< tag' "body" (
-    Emp
+    body
     -- hlist (map showVarHeader vars)
     -- >|< tag "div" (text "class=\"content\"") (hlistReverse (map (showNode order) nodes))
   )
   where
+    graph = createGraph query trace
+    body = ufold reduce Emp graph >|< hlist (fmap (showEdge posId) $ edges graph)
+    reduce (inn, id, node, out) right = showNode pos (id, node) >|< right
+    nodeCount = length $ nodes graph
+    column :: Node -> Int
+    column x
+      | x `mod` 2 == 0         = x
+      | nodeCount `mod` 2 == 0 = nodeCount - x
+      | otherwise              = nodeCount - 1 - x
+    pos :: Node' -> (Int, Int)
+    pos (id, NodeRule{nrLevel = level}) = ((column id) * 70, level * 38)
+    pos (id, NodeAlt{naLevel = level}) = ((column id) * 70, level * 38)
+    posId :: Node -> (Int, Int)
+    posId node = pos (node, fromJust $ lab graph node)
+      -- text "margin-left: " >|< pp (node * 30) >|< text "px"
     -- nodes = map stepToNode trace
     -- vars = nub (concatMap nodeVars nodes)
     -- order = vars -- TODO: Sort vars to minimize crossings
@@ -194,55 +353,71 @@ scripts =
   \}());\n\
   \"
 
-styles :: [Var] -> PP_Doc
-styles vars =
+styles :: PP_Doc
+styles =
   text "body {\n\
        \  font-size: 9pt;\n\
        \  font-family: Arial;\n\
        \}\n\
-       \.varheader {\n\
-       \  width: 19px;\n\
-       \  font-weight: 700;\n\
-       \  position: absolute;\n\
-       \  top: 5px;\n\
-       \}\n\
-       \.content {\n\
-       \  margin-top: 25px;\n\
-       \}\n\
        \.rule {\n\
-       \  position: relative;\n\
-       \}\n\
-       \.usage {\n\
-       \  border: 1px solid #ccc;\n\
-       \  background-color: #eee;\n\
-       \  width: 12px;\n\
-       \  height: 12px;\n\
-       \  border-radius: 8px;\n\
        \  position: absolute;\n\
-       \  top: 0px;\n\
-       \}\n\
-       \.usage.constraint {\n\
-       \  background-color: #6EAFC4;\n\
-       \  border: 1px solid #578999;\n\
-       \  top: 11px;\n\
-       \}\n\
-       \.usage.body-alt {\n\
-       \  background-color: #D1BE4F;\n\
-       \  border: 1px solid #A89942;\n\
-       \  top: 38px;\n\
+       \  white-space: nowrap;\n\
        \}\n\
        \.rule-text {\n\
        \  border: 1px solid #aaa;\n\
        \  background-color: #fff;\n\
        \  display: inline-block;\n\
        \  padding: 2px;\n\
-       \  margin: 21px 0 12px;\n\
+       \  margin: 3px 1px 0;\n\
+       \  min-width: 30px;\n\
+       \  text-align: center;\n\
        \}\n\
-       \.selected-var .usage, .selected-var .varheader {\n\
+       \.rule-alt {\n\
+       \  display: inline-block;\n\
+       \  color: #A89942;\n\
+       \  background: #fff;\n\
+       \}\n\
+       \.rule-additional-alt {\n\
+       \  position: absolute;\n\
+       \  white-space: nowrap;\n\
+       \  margin-top: 24px;\n\
+       \}\n\
+       \.edge-ver {\n\
+       \  position: absolute;\n\
+       \  width: 6px;\n\
+       \  background-color: #578999;\n\
        \  opacity: 0.4;\n\
+       \  margin-left: 15px;\n\
+       \  margin-top: 8px;\n\
+       \  z-index: -1;\n\
+       \}\n\
+       \.edge-hor {\n\
+       \  position: absolute;\n\
+       \  height: 20px;\n\
+       \  border-bottom: 6px solid #578999;\n\
+       \  opacity: 0.4;\n\
+       \  margin-left: 15px;\n\
+       \  margin-top: 8px;\n\
+       \  z-index: -1;\n\
+       \}\n\
+       \.edge-hor-left {\n\
+       \  border-bottom-left-radius: 16px;\n\
+       \  border-left: 6px solid #578999;\n\
+       \}\n\
+       \.edge-hor-right {\n\
+       \  border-bottom-right-radius: 16px;\n\
+       \  border-right: 6px solid #578999;\n\
+       \}\n\
+       \.edge-alt {\n\
+       \  height: 1px;\n\
+       \  background-color: #aaa;\n\
+       \  position: absolute;\n\
+       \  margin-top: 19px;\n\
+       \  z-index: -1;\n\
+       \  padding-right: 22px;\n\
        \}\n\
        \"
-  >|< hlist (fmap styleVar varIndices)
+  {- >|< hlist (fmap styleVar varIndices)
   where
     varIndices = addIndices vars
     styleVar (var, id) =
@@ -260,4 +435,4 @@ styles vars =
       >|< text var
       >|< text " .varheader.var-"
       >|< text var
-      >|< text "{\n  opacity: 1;\n}\n"
+      >|< text "{\n  opacity: 1;\n}\n" -}

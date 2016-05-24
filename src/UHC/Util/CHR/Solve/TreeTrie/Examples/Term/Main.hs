@@ -71,7 +71,7 @@ runFile runopts f = do
                   do
                     (CHRGlobState{_chrgstTrace = trace}, _) <- get
                     let fileName = "visualization.html"
-                    liftIO $ writeFile fileName (showPP $ chrVisualize trace)
+                    liftIO $ writeFile fileName (showPP $ chrVisualize query trace)
                     liftIO $ msg "VISUALIZATION"
                     liftIO $ putStrLn $ "Written visualization as " ++ fileName
                 else (return ())

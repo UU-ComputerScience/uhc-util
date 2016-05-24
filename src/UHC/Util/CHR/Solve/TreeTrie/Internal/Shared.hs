@@ -110,6 +110,7 @@ data SolveStep' c r s
   = SolveStep
       { stepChr         :: r
       , stepSubst       :: s
+      , stepAlt         :: Maybe [c]
       , stepNewTodo     :: [c]
       , stepNewDone     :: [c]
       }
@@ -129,9 +130,9 @@ instance Show (SolveStep' c r s) where
   show _ = "SolveStep"
 
 instance (PP r, PP c) => {- (PP c, PP g) => -} PP (SolveStep' c r s) where
-  pp (SolveStep   step _ todo done) = "STEP" >#< (step >-< "new todo:" >#< ppBracketsCommas todo >-< "new done:" >#< ppBracketsCommas done)
-  pp (SolveStats  stats           ) = "STATS"  >#< (ppAssocLV (Map.toList stats))
-  pp (SolveDbg    p               ) = "DBG"  >#< p
+  pp (SolveStep   step _ _ todo done) = "STEP" >#< (step >-< "new todo:" >#< ppBracketsCommas todo >-< "new done:" >#< ppBracketsCommas done)
+  pp (SolveStats  stats             ) = "STATS"  >#< (ppAssocLV (Map.toList stats))
+  pp (SolveDbg    p                 ) = "DBG"  >#< p
 
 ppSolveTrace :: (PP r, PP c) => {- (PP s, PP c, PP g) => -} SolveTrace' c r s -> PP_Doc
 ppSolveTrace tr = ppBracketsCommasBlock [ pp st | st <- tr ]
