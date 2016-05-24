@@ -392,6 +392,7 @@ class (CHREmptySubstitution subst, VarLookupCmb subst subst, VarExtractable x, V
 
 instance {-# OVERLAPPABLE #-} (CHRMatchable env x subst) => CHRMatchable env (Maybe x) subst where
   chrUnifyM how e (Just x1) (Just x2) = chrUnifyM how e x1 x2
+  chrUnifyM how e  Nothing   Nothing  = chrMatchSuccess
   chrUnifyM how e _         _         = chrMatchFail
 
 instance {-# OVERLAPPABLE #-} (CHRMatchable env x subst) => CHRMatchable env [x] subst where
@@ -480,7 +481,7 @@ instance {-# OVERLAPPABLE #-} Ord (ExtrValVarKey ()) => VarExtractable () where
   varFreeSet _ = Set.empty
 
 instance {-# OVERLAPPABLE #-} (Ord (ExtrValVarKey ()), CHREmptySubstitution subst, VarLookupCmb subst subst, VarLookupKey subst ~ ExtrValVarKey ()) => CHRMatchable env () subst where
-  chrUnifyM _ _ _ _ = chrMatchFail
+  chrUnifyM _ _ _ _ = chrMatchSuccess
 
 -------------------------------------------------------------------------------------------
 --- Prio: instances

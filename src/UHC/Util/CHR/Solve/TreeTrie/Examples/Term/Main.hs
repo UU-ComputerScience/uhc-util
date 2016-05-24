@@ -11,17 +11,18 @@ import           System.IO
 import           Control.Monad
 import           Control.Monad.IO.Class
 import           Control.Monad.State.Class
--- import qualified Data.Set as Set
+import qualified Data.Set as Set
 
 import           UU.Parsing
 import           UU.Scanner
 
+import           UHC.Util.Substitutable
 import           UHC.Util.Pretty
 import           UHC.Util.CHR.Rule
 import           UHC.Util.CHR.GTerm.Parser
 import           UHC.Util.CHR.Solve.TreeTrie.MonoBacktrackPrio as MBP
 import           UHC.Util.CHR.Solve.TreeTrie.Examples.Term.AST
--- import           UHC.Util.CHR.Solve.TreeTrie.Examples.Term.Parser
+import           UHC.Util.CHR.Solve.TreeTrie.Examples.Term.Parser
 import           UHC.Util.CHR.Solve.TreeTrie.Visualizer
 
 data RunOpt
@@ -46,20 +47,22 @@ runFile runopts f = do
     case mbParse of
       Left e -> putPPLn e
       Right (prog, query) -> do
-        -- print program
-        putPPLn $ "Rules" >-< indent 2 (vlist $ map pp prog)
-        putPPLn $ "Query" >-< indent 2 (vlist $ map pp query)
-
-        -- solve
-        msg $ "SOLVE " ++ f
         let sopts = defaultCHRSolveOpts
                       { chrslvOptSucceedOnLeftoverWork = RunOpt_SucceedOnLeftoverWork `elem` runopts
                       , chrslvOptSucceedOnFailedSolve  = RunOpt_SucceedOnFailedSolve  `elem` runopts
                       }
             mbp :: CHRMonoBacktrackPrioT C G P P S E IO (SolverResult S)
             mbp = do
+              -- print program
+              liftIO $ putPPLn $ "Rules" >-< indent 2 (vlist $ map pp prog)
+              -- freshen query vars
+              query <- slvFreshSubst Set.empty query >>= \s -> return $ s `varUpd` query
+              -- print query
+              liftIO $ putPPLn $ "Query" >-< indent 2 (vlist $ map pp query)
               mapM_ addRule prog
               mapM_ addConstraintAsWork query
+              -- solve
+              liftIO $ msg $ "SOLVE " ++ f
               r <- chrSolve sopts ()
               let verbosity = maximum $ [Verbosity_Quiet] ++ maybeToList (mbRunOptVerbosity runopts) ++ (if RunOpt_DebugTrace `elem` runopts then [Verbosity_ALot] else [])
               ppSolverResult verbosity r >>= \sr -> liftIO $ putPPLn $ "Solution" >-< indent 2 sr
@@ -80,13 +83,13 @@ runFile runopts f = do
     
   where
     msg m = putStrLn $ "---------------- " ++ m ++ " ----------------"
-    dummy = undefined :: Rule C G P P
+    -- dummy = undefined :: Rule C G P P
 
 -- | run some test programs
 mainTerm = do
   forM_
       [
-        "leq", "queens"
+        "typing2"
       -- , "queens"
       -- , "leq"
       -- , "var"
@@ -98,7 +101,7 @@ mainTerm = do
     let f' = "test/" ++ f ++ ".chr"
     runFile
       [ RunOpt_SucceedOnLeftoverWork
-      -- , RunOpt_DebugTrace
+      , RunOpt_DebugTrace
       ] f'
   
 

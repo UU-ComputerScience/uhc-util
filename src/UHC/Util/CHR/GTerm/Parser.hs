@@ -120,7 +120,7 @@ pProg =
               <|> pCOLON
 
     pTm_App
-      =   GTm_Con <$> pConid <*> pList pTm_Base
+      =   GTm_Con <$> pConid <*> pList1 pTm_Base
       <|> (\o l r -> GTm_Con o [l,r]) <$> pParens pVarsym <*> pTm_Base <*> pTm_Base
       <|> pTm_Base
 
@@ -128,6 +128,7 @@ pProg =
       =   pTm_Var
       <|> (GTm_Int . read) <$> pInteger
       <|> GTm_Str <$> pString
+      <|> flip GTm_Con [] <$> pConid
       <|> pParens pTm
       <|> pPacked (pKey "[") (pKey "]")
             (   pTm_App <**>

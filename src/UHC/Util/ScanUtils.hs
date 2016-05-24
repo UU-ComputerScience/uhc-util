@@ -19,6 +19,7 @@ import System.IO
 import Data.Char
 import Data.List
 import qualified Data.Set as Set
+import qualified Data.Map as Map
 
 import UHC.Util.Pretty
 
@@ -111,7 +112,7 @@ Hence not all options are used by all scanners.
 data ScanOpts
   =  ScanOpts
         {   scoKeywordsTxt      ::  !(Set.Set String)       -- identifiers which are keywords
-        ,   scoPragmasTxt       ::  !(Set.Set String)       -- identifiers which are pragmas
+        ,   scoPragmasTxt       ::  !(Map.Map String Bool)  -- identifiers which are pragmas, associated with yes/no parse remainder as string literal
         ,   scoCommandsTxt      ::  !(Set.Set String)       -- identifiers which are commands
         ,   scoKeywordsOps      ::  !(Set.Set String)       -- operators which are keywords
         ,   scoKeywExtraChars   ::  !(Set.Set Char)         -- extra chars to be used by identifiers
@@ -135,7 +136,7 @@ defaultScanOpts :: ScanOpts
 defaultScanOpts
   =  ScanOpts
         {   scoKeywordsTxt      =   Set.empty
-        ,   scoPragmasTxt       =   Set.empty
+        ,   scoPragmasTxt       =   Map.empty
         ,   scoCommandsTxt      =   Set.empty
         ,   scoKeywordsOps      =   Set.empty
         ,   scoKeywExtraChars   =   Set.empty

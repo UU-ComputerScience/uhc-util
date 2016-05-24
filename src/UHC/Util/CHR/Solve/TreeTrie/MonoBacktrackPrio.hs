@@ -49,6 +49,8 @@ module UHC.Util.CHR.Solve.TreeTrie.MonoBacktrackPrio
   
   , chrSolve
   
+  , slvFreshSubst
+  
   , getSolveTrace
   
 {-
@@ -330,7 +332,7 @@ class ( IsCHRSolvable env cnstr guard bprio prio subst
       -- , MonadIO m -- for debugging
       , Fresh Int (ExtrValVarKey (VarLookupVal subst))
       -- , VarLookupKey subst ~ ExtrValVarKey cnstr
-      -- , ExtrValVarKey (VarLookupVal subst) ~ VarLookupKey subst
+      , ExtrValVarKey (VarLookupVal subst) ~ VarLookupKey subst
       , VarTerm (VarLookupVal subst)
       ) => MonoBacktrackPrio cnstr guard bprio prio subst env m
 
@@ -684,6 +686,7 @@ cvtSolverReductionStep (SolverReductionDBG pp) = return (SolverReductionDBG pp)
 -- | PP result
 ppSolverResult
   :: ( MonoBacktrackPrio c g bp p s e m
+     , VarUpdatable s s
      , PP s
      ) => Verbosity
        -> SolverResult s
@@ -703,7 +706,7 @@ ppSolverResult verbosity (SolverResult {slvresSubst = s, slvresResidualCnstr = r
                   >-< "Steps"   >-< indent 2 (vlist ss)
                | otherwise = Pretty.empty
     return $ 
-          "Subst"   >-< indent 2 s
+          "Subst"   >-< indent 2 (s `varUpd` s)
       >-< "Work"    >-< indent 2 (vlist ws)
       >-< pextra
 
@@ -1028,9 +1031,7 @@ chrSolve opts env = slv
           -- set prio for this alt
           sndl ^* chrbstBacktrackPrio =: bprio
           -- fresh vars for unbound body metavars
-          (freshSubst :: s) <- fmap (foldr (|+>) varlookupEmpty) $
-            forM (Set.toList $ varFreeSet body `Set.difference` freeHeadVars) $ \v ->
-              modifyAndGet (sndl ^* chrbstFreshVar) fresh >>= \v' -> return $ (varlookupSingleton v (varTermMkKey v') :: s)
+          freshSubst <- slvFreshSubst freeHeadVars body
           -- add each constraint from the body, applying the meta var subst
           newWkInxs <- forM body $ addConstraintAsWork . ((freshSubst |+> matchSubst) `varUpd`)
           -- mark this combi of chr and work as visited
@@ -1042,6 +1043,20 @@ chrSolve opts env = slv
           slv
 
     -- misc utils
+
+-- | Fresh variables in the form of a subst
+slvFreshSubst
+  :: forall c g bp p s e m x .
+     ( MonoBacktrackPrio c g bp p s e m
+     , ExtrValVarKey x ~ ExtrValVarKey (VarLookupVal s)
+     , VarExtractable x
+     ) => Set.Set (ExtrValVarKey x)
+       -> x
+       -> CHRMonoBacktrackPrioT c g bp p s e m s
+slvFreshSubst except x = 
+    fmap (foldr (|+>) varlookupEmpty) $
+      forM (Set.toList $ varFreeSet x `Set.difference` except) $ \v ->
+        modifyAndGet (sndl ^* chrbstFreshVar) (freshWith $ Just v) >>= \v' -> return $ (varlookupSingleton v (varTermMkKey v') :: s)
 
 -- | Lookup work in a store part of the global state
 slvLookup
@@ -1099,7 +1114,7 @@ slvMatch
        CHREmptySubstitution s
      , VarLookupCmb s s
      , -}
-       MonoBacktrackPrio c g bp p s e m
+       MonoBacktrackPrio c g bp p s env m
      {- these below should not be necessary as they are implied (via superclasses) by MonoBacktrackPrio, but deeper nested superclasses seem not to be picked up...
      -}
      , CHRMatchable env c s
@@ -1113,7 +1128,7 @@ slvMatch
        -> StoredCHR c g bp p
        -> [c]
        -> Int                                       -- ^ position in the head where work was found, on that work specifically we might have to wait
-       -> CHRMonoBacktrackPrioT c g bp p s e m (Maybe (FoundSlvMatch c g bp p s))
+       -> CHRMonoBacktrackPrioT c g bp p s env m (Maybe (FoundSlvMatch c g bp p s))
 slvMatch env chr@(StoredCHR {_storedChrRule = Rule {rulePrio = mbpr, ruleHead = hc, ruleGuard = gd, ruleBacktrackPrio = mbbpr, ruleBodyAlts = alts}}) cnstrs headInx = do
     subst <- getl $ sndl ^* chrbstSolveSubst
     curbprio <- fmap chrPrioLift $ getl $ sndl ^* chrbstBacktrackPrio
