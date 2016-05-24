@@ -33,8 +33,15 @@ data NodeData
     { naLevel       :: Int
     , naConstraint  :: C
     }
-      
+data EdgeKind
+  = EdgeGuard -- Usage of term in guard of rule.
+  | EdgeHead  -- Usage of term in head of rule.
+  | EdgeUnify -- Usage of other term that required unification of this node.
+  | EdgeAlt   -- Link between NodeRule and NodeAlt. Both nodes have same level.
+  deriving Eq
+
 type Node' = LNode NodeData
+type Edge' = LEdge EdgeKind
 
 stateMap :: (a -> b -> (c, b)) -> b -> [a] -> ([c], b)
 stateMap _  state []     = ([], state)
@@ -44,7 +51,7 @@ stateMap cb state (x:xs) = (y:ys, newState)
     (y,newState)  = cb x tmpState
 
 type NodeMap = Map.Map Tm (Node, [Node])
-data BuildState = BuildState [Edge] NodeMap Int Int
+data BuildState = BuildState [Edge'] NodeMap Int Int
 
 replaceInTm :: Tm -> Tm -> Tm -> [Tm]
 replaceInTm a b tm
@@ -73,10 +80,10 @@ tmsInG :: G -> [Tm]
 tmsInG (G_Tm tm) = tmsInTm tm
 tmsInG _         = []
 
-precedentTms :: Rule C G P P -> [Tm]
+precedentTms :: Rule C G P P -> [(Tm, EdgeKind)]
 precedentTms rule
-  =  concatMap tmsInC  (ruleHead rule)
-  ++ concatMap tmsInG (ruleGuard rule)
+  =  fmap (\n -> (n, EdgeHead))  (concatMap tmsInC $ ruleHead rule)
+  ++ fmap (\n -> (n, EdgeGuard)) (concatMap tmsInG $ ruleGuard rule)
 
 tmsInBodyAlt :: RuleBodyAlt C bprio -> [Tm]
 tmsInBodyAlt = concatMap tmsInC . rbodyaltBody
@@ -113,7 +120,7 @@ stepToNodes :: SolveStep' C (MBP.StoredCHR C G P P) S -> BuildState -> ([Node'],
 stepToNodes step state@(BuildState edges nodeMap nodeId level)
   = ( nodes
     , BuildState edges'' nodeMap' nodeId' level'
-  )
+    )
   where
     schr = stepChr step
     rule = MBP.storedChrRule' schr
@@ -126,9 +133,13 @@ stepToNodes step state@(BuildState edges nodeMap nodeId level)
         alt
         state
     edges'' =
-      ( List.map (\n -> (n, nodeId))
-        $ concatMap (\(n, ns) -> n : ns)
-        $ Maybe.mapMaybe (\tm -> Map.lookup tm nodeMap) (precedentTms updRule)
+      ( List.map (\(n, kind) -> (n, nodeId, kind))
+        $ concatMap (\(n, ns, kind) -> (n, kind) : fmap (\x -> (x, EdgeUnify)) ns)
+        $ Maybe.mapMaybe
+          (\(tm, kind) -> fmap
+            (\(n, ns) -> (n, ns, kind))
+            (Map.lookup tm nodeMap))
+          (precedentTms updRule)
       )
       ++ edges'
 
@@ -158,11 +169,11 @@ createNodes name vars alts (BuildState edges nodeMap nodeId level)
     altNode (constraint, i) = (nodeId + i, NodeAlt level constraint)
     altNodes = fmap altNode (drop 1 $ addIndices alts)
     edges' =
-      (fmap (\(n, _) -> (nodeId, n)) altNodes)
+      (fmap (\(n, _) -> (nodeId, n, EdgeAlt)) altNodes)
       ++ edges
 
-createGraph :: [C] -> [SolveStep' C (MBP.StoredCHR C G P P) S] -> Gr NodeData ()
-createGraph query steps = mkGraph (nodes ++ queryNodes) (fmap ((flip toLEdge) ()) edges)
+createGraph :: [C] -> [SolveStep' C (MBP.StoredCHR C G P P) S] -> Gr NodeData EdgeKind
+createGraph query steps = mkGraph (nodes ++ queryNodes) edges
   where
     (queryNodes, state) = createNodes "?" [] query emptyBuildState
     -- queryNode = (0, NodeRule 0 "?" [] $ first query)
@@ -253,9 +264,9 @@ showNode pos node@(_, NodeAlt{ naConstraint = constraint }) = tag "div"
   where
     (x, y) = pos node
 
-showEdge :: (Node -> (Int, Int)) -> Edge -> PP_Doc
-showEdge pos (from, to) =
-  if y1 == y2 then
+showEdge :: (Node -> (Int, Int)) -> Edge' -> PP_Doc
+showEdge pos (from, to, kind) =
+  if kind == EdgeAlt then
     -- Edge between rule and alt of same rule
     tag "div"
       (
@@ -271,7 +282,9 @@ showEdge pos (from, to) =
   else
     tag "div"
       (
-        text "class=\"edge-ver\" style=\"top: "
+        text "class=\"edge-ver "
+        >|< text className
+        >|< text "\" style=\"top: "
         >|< pp (y1 + 17)
         >|< "px; left: "
         >|< pp x1
@@ -283,7 +296,8 @@ showEdge pos (from, to) =
     >|< tag "div"
       (
         text "class=\"edge-hor edge-hor-"
-        >|< text (if x2 > x1 then "left" else "right")
+        >|< text (if x2 > x1 then "left " else "right ")
+        >|< text className
         >|< text "\" style=\"top: "
         >|< pp (y2 - 20)
         >|< "px; left: "
@@ -294,8 +308,13 @@ showEdge pos (from, to) =
       )
       (text " ")
   where
-    (x1, y1) = pos from
-    (x2, y2) = pos to
+    (x1, y1)  = pos from
+    (x2, y2)  = pos to
+    className = case kind of
+      EdgeAlt   -> ""
+      EdgeGuard -> "edge-guard"
+      EdgeHead  -> "edge-head"
+      EdgeUnify -> "edge-unify"
 
 chrVisualize :: [C] -> SolveTrace' C (MBP.StoredCHR C G P P) S -> PP_Doc
 chrVisualize query trace = tag' "html" $
@@ -311,7 +330,7 @@ chrVisualize query trace = tag' "html" $
   )
   where
     graph = createGraph query trace
-    body = ufold reduce Emp graph >|< hlist (fmap (showEdge posId) $ edges graph)
+    body = ufold reduce Emp graph >|< hlist (fmap (showEdge posId) $ labEdges graph)
     reduce (inn, id, node, out) right = showNode pos (id, node) >|< right
     nodeCount = length $ nodes graph
     column :: Node -> Int
@@ -384,8 +403,8 @@ styles =
        \}\n\
        \.edge-ver {\n\
        \  position: absolute;\n\
-       \  width: 6px;\n\
-       \  background-color: #578999;\n\
+       \  width: 0px;\n\
+       \  border-left: 6px solid #578999;\n\
        \  opacity: 0.4;\n\
        \  margin-left: 15px;\n\
        \  margin-top: 8px;\n\
@@ -407,6 +426,12 @@ styles =
        \.edge-hor-right {\n\
        \  border-bottom-right-radius: 16px;\n\
        \  border-right: 6px solid #578999;\n\
+       \}\n\
+       \.edge-guard {\n\
+       \  border-color: #69B5A7;\n\
+       \}\n\
+       \.edge-unify {\n\
+       \  border-color: #8CBF7A;\n\
        \}\n\
        \.edge-alt {\n\
        \  height: 1px;\n\
