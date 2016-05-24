@@ -22,7 +22,7 @@ import           UHC.Util.CHR.Rule
 import           UHC.Util.CHR.GTerm.Parser
 import           UHC.Util.CHR.Solve.TreeTrie.MonoBacktrackPrio as MBP
 import           UHC.Util.CHR.Solve.TreeTrie.Examples.Term.AST
-import           UHC.Util.CHR.Solve.TreeTrie.Examples.Term.Parser
+-- import           UHC.Util.CHR.Solve.TreeTrie.Examples.Term.Parser
 import           UHC.Util.CHR.Solve.TreeTrie.Visualizer
 
 data RunOpt
