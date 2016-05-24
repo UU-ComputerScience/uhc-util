@@ -43,7 +43,24 @@ stateMap cb state (x:xs) = (y:ys, newState)
     (ys,tmpState) = stateMap cb state xs
     (y,newState)  = cb x tmpState
 
-data BuildState = BuildState [Edge] (Map.Map Tm Node) Int Int
+type NodeMap = Map.Map Tm (Node, [Node])
+data BuildState = BuildState [Edge] NodeMap Int Int
+
+replaceInTm :: Tm -> Tm -> Tm -> [Tm]
+replaceInTm a b tm
+  | tm == a || tm == b = [a, b]
+  | otherwise          = case tm of
+    Tm_Con name tms -> fmap (Tm_Con name) (replaceList tms)
+    Tm_Lst tms ltm  -> do
+      tms' <- replaceList tms
+      ltm' <- replaceMaybe ltm
+      return $ Tm_Lst tms' ltm'
+    Tm_Op op tms    -> fmap (Tm_Op op) (replaceList tms)
+    x               -> [x]
+    where
+      replaceList = sequence . fmap (replaceInTm a b)
+      replaceMaybe Nothing  = [Nothing]
+      replaceMaybe (Just y) = fmap Just $ replaceInTm a b y
 
 emptyBuildState :: BuildState
 emptyBuildState = BuildState [] Map.empty 0 0
@@ -71,10 +88,22 @@ tmsInTm tm = tm : children tm
     children (Tm_Lst as (Just a)) = as ++ [a]
     children _                    = [] 
 
-addConstraints :: Node -> (Map.Map Tm Node) -> [Tm] -> (Map.Map Tm Node)
-addConstraints node = List.foldl cb
+addConstraint :: C -> Node -> NodeMap -> NodeMap
+addConstraint (CB_Eq a b)   = addUnify a b
+addConstraint (C_Con s tms) = addTerm $ Tm_Con s tms
+addConstraint c             = const id
+
+addTerm :: Tm -> Node -> NodeMap -> NodeMap
+addTerm tm node =  Map.insert tm (node, [])
+
+addUnify :: Tm -> Tm -> Node -> NodeMap -> NodeMap
+addUnify a b node map = Map.foldlWithKey cb map map
   where
-    cb m tm = Map.insert tm node m
+    cb :: NodeMap -> Tm -> (Node, [Node]) -> NodeMap
+    cb map' tm (n, nodes) = List.foldl (\map'' key -> insertWith compare key (n, node : nodes) map'') map' (replaceInTm a b tm)
+    compare x@(_, nodes1) y@(_, nodes2)
+      | length nodes1 <= length nodes2 = x
+      | otherwise                      = y
 
 first :: [a] -> Maybe a
 first []    = Nothing
@@ -98,6 +127,7 @@ stepToNodes step state@(BuildState edges nodeMap nodeId level)
         state
     edges'' =
       ( List.map (\n -> (n, nodeId))
+        $ concatMap (\(n, ns) -> n : ns)
         $ Maybe.mapMaybe (\tm -> Map.lookup tm nodeMap) (precedentTms updRule)
       )
       ++ edges'
@@ -120,9 +150,9 @@ createNodes name vars alts (BuildState edges nodeMap nodeId level)
     altTms = concatMap tmsInC alts
     nodeMap' = List.foldl updateMap nodeMap nodes
     -- Updates node map for a new node
-    updateMap :: Map.Map Tm Node -> Node' -> Map.Map Tm Node
-    updateMap map (id, NodeRule{ nrFirstAlt = Just alt }) = addConstraints id map $ tmsInC alt
-    updateMap map (id, NodeAlt{ naConstraint = alt }) = addConstraints id map $ tmsInC alt
+    updateMap :: NodeMap -> Node' -> NodeMap
+    updateMap map (id, NodeRule{ nrFirstAlt = Just alt }) = addConstraint alt id map
+    updateMap map (id, NodeAlt{ naConstraint = alt }) = addConstraint alt id map
     updateMap map _ = map
     
     altNode (constraint, i) = (nodeId + i, NodeAlt level constraint)
