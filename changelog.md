@@ -1,8 +1,11 @@
 # Changelog
 
+## 0.1.6.7
+
 ## 0.1.6.6
 
-- [chr] examples
+- [compatibility] with ghc 8.0.1
+- [chr engine] development, examples, debugging, ...
 - [libs] removed dependency on syb (and Data instances)
 
 ## 0.1.6.5

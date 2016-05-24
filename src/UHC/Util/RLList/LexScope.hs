@@ -36,10 +36,12 @@ type LexScope = RLList Int
 -- | Enter a new scope
 enter :: Int -> LexScope -> LexScope
 enter x s = s `concat` singleton x
+{-# INLINE enter #-}
 
 -- | Leave a scope, if possible
 leave :: LexScope -> Maybe LexScope
 leave s = fmap fst $ initLast s
+{-# INLINE leave #-}
 
 -------------------------------------------------------------------------------------------
 --- Lexical scope: observations
@@ -48,6 +50,7 @@ leave s = fmap fst $ initLast s
 -- | Is scope visible from other scope?
 isVisibleIn :: LexScope -> LexScope -> Bool
 isVisibleIn sOuter sInner = sOuter `isPrefixOf` sInner
+{-# INLINE isVisibleIn #-}
 
 -- | The common outer scope, which is empty if there is no common scope
 common :: LexScope -> LexScope -> LexScope
@@ -67,3 +70,4 @@ parents _                = []
 -- | Compare by length
 compareByLength :: LexScope -> LexScope -> Ordering                  
 compareByLength s t = length s `compare` length t
+{-# INLINE compareByLength #-}
