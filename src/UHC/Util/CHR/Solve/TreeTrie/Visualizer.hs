@@ -231,9 +231,13 @@ createGraph query steps = mkGraph (nodes ++ queryNodes) edges
     nodes     = concat nodes'
     
 medianHeurstic :: [Node'] -> [Node'] -> [Edge'] -> [Node']
-medianHeurstic l1 l2 e = undefined
+medianHeurstic l1 l2 e = map (\x -> nodeSetColumn x (median x)) l2
   where
+    median n = coordinates n !! ceiling (realToFrac (length (coordinates n)) / 2)
+    coordinates n = map nodeColumn (neighbors n)
+    neighbors n = map (nodelist . fst') (edges n)
     edges n = List.filter (\x -> snd' x == fst n) e 
+    nodelist = nodeLookup l1
 
 fst' :: (a, b, c) -> a
 fst' (a, _, _) = a
