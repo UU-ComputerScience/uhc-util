@@ -25,20 +25,41 @@ import           Data.Graph.Inductive.Tree
 data NodeData
   = NodeRule -- Rule with first alt
     { nrLevel       :: Int
+    , nrColumn      :: Int
     , nrName        :: String
     , nrRuleVars    :: [Tm]
     , nrFirstAlt    :: Maybe C
     }
   | NodeAlt  -- Additional alts of a rule
     { naLevel       :: Int
+    , naColumn      :: Int
     , naConstraint  :: C
     }
+  | NodeSynthesized -- Added node to make a proper layered graph
+    { nsLevel       :: Int
+    , nsColumn      :: Int
+    , nsEdgeKind    :: EdgeKind
+    }
+
 data EdgeKind
   = EdgeGuard -- Usage of term in guard of rule.
   | EdgeHead  -- Usage of term in head of rule.
   | EdgeUnify -- Usage of other term that required unification of this node.
   | EdgeAlt   -- Link between NodeRule and NodeAlt. Both nodes have same level.
   deriving Eq
+
+nodeLevel, nodeColumn :: Node' -> Int
+nodeLevel (_, NodeRule{nrLevel = level})        = level
+nodeLevel (_, NodeAlt{naLevel = level})         = level
+nodeLevel (_, NodeSynthesized{nsLevel = level}) = level
+nodeColumn (_, NodeRule{nrColumn = col})        = col
+nodeColumn (_, NodeAlt{naColumn = col})         = col
+nodeColumn (_, NodeSynthesized{nsColumn = col}) = col
+
+nodeSetColumn :: Node' -> Int -> Node'
+nodeSetColumn (n, d@NodeRule{}) col        = (n, d{nrColumn = col})
+nodeSetColumn (n, d@NodeAlt{}) col         = (n, d{naColumn = col})
+nodeSetColumn (n, d@NodeSynthesized{}) col = (n, d{nsColumn = col})
 
 type Node' = LNode NodeData
 type Edge' = LEdge EdgeKind
@@ -152,6 +173,7 @@ createNodes name vars alts (BuildState edges nodeMap nodeId level)
     nodes =
       (nodeId, NodeRule
         { nrLevel    = level
+        , nrColumn   = 0
         , nrName     = name
         , nrRuleVars = vars
         , nrFirstAlt = first alts
@@ -166,7 +188,7 @@ createNodes name vars alts (BuildState edges nodeMap nodeId level)
     updateMap map (id, NodeAlt{ naConstraint = alt }) = addConstraint alt id map
     updateMap map _ = map
     
-    altNode (constraint, i) = (nodeId + i, NodeAlt level constraint)
+    altNode (constraint, i) = (nodeId + i, NodeAlt level 0 constraint)
     altNodes = fmap altNode (drop 1 $ addIndices alts)
     edges' =
       (fmap (\(n, _) -> (nodeId, n, EdgeAlt)) altNodes)
