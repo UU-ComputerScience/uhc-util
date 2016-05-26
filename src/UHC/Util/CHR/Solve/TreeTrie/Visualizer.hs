@@ -202,6 +202,17 @@ createGraph query steps = mkGraph (nodes ++ queryNodes) edges
     -- state     = BuildState [] (addConstraints 0 Map.empty $ concatMap tmsInC query) 1 1
     (nodes', (BuildState edges _ _ _)) = stateMap stepToNodes state steps
     nodes     = concat nodes'
+    
+medianHeurstic :: [Node'] -> [Node'] -> [Edge'] -> [Node']
+medianHeurstic l1 l2 e = undefined
+  where
+    edges n = List.filter (\x -> snd' x == fst n) e 
+
+fst' :: (a, b, c) -> a
+fst' (a, _, _) = a
+    
+snd' :: (a, b, c) -> b
+snd' (_, b, _) = b
 
 variablesInTerm :: Tm -> [Var]
 variablesInTerm (Tm_Var var)    = [var]
