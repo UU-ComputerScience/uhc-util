@@ -8,7 +8,7 @@ module UHC.Util.CHR.Solve.TreeTrie.Visualizer
 import           Prelude
 import           Data.Maybe as Maybe
 import           Data.List as List
-import           Data.Map as Map
+import qualified Data.Map as Map
 import           UHC.Util.Pretty
 import           UHC.Util.PrettySimple
 import           UHC.Util.CHR.Rule
@@ -74,6 +74,13 @@ stateMap cb state (x:xs) = (y:ys, newState)
 type NodeMap = Map.Map Tm (Node, [Node])
 data BuildState = BuildState [Edge'] NodeMap Int Int
 
+nodeLookup :: [Node'] -> Node -> Node'
+nodeLookup nodes = fromJust . (flip Map.lookup) map
+  where
+    map :: Map.Map Node Node'
+    map = foldl ins Map.empty nodes
+    ins m node@(id, _) = Map.insert id node m
+
 replaceInTm :: Tm -> Tm -> Tm -> [Tm]
 replaceInTm a b tm
   | tm == a || tm == b = [a, b]
@@ -128,7 +135,7 @@ addUnify :: Tm -> Tm -> Node -> NodeMap -> NodeMap
 addUnify a b node map = Map.foldlWithKey cb map map
   where
     cb :: NodeMap -> Tm -> (Node, [Node]) -> NodeMap
-    cb map' tm (n, nodes) = List.foldl (\map'' key -> insertWith compare key (n, node : nodes) map'') map' (replaceInTm a b tm)
+    cb map' tm (n, nodes) = List.foldl (\map'' key -> Map.insertWith compare key (n, node : nodes) map'') map' (replaceInTm a b tm)
     compare x@(_, nodes1) y@(_, nodes2)
       | length nodes1 <= length nodes2 = x
       | otherwise                      = y
@@ -194,12 +201,32 @@ createNodes name vars alts (BuildState edges nodeMap nodeId level)
       (fmap (\(n, _) -> (nodeId, n, EdgeAlt)) altNodes)
       ++ edges
 
+createSynthesizedNodes :: [Node'] -> [Edge'] -> Int -> ([Edge'], [Node'])
+createSynthesizedNodes nodes es firstNode
+  = create es firstNode [] []
+  where
+    create :: [Edge'] -> Node -> [Edge'] -> [Node'] -> ([Edge'], [Node'])
+    create ((edge@(from, to, kind)):edges) id accumEdges accumNodes
+      = create edges id' (es ++ accumEdges) (ns ++ accumNodes)
+      where
+        (es, ns, id') = split (level from) edge id
+    create _ _ accumEdges accumNodes = (accumEdges, accumNodes)
+    split fromLevel edge@(from, to, kind) id
+      | fromLevel >= level to + 1 = ([edge], [], id)
+      | otherwise                 =
+        ( (from, id, kind) : edges',
+          (id, (NodeSynthesized (fromLevel + 1) 0 kind)) : nodes',
+          id + 1
+        )
+        where
+          (edges', nodes', id') = split (fromLevel + 1) (id, to, kind) id
+    find = nodeLookup nodes
+    level = nodeLevel . find
+
 createGraph :: [C] -> [SolveStep' C (MBP.StoredCHR C G P P) S] -> Gr NodeData EdgeKind
 createGraph query steps = mkGraph (nodes ++ queryNodes) edges
   where
     (queryNodes, state) = createNodes "?" [] query emptyBuildState
-    -- queryNode = (0, NodeRule 0 "?" [] $ first query)
-    -- state     = BuildState [] (addConstraints 0 Map.empty $ concatMap tmsInC query) 1 1
     (nodes', (BuildState edges _ _ _)) = stateMap stepToNodes state steps
     nodes     = concat nodes'
     
@@ -214,30 +241,6 @@ fst' (a, _, _) = a
 snd' :: (a, b, c) -> b
 snd' (_, b, _) = b
 
-variablesInTerm :: Tm -> [Var]
-variablesInTerm (Tm_Var var)    = [var]
-variablesInTerm (Tm_Con _ tms)  = variablesInTerms tms
-variablesInTerm (Tm_Lst tms tm) = variablesInTerms tms ++ maybe [] variablesInTerm tm
-variablesInTerm (Tm_Op _ tms)   = variablesInTerms tms
-variablesInTerm _               = []
-
-variablesInTerms :: [Tm] -> [Var]
-variablesInTerms = concatMap variablesInTerm
-
-variablesInConstraint :: C -> [Var]
-variablesInConstraint (C_Con _ tms) = variablesInTerms tms
-variablesInConstraint (CB_Eq x y)   = variablesInTerm x ++ variablesInTerm y
-variablesInConstraint (CB_Ne x y)   = variablesInTerm x ++ variablesInTerm y
-variablesInConstraint CB_Fail       = []
-
-variablesInGuard :: G -> [Var]
-variablesInGuard (G_Eq x y) = variablesInTerm x ++ variablesInTerm y
-variablesInGuard (G_Ne x y) = variablesInTerm x ++ variablesInTerm y
-variablesInGuard (G_Tm x)   = variablesInTerm x
-
-variablesInRuleBodyAlt :: RuleBodyAlt C bprio -> [Var]
-variablesInRuleBodyAlt = (concatMap variablesInConstraint) . rbodyaltBody
-
 tag :: String -> PP_Doc -> PP_Doc -> PP_Doc
 tag name attr content = (text ("<" ++ name)) >|< attributes attr >|< body content
   where
@@ -249,13 +252,8 @@ tag name attr content = (text ("<" ++ name)) >|< attributes attr >|< body conten
 tag' :: String -> PP_Doc -> PP_Doc
 tag' name = tag name Emp
 
-firstVar :: [Var] -> [Var] -> Maybe Var
-firstVar []     _    = Nothing
-firstVar _      []   = Nothing
-firstVar (x:xs) vars = if x `elem` vars then Just x else firstVar xs vars
-
 addIndices :: [a] -> [(a, Int)]
-addIndices as = zip as [0..]
+addIndices = flip zip [0..]
 
 showNode :: (Node' -> (Int, Int)) -> Node' -> PP_Doc
 showNode pos node@(_, NodeRule{nrLevel = level, nrName = name, nrRuleVars = vars, nrFirstAlt = alt}) = tag "div"
@@ -353,13 +351,10 @@ chrVisualize :: [C] -> SolveTrace' C (MBP.StoredCHR C G P P) S -> PP_Doc
 chrVisualize query trace = tag' "html" $
   tag' "head" (
     tag' "title" (text "CHR visualization")
-    -- >|< tag "script" (text "type=\"text/javascript\"") (text scripts)
     >|< tag' "style" styles
   )
   >|< tag' "body" (
     body
-    -- hlist (map showVarHeader vars)
-    -- >|< tag "div" (text "class=\"content\"") (hlistReverse (map (showNode order) nodes))
   )
   where
     graph = createGraph query trace
@@ -376,34 +371,6 @@ chrVisualize query trace = tag' "html" $
     pos (id, NodeAlt{naLevel = level}) = ((column id) * 70, level * 38)
     posId :: Node -> (Int, Int)
     posId node = pos (node, fromJust $ lab graph node)
-      -- text "margin-left: " >|< pp (node * 30) >|< text "px"
-    -- nodes = map stepToNode trace
-    -- vars = nub (concatMap nodeVars nodes)
-    -- order = vars -- TODO: Sort vars to minimize crossings
-    -- showVarHeader var =
-    --  tag "a" (text $ "href=\"javascript:selectVar('" ++ var ++ "');\" class=\"varheader var-" ++ var ++ "\"") (text var)
-
-scripts :: String
-scripts =
-  "(function(){\n\
-  \  var selected = [];\n\
-  \  function setClass() {\n\
-  \    var name = selected.length\n\
-  \      ? 'selected-var ' + selected.map(function(item) {\n\
-  \          return 'selected-var-' + item;\n\
-  \        }).join(' ')\n\
-  \      : '';\n\
-  \    document.body.className = name;\n\
-  \  }\n\
-  \  function select(name) {\n\
-  \    var index = selected.indexOf(name);\n\
-  \    if (index === -1) selected.push(name);\n\
-  \    else selected.splice(index, 1);\n\
-  \    setClass();\n\
-  \  }\n\
-  \  window.selectVar = select;\n\
-  \}());\n\
-  \"
 
 styles :: PP_Doc
 styles =
@@ -475,22 +442,3 @@ styles =
        \  padding-right: 22px;\n\
        \}\n\
        \"
-  {- >|< hlist (fmap styleVar varIndices)
-  where
-    varIndices = addIndices vars
-    styleVar (var, id) =
-      text ".var-"
-      >|< text var
-      >|< text "{\n"
-      >|< text "  margin-left: "
-      >|< pp (id * 20)
-      >|< text "px;\n}\n"
-      >|< text ".selected-var-"
-      >|< text var
-      >|< text " .usage.var-"
-      >|< text var
-      >|< text ", .selected-var-"
-      >|< text var
-      >|< text " .varheader.var-"
-      >|< text var
-      >|< text "{\n  opacity: 1;\n}\n" -}
