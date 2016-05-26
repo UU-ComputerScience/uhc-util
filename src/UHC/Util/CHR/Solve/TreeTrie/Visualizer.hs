@@ -62,7 +62,7 @@ nodeSetColumn (n, d@NodeAlt{}) col         = (n, d{naColumn = col})
 nodeSetColumn (n, d@NodeSynthesized{}) col = (n, d{nsColumn = col})
 
 type Node' = LNode NodeData
-type Edge' = LEdge EdgeKind
+type Edge' = LEdge (EdgeKind, Bool)
 
 stateMap :: (a -> b -> (c, b)) -> b -> [a] -> ([c], b)
 stateMap _  state []     = ([], state)
@@ -161,7 +161,7 @@ stepToNodes step state@(BuildState edges nodeMap nodeId level)
         alt
         state
     edges'' =
-      ( List.map (\(n, kind) -> (n, nodeId, kind))
+      ( List.map (\(n, kind) -> (n, nodeId, (kind, True)))
         $ concatMap (\(n, ns, kind) -> (n, kind) : fmap (\x -> (x, EdgeUnify)) ns)
         $ Maybe.mapMaybe
           (\(tm, kind) -> fmap
@@ -198,7 +198,7 @@ createNodes name vars alts (BuildState edges nodeMap nodeId level)
     altNode (constraint, i) = (nodeId + i, NodeAlt level 0 constraint)
     altNodes = fmap altNode (drop 1 $ addIndices alts)
     edges' =
-      (fmap (\(n, _) -> (nodeId, n, EdgeAlt)) altNodes)
+      (fmap (\(n, _) -> (nodeId, n, (EdgeAlt, True))) altNodes)
       ++ edges
 
 createSynthesizedNodes :: [Node'] -> [Edge'] -> Int -> ([Edge'], [Node'])
@@ -206,24 +206,27 @@ createSynthesizedNodes nodes es firstNode
   = create es firstNode [] []
   where
     create :: [Edge'] -> Node -> [Edge'] -> [Node'] -> ([Edge'], [Node'])
-    create ((edge@(from, to, kind)):edges) id accumEdges accumNodes
+    create ((edge@(from, to, (kind, _))):edges) id accumEdges accumNodes
       = create edges id' (es ++ accumEdges) (ns ++ accumNodes)
       where
         (es, ns, id') = split (level from) edge id
     create _ _ accumEdges accumNodes = (accumEdges, accumNodes)
-    split fromLevel edge@(from, to, kind) id
+    split fromLevel edge@(from, to, (kind, _)) id
       | fromLevel + 1 >= level to = ([edge], [], id)
       | otherwise                 =
-        ( (from, id, kind) : edges',
+        ( (from, id, (kind, False)) : edges',
           (id, (NodeSynthesized (fromLevel + 1) 0 kind)) : nodes',
-          id + 1
+          id'
         )
         where
-          (edges', nodes', id') = split (fromLevel + 1) (id, to, kind) (id + 1)
+          edges' = [(id, to, (kind, True))]
+          nodes' = []
+          id' = id + 1
+          -- (edges', nodes', id') = split (fromLevel + 1) (id, to, (kind, True)) (id + 1)
     find = nodeLookup nodes
     level = nodeLevel . find
 
-createGraph :: [C] -> [SolveStep' C (MBP.StoredCHR C G P P) S] -> Gr NodeData EdgeKind
+createGraph :: [C] -> [SolveStep' C (MBP.StoredCHR C G P P) S] -> Gr NodeData (EdgeKind, Bool)
 createGraph query steps = mkGraph (nodes) edges
   where
     (queryNodes, state) = createNodes "?" [] query emptyBuildState
@@ -289,7 +292,7 @@ showNode pos node@(_, NodeAlt{ naConstraint = constraint }) = tag "div"
 showNode _ (_, NodeSynthesized{}) = Emp
 
 showEdge :: (Node -> (Int, Int)) -> Edge' -> PP_Doc
-showEdge pos (from, to, kind) =
+showEdge pos (from, to, (kind, isEnd)) =
   if kind == EdgeAlt then
     -- Edge between rule and alt of same rule
     tag "div"
@@ -325,12 +328,26 @@ showEdge pos (from, to, kind) =
         >|< text "\" style=\"top: "
         >|< pp (y2 - 20)
         >|< "px; left: "
-        >|< pp (min x1 x2)
+        >|< pp (if x1 < x2 then x1 else x2 + (if isEnd then 0 else 20))
         >|< "px; width: "
-        >|< abs (x2 - x1)
+        >|< pp (if isEnd then abs (x2 - x1) else
+          if x1 < x2 then x2 - x1 - 20 else x1 - x2 + 20)
         >|< "px;\""
       )
       (text " ")
+    >|< (if isEnd then Emp else tag "div"
+        (
+          text "class=\"edge-end edge-end-"
+          >|< text (if x2 > x1 then "left " else "right ")
+          >|< text className
+          >|< text "\" style=\"top: "
+          >|< pp y2
+          >|< "px; left: "
+          >|< pp (if x1 < x2 then x2 - 20 else x2)
+          >|< "px;\""
+        )
+        (text " ")
+    )
   where
     (x1, y1)  = pos from
     (x2, y2)  = pos to
@@ -418,6 +435,24 @@ styles =
        \.edge-hor-right {\n\
        \  border-bottom-right-radius: 16px;\n\
        \  border-right: 6px solid #578999;\n\
+       \}\n\
+       \.edge-end {\n\
+       \  position: absolute;\n\
+       \  height: 20px;\n\
+       \  width: 20px;\n\
+       \  border-top: 6px solid #578999;\n\
+       \  opacity: 0.4;\n\
+       \  margin-left: 15px;\n\
+       \  margin-top: 8px;\n\
+       \  z-index: -1;\n\
+       \}\n\
+       \.edge-end-left {\n\
+       \  border-top-right-radius: 16px;\n\
+       \  border-right: 6px solid #578999;\n\
+       \}\n\
+       \.edge-end-right {\n\
+       \  border-top-left-radius: 16px;\n\
+       \  border-left: 6px solid #578999;\n\
        \}\n\
        \.edge-guard {\n\
        \  border-color: #69B5A7;\n\
