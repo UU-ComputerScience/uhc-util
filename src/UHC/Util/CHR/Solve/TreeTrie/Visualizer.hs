@@ -212,23 +212,26 @@ createSynthesizedNodes nodes es firstNode
         (es, ns, id') = split (level from) edge id
     create _ _ accumEdges accumNodes = (accumEdges, accumNodes)
     split fromLevel edge@(from, to, kind) id
-      | fromLevel >= level to + 1 = ([edge], [], id)
+      | fromLevel + 1 >= level to = ([edge], [], id)
       | otherwise                 =
         ( (from, id, kind) : edges',
           (id, (NodeSynthesized (fromLevel + 1) 0 kind)) : nodes',
           id + 1
         )
         where
-          (edges', nodes', id') = split (fromLevel + 1) (id, to, kind) id
+          (edges', nodes', id') = split (fromLevel + 1) (id, to, kind) (id + 1)
     find = nodeLookup nodes
     level = nodeLevel . find
 
 createGraph :: [C] -> [SolveStep' C (MBP.StoredCHR C G P P) S] -> Gr NodeData EdgeKind
-createGraph query steps = mkGraph (nodes ++ queryNodes) edges
+createGraph query steps = mkGraph (nodes) edges
   where
     (queryNodes, state) = createNodes "?" [] query emptyBuildState
-    (nodes', (BuildState edges _ _ _)) = stateMap stepToNodes state steps
-    nodes     = concat nodes'
+    (nodes'', (BuildState edges' _ id _)) = stateMap stepToNodes state steps
+    nodes' = concat nodes'' ++ queryNodes
+    (synEdges, synNodes) = createSynthesizedNodes nodes' edges' id
+    nodes = nodes' ++ synNodes
+    edges = edges' ++ synEdges
 
 tag :: String -> PP_Doc -> PP_Doc -> PP_Doc
 tag name attr content = (text ("<" ++ name)) >|< attributes attr >|< body content
@@ -283,6 +286,7 @@ showNode pos node@(_, NodeAlt{ naConstraint = constraint }) = tag "div"
   )
   where
     (x, y) = pos node
+showNode _ (_, NodeSynthesized{}) = Emp
 
 showEdge :: (Node -> (Int, Int)) -> Edge' -> PP_Doc
 showEdge pos (from, to, kind) =
@@ -356,8 +360,7 @@ chrVisualize query trace = tag' "html" $
       | nodeCount `mod` 2 == 0 = nodeCount - x
       | otherwise              = nodeCount - 1 - x
     pos :: Node' -> (Int, Int)
-    pos (id, NodeRule{nrLevel = level}) = ((column id) * 70, level * 38)
-    pos (id, NodeAlt{naLevel = level}) = ((column id) * 70, level * 38)
+    pos node@(id, _) = ((column id) * 70, nodeLevel node * 38)
     posId :: Node -> (Int, Int)
     posId node = pos (node, fromJust $ lab graph node)
 
