@@ -219,10 +219,7 @@ createSynthesizedNodes nodes es firstNode
           id'
         )
         where
-          edges' = [(id, to, (kind, True))]
-          nodes' = []
-          id' = id + 1
-          -- (edges', nodes', id') = split (fromLevel + 1) (id, to, (kind, True)) (id + 1)
+          (edges', nodes', id') = split (fromLevel + 1) (id, to, (kind, True)) (id + 1)
     find = nodeLookup nodes
     level = nodeLevel . find
 
@@ -302,7 +299,7 @@ showEdge pos (from, to, (kind, isEnd)) =
         >|< "px; left: "
         >|< pp (min x1 x2)
         >|< "px; width: "
-        >|< abs (x2 - x1 - 20)
+        >|< abs (x2 - x1 - 16)
         >|< "px;\""
       )
       (text " ")
@@ -312,11 +309,11 @@ showEdge pos (from, to, (kind, isEnd)) =
         text "class=\"edge-ver "
         >|< text className
         >|< text "\" style=\"top: "
-        >|< pp (y1 + 17)
+        >|< pp (y1 + 21)
         >|< "px; left: "
         >|< pp x1
         >|< "px; height: "
-        >|< (y2 - y1 - 37)
+        >|< (y2 - y1 - 38)
         >|< "px;\""
       )
       (text " ")
@@ -326,12 +323,11 @@ showEdge pos (from, to, (kind, isEnd)) =
         >|< text (if x2 > x1 then "left " else "right ")
         >|< text className
         >|< text "\" style=\"top: "
-        >|< pp (y2 - 20)
+        >|< pp (y2 - 16)
         >|< "px; left: "
-        >|< pp (if x1 < x2 then x1 else x2 + (if isEnd then 0 else 20))
+        >|< pp (if x1 < x2 then x1 else x2 + (if isEnd then 0 else 22))
         >|< "px; width: "
-        >|< pp (if isEnd then abs (x2 - x1) else
-          if x1 < x2 then x2 - x1 - 20 else x1 - x2 + 20)
+        >|< pp (abs (x2 - x1) - (if isEnd then 0 else 22))
         >|< "px;\""
       )
       (text " ")
@@ -343,7 +339,7 @@ showEdge pos (from, to, (kind, isEnd)) =
           >|< text "\" style=\"top: "
           >|< pp y2
           >|< "px; left: "
-          >|< pp (if x1 < x2 then x2 - 20 else x2)
+          >|< pp (if x1 < x2 then x2 - 16 else x2)
           >|< "px;\""
         )
         (text " ")
@@ -416,12 +412,12 @@ styles =
        \  border-left: 6px solid #578999;\n\
        \  opacity: 0.4;\n\
        \  margin-left: 15px;\n\
-       \  margin-top: 8px;\n\
+       \  margin-top: 9px;\n\
        \  z-index: -1;\n\
        \}\n\
        \.edge-hor {\n\
        \  position: absolute;\n\
-       \  height: 20px;\n\
+       \  height: 16px;\n\
        \  border-bottom: 6px solid #578999;\n\
        \  opacity: 0.4;\n\
        \  margin-left: 15px;\n\
@@ -429,17 +425,17 @@ styles =
        \  z-index: -1;\n\
        \}\n\
        \.edge-hor-left {\n\
-       \  border-bottom-left-radius: 16px;\n\
+       \  border-bottom-left-radius: 12px;\n\
        \  border-left: 6px solid #578999;\n\
        \}\n\
        \.edge-hor-right {\n\
-       \  border-bottom-right-radius: 16px;\n\
+       \  border-bottom-right-radius: 12px;\n\
        \  border-right: 6px solid #578999;\n\
        \}\n\
        \.edge-end {\n\
        \  position: absolute;\n\
-       \  height: 20px;\n\
-       \  width: 20px;\n\
+       \  height: 16px;\n\
+       \  width: 16px;\n\
        \  border-top: 6px solid #578999;\n\
        \  opacity: 0.4;\n\
        \  margin-left: 15px;\n\
@@ -447,11 +443,11 @@ styles =
        \  z-index: -1;\n\
        \}\n\
        \.edge-end-left {\n\
-       \  border-top-right-radius: 16px;\n\
+       \  border-top-right-radius: 12px;\n\
        \  border-right: 6px solid #578999;\n\
        \}\n\
        \.edge-end-right {\n\
-       \  border-top-left-radius: 16px;\n\
+       \  border-top-left-radius: 12px;\n\
        \  border-left: 6px solid #578999;\n\
        \}\n\
        \.edge-guard {\n\
