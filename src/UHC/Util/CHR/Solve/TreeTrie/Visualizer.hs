@@ -226,7 +226,8 @@ createSynthesizedNodes nodes es firstNode
 createGraph :: [C] -> [SolveStep' C (MBP.StoredCHR C G P P) S] -> Gr NodeData EdgeKind
 createGraph query steps = mkGraph sortedlayerednodes edges
   where
-    sortedlayerednodes = sortFirstLayer (head lnodes) 1 ++ sortNodes lnodes edges
+    sortedlayerednodes = flayer ++ sortNodes ([flayer] ++ (tail lnodes)) edges
+    flayer = sortFirstLayer (head lnodes) 1
     lnodes = (Map.elems (layerednodes (nodes ++ queryNodes)))
     layerednodes :: [Node'] -> Map.Map Int [Node']
     layerednodes ns = foldl (\m x -> Map.insertWith (++) (nodeColumn x) [x] m) Map.empty ns
