@@ -224,11 +224,19 @@ createSynthesizedNodes nodes es firstNode
     level = nodeLevel . find
 
 createGraph :: [C] -> [SolveStep' C (MBP.StoredCHR C G P P) S] -> Gr NodeData EdgeKind
-createGraph query steps = mkGraph (nodes ++ queryNodes) edges
+createGraph query steps = mkGraph sortedlayerednodes edges
   where
+    sortedlayerednodes = head lnodes ++ sortNodes lnodes edges
+    lnodes = (Map.elems (layerednodes (nodes ++ queryNodes)))
+    layerednodes :: [Node'] -> Map.Map Int [Node']
+    layerednodes ns = foldl (\m x -> Map.insertWith (++) (nodeColumn x) [x] m) Map.empty ns
     (queryNodes, state) = createNodes "?" [] query emptyBuildState
     (nodes', (BuildState edges _ _ _)) = stateMap stepToNodes state steps
     nodes     = concat nodes'
+
+sortNodes :: [[Node']] -> [Edge'] -> [Node']
+sortNodes n@(x:[]) e = []
+sortNodes n@(x:xs:xss) e = medianHeurstic x xs e ++ sortNodes (xs:xss) e
     
 medianHeurstic :: [Node'] -> [Node'] -> [Edge'] -> [Node']
 medianHeurstic l1 l2 e = map (\x -> nodeSetColumn x (median x)) l2
