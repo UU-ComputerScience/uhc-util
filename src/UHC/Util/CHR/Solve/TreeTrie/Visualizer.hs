@@ -226,7 +226,8 @@ createSynthesizedNodes nodes es firstNode
 createGraph :: [C] -> [SolveStep' C (MBP.StoredCHR C G P P) S] -> Gr NodeData (EdgeKind, Bool)
 createGraph query steps = mkGraph sortedlayerednodes edges
   where
-    sortedlayerednodes = head lnodes ++ sortNodes lnodes edges
+    sortedlayerednodes = flayer ++ sortNodes ([flayer] ++ (tail lnodes)) edges
+    flayer = sortFirstLayer (head lnodes) 1
     lnodes = (Map.elems (layerednodes (nodes ++ queryNodes)))
     layerednodes :: [Node'] -> Map.Map Int [Node']
     layerednodes ns = foldl (\m x -> Map.insertWith (++) (nodeColumn x) [x] m) Map.empty ns
@@ -237,6 +238,10 @@ createGraph query steps = mkGraph sortedlayerednodes edges
     nodes = nodes' ++ synNodes
     edges = edges' ++ synEdges
 
+sortFirstLayer :: [Node'] -> Int -> [Node']
+sortFirstLayer [] i = []
+sortFirstLayer n@(x:xs) i = nodeSetColumn x i : sortFirstLayer xs (i+1)
+    
 sortNodes :: [[Node']] -> [Edge'] -> [Node']
 sortNodes n@(x:[]) e = []
 sortNodes n@(x:xs:xss) e = medianHeurstic x xs e ++ sortNodes (xs:xss) e
