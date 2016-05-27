@@ -224,14 +224,37 @@ createSynthesizedNodes nodes es firstNode
     level = nodeLevel . find
 
 createGraph :: [C] -> [SolveStep' C (MBP.StoredCHR C G P P) S] -> Gr NodeData (EdgeKind, Bool)
-createGraph query steps = mkGraph (nodes) edges
+createGraph query steps = mkGraph sortedlayerednodes edges
   where
+    sortedlayerednodes = head lnodes ++ sortNodes lnodes edges
+    lnodes = (Map.elems (layerednodes (nodes ++ queryNodes)))
+    layerednodes :: [Node'] -> Map.Map Int [Node']
+    layerednodes ns = foldl (\m x -> Map.insertWith (++) (nodeColumn x) [x] m) Map.empty ns
     (queryNodes, state) = createNodes "?" [] query emptyBuildState
     (nodes'', (BuildState edges' _ id _)) = stateMap stepToNodes state steps
     nodes' = concat nodes'' ++ queryNodes
     (synEdges, synNodes) = createSynthesizedNodes nodes' edges' id
     nodes = nodes' ++ synNodes
     edges = edges' ++ synEdges
+
+sortNodes :: [[Node']] -> [Edge'] -> [Node']
+sortNodes n@(x:[]) e = []
+sortNodes n@(x:xs:xss) e = medianHeurstic x xs e ++ sortNodes (xs:xss) e
+    
+medianHeurstic :: [Node'] -> [Node'] -> [Edge'] -> [Node']
+medianHeurstic l1 l2 e = map (\x -> nodeSetColumn x (median x)) l2
+  where
+    median n = coordinates n !! ceiling (realToFrac (length (coordinates n)) / 2)
+    coordinates n = map nodeColumn (neighbors n)
+    neighbors n = map (nodelist . fst') (edges n)
+    edges n = List.filter (\x -> snd' x == fst n) e 
+    nodelist = nodeLookup l1
+
+fst' :: (a, b, c) -> a
+fst' (a, _, _) = a
+    
+snd' :: (a, b, c) -> b
+snd' (_, b, _) = b
 
 tag :: String -> PP_Doc -> PP_Doc -> PP_Doc
 tag name attr content = (text ("<" ++ name)) >|< attributes attr >|< body content
