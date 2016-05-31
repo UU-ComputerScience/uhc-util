@@ -401,7 +401,8 @@ chrVisualize query trace = tag' "html" $
       | nodeCount `mod` 2 == 0 = nodeCount - x
       | otherwise              = nodeCount - 1 - x
     pos :: Node' -> (Int, Int)
-    pos node@(id, _) = ((column id) * 70, nodeLevel node * 38)
+    pos n@(id, NodeRule{nrLevel = level}) = ((nodeColumn n) * 70, level * 38)
+    pos n@(id, NodeAlt{naLevel = level}) = ((nodeColumn n) * 70, level * 38)
     posId :: Node -> (Int, Int)
     posId node = pos (node, fromJust $ lab graph node)
 
