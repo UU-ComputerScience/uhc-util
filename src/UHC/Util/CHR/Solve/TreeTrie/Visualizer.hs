@@ -395,11 +395,6 @@ chrVisualize query trace = tag' "html" $
     body = ufold reduce Emp graph >|< hlist (fmap (showEdge posId) $ labEdges graph)
     reduce (inn, id, node, out) right = showNode pos (id, node) >|< right
     nodeCount = length $ nodes graph
-    column :: Node -> Int
-    column x
-      | x `mod` 2 == 0         = x
-      | nodeCount `mod` 2 == 0 = nodeCount - x
-      | otherwise              = nodeCount - 1 - x
     pos :: Node' -> (Int, Int)
     pos n = ((nodeColumn n) * 70, (nodeLevel n) * 38)
     posId :: Node -> (Int, Int)
