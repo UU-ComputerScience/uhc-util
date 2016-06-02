@@ -230,7 +230,7 @@ createGraph query steps = mkGraph sortedlayerednodes edges
     flayer = sortFirstLayer (head lnodes) 1
     lnodes = (Map.elems (layerednodes (nodes ++ queryNodes)))
     layerednodes :: [Node'] -> Map.Map Int [Node']
-    layerednodes ns = foldl (\m x -> Map.insertWith (++) (nodeColumn x) [x] m) Map.empty ns
+    layerednodes ns = foldl (\m x -> Map.insertWith (++) (nodeLevel x) [x] m) Map.empty ns
     (queryNodes, state) = createNodes "?" [] query emptyBuildState
     (nodes', (BuildState edges _ _ _)) = stateMap stepToNodes state steps
     nodes     = concat nodes'
