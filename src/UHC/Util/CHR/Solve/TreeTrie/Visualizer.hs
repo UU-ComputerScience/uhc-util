@@ -397,7 +397,7 @@ chrVisualize query trace = tag' "html" $
     reduce (inn, id, node, out) right = showNode pos (id, node) >|< right
     nodeCount = length $ nodes graph
     pos :: Node' -> (Int, Int)
-    pos n = ((nodeColumn n) * 70, (nodeLevel n) * 38)
+    pos n = ((nodeColumn n) * 110, (nodeLevel n) * 38)
     posId :: Node -> (Int, Int)
     posId node = pos (node, fromJust $ lab graph node)
 
