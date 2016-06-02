@@ -234,9 +234,8 @@ createGraph query steps = mkGraph sortedlayerednodes edges
     (queryNodes, state) = createNodes "?" [] query emptyBuildState
     (nodes'', (BuildState edges' _ id _)) = stateMap stepToNodes state steps
     nodes' = concat nodes'' ++ queryNodes
-    (synEdges, synNodes) = createSynthesizedNodes nodes' edges' id
+    (edges, synNodes) = createSynthesizedNodes nodes' edges' id
     nodes = nodes' ++ synNodes
-    edges = edges' ++ synEdges
 
 sortFirstLayer :: [Node'] -> Int -> [Node']
 sortFirstLayer [] i = []
