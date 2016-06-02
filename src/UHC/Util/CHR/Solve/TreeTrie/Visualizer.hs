@@ -336,11 +336,11 @@ showEdge pos (from, to, (kind, isEnd)) =
         text "class=\"edge-ver "
         >|< text className
         >|< text "\" style=\"top: "
-        >|< pp (y1 + 21)
+        >|< pp (y1 + 24)
         >|< "px; left: "
         >|< pp x1
         >|< "px; height: "
-        >|< (y2 - y1 - 38)
+        >|< (y2 - y1 - 38 - 6)
         >|< "px;\""
       )
       (text " ")
@@ -350,11 +350,11 @@ showEdge pos (from, to, (kind, isEnd)) =
         >|< text (if x2 > x1 then "left " else "right ")
         >|< text className
         >|< text "\" style=\"top: "
-        >|< pp (y2 - 16)
+        >|< pp (y2 - 19)
         >|< "px; left: "
-        >|< pp (if x1 < x2 then x1 else x2 + (if isEnd then 0 else 22))
+        >|< pp (if x1 < x2 then x1 else x2 + (if isEnd then 0 else (abs (x2 - x1) + 1) `div` 2))
         >|< "px; width: "
-        >|< pp (abs (x2 - x1) - (if isEnd then 0 else 22))
+        >|< pp (abs (x2 - x1) `div` (if isEnd then 1 else 2))
         >|< "px;\""
       )
       (text " ")
@@ -364,9 +364,11 @@ showEdge pos (from, to, (kind, isEnd)) =
           >|< text (if x2 > x1 then "left " else "right ")
           >|< text className
           >|< text "\" style=\"top: "
-          >|< pp y2
+          >|< pp (y2 - 3)
           >|< "px; left: "
           >|< pp (if x1 < x2 then x2 - 16 else x2)
+          >|< pp "px; width: "
+          >|< pp (((abs (x2 - x1) + 1) `div` 2) - 6)
           >|< "px;\""
         )
         (text " ")
@@ -446,12 +448,17 @@ styles =
        \  margin-top: 8px;\n\
        \  z-index: -1;\n\
        \}\n\
+       \.edge-diag {\n\
+       \  transform-origin: 50% 50%;\n\
+       \  position: absolute;\n\
+       \  height: 6px;\n\
+       \}\n\
        \.edge-hor-left {\n\
-       \  border-bottom-left-radius: 12px;\n\
+       \  border-bottom-left-radius: 100% 22px;\n\
        \  border-left: 6px solid #578999;\n\
        \}\n\
        \.edge-hor-right {\n\
-       \  border-bottom-right-radius: 12px;\n\
+       \  border-bottom-right-radius: 100% 22px;\n\
        \  border-right: 6px solid #578999;\n\
        \}\n\
        \.edge-end {\n\
@@ -465,11 +472,11 @@ styles =
        \  z-index: -1;\n\
        \}\n\
        \.edge-end-left {\n\
-       \  border-top-right-radius: 12px;\n\
+       \  border-top-right-radius: 100% 22px;\n\
        \  border-right: 6px solid #578999;\n\
        \}\n\
        \.edge-end-right {\n\
-       \  border-top-left-radius: 12px;\n\
+       \  border-top-left-radius: 100% 22px;\n\
        \  border-left: 6px solid #578999;\n\
        \}\n\
        \.edge-guard {\n\
