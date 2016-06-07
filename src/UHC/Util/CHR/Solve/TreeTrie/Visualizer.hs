@@ -226,9 +226,9 @@ createSynthesizedNodes nodes es firstNode
 createGraph :: [C] -> [SolveStep' C (MBP.StoredCHR C G P P) S] -> Gr NodeData (EdgeKind, Bool)
 createGraph query steps = mkGraph sortedlayerednodes edges
   where
-    sortedlayerednodes = flayer ++ sortNodes ([flayer] ++ (tail lnodes)) edges
-    flayer = sortFirstLayer (head lnodes) 0
-    lnodes = Map.elems $ layerednodes nodes
+    sortedlayerednodes = flayer ++ sortNodes maxLayerSize ([flayer] ++ lnodes) edges
+    flayer = uniqueColumns firstLnodes ((maxLayerSize - length firstLnodes) `div` 2)
+    firstLnodes : lnodes = Map.elems $ layerednodes nodes
     layerednodes :: [Node'] -> Map.Map Int [Node']
     layerednodes ns = foldl (\m x -> Map.insertWith (++) (nodeLevel x) [x] m) Map.empty ns
     (queryNodes, state) = createNodes "?" [] query emptyBuildState
@@ -236,17 +236,14 @@ createGraph query steps = mkGraph sortedlayerednodes edges
     nodes' = concat nodes'' ++ queryNodes
     (edges, synNodes) = createSynthesizedNodes nodes' edges' id
     nodes = nodes' ++ synNodes
+    maxLayerSize = maximum $ fmap length lnodes
 
-sortFirstLayer :: [Node'] -> Int -> [Node']
-sortFirstLayer [] i = []
-sortFirstLayer (x:xs) i = nodeSetColumn x i : sortFirstLayer xs (i + 1)
+sortNodes :: Int -> [[Node']] -> [Edge'] -> [Node']
+sortNodes _ (x:[]) _ = []
+sortNodes maxLayerSize (x:xs:xss) e = medianHeurstic maxLayerSize x xs e ++ sortNodes maxLayerSize (xs:xss) e
     
-sortNodes :: [[Node']] -> [Edge'] -> [Node']
-sortNodes (x:[]) e = []
-sortNodes (x:xs:xss) e = medianHeurstic x xs e ++ sortNodes (xs:xss) e
-    
-medianHeurstic :: [Node'] -> [Node'] -> [Edge'] -> [Node']
-medianHeurstic l1 l2 e = unique sortedMedianList 0
+medianHeurstic :: Int -> [Node'] -> [Node'] -> [Edge'] -> [Node']
+medianHeurstic maxLayerSize l1 l2 e = uniqueColumns sortedMedianList ((maxLayerSize - length l2) `div` 2)
   where
     sortedMedianList = sortOn nodeColumn medianList
     medianList = map (\x -> nodeSetColumn x (median x)) l2
@@ -256,9 +253,9 @@ medianHeurstic l1 l2 e = unique sortedMedianList 0
     edges n = List.filter (\x -> snd' x == fst n) e 
     nodelist = nodeLookup l1
 
-unique :: [a] -> Int -> [a]
-unique l@(n:ns) i = nodeSetColumn n i : unique ns (i+1)
-unique _ _ = []
+uniqueColumns :: [Node'] -> Int -> [Node']
+uniqueColumns (n:ns) i = nodeSetColumn n i : uniqueColumns ns (i + 1)
+uniqueColumns _ _ = []
     
 fst' :: (a, b, c) -> a
 fst' (a, _, _) = a
@@ -284,7 +281,7 @@ showNode :: (Node' -> (Int, Int)) -> Node' -> PP_Doc
 showNode pos node@(_, NodeRule{nrLevel = level, nrName = name, nrRuleVars = vars, nrFirstAlt = alt}) = tag "div"
   (
     text "class=\"rule\" style=\"top: "
-    >|< pp y 
+    >|< pp (y + 10) 
     >|< text "px; left: "
     >|< pp x
     >|< text "px;\""
@@ -308,7 +305,7 @@ showNode pos node@(_, NodeRule{nrLevel = level, nrName = name, nrRuleVars = vars
 showNode pos node@(_, NodeAlt{ naConstraint = constraint }) = tag "div"
   (
     text "class=\"rule-additional-alt\" style=\"top: "
-    >|< pp y 
+    >|< pp (y + 10)
     >|< text "px; left: "
     >|< pp x
     >|< text "px;\""
@@ -372,7 +369,7 @@ showEdge pos (from, to, (kind, isEnd)) =
           >|< text "\" style=\"top: "
           >|< pp (y2 - 3 + 11)
           >|< "px; left: "
-          >|< pp (if x1 < x2 then x2 - 16 else x2)
+          >|< pp (if x1 < x2 then (x1 + x2) `div` 2 + 6 else x2)
           >|< pp "px; width: "
           >|< pp (if x1 == x2 then 0 else ((abs (x2 - x1) + 1) `div` 2) - 6)
           >|< "px;\""
