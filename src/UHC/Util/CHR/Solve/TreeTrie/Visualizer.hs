@@ -246,14 +246,20 @@ sortNodes n@(x:[]) e = []
 sortNodes n@(x:xs:xss) e = medianHeurstic x xs e ++ sortNodes (xs:xss) e
     
 medianHeurstic :: [Node'] -> [Node'] -> [Edge'] -> [Node']
-medianHeurstic l1 l2 e = map (\x -> nodeSetColumn x (median x)) l2
+medianHeurstic l1 l2 e = unique sortedMedianList 0
   where
+    sortedMedianList = sortOn nodeColumn medianList
+    medianList = map (\x -> nodeSetColumn x (median x)) l2
     median n = coordinates n !! (ceiling (realToFrac (length (coordinates n)) / 2) - 1)
     coordinates n = map nodeColumn (neighbors n)
     neighbors n = map (nodelist . fst') (edges n)
     edges n = List.filter (\x -> snd' x == fst n) e 
     nodelist = nodeLookup l1
 
+unique :: [a] -> Int -> [a]
+unique l@(n:ns) i = nodeSetColumn n i : unique ns (i+1)
+unique _ _ = []
+    
 fst' :: (a, b, c) -> a
 fst' (a, _, _) = a
     
