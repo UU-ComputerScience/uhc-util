@@ -230,7 +230,7 @@ createGraph query steps = mkGraph sortedlayerednodes edges
     flayer = sortFirstLayer (head lnodes) 1
     lnodes = (Map.elems (layerednodes (nodes ++ queryNodes)))
     layerednodes :: [Node'] -> Map.Map Int [Node']
-    layerednodes ns = foldl (\m x -> Map.insertWith (++) (nodeColumn x) [x] m) Map.empty ns
+    layerednodes ns = foldl (\m x -> Map.insertWith (++) (nodeLevel x) [x] m) Map.empty ns
     (queryNodes, state) = createNodes "?" [] query emptyBuildState
     (nodes'', (BuildState edges' _ id _)) = stateMap stepToNodes state steps
     nodes' = concat nodes'' ++ queryNodes
@@ -248,7 +248,7 @@ sortNodes n@(x:xs:xss) e = medianHeurstic x xs e ++ sortNodes (xs:xss) e
 medianHeurstic :: [Node'] -> [Node'] -> [Edge'] -> [Node']
 medianHeurstic l1 l2 e = map (\x -> nodeSetColumn x (median x)) l2
   where
-    median n = coordinates n !! ceiling (realToFrac (length (coordinates n)) / 2)
+    median n = coordinates n !! (ceiling (realToFrac (length (coordinates n)) / 2) - 1)
     coordinates n = map nodeColumn (neighbors n)
     neighbors n = map (nodelist . fst') (edges n)
     edges n = List.filter (\x -> snd' x == fst n) e 
