@@ -227,8 +227,8 @@ createGraph :: [C] -> [SolveStep' C (MBP.StoredCHR C G P P) S] -> Gr NodeData (E
 createGraph query steps = mkGraph sortedlayerednodes edges
   where
     sortedlayerednodes = flayer ++ sortNodes ([flayer] ++ (tail lnodes)) edges
-    flayer = sortFirstLayer (head lnodes) 1
-    lnodes = (Map.elems (layerednodes (nodes ++ queryNodes)))
+    flayer = sortFirstLayer (head lnodes) 0
+    lnodes = Map.elems $ layerednodes nodes
     layerednodes :: [Node'] -> Map.Map Int [Node']
     layerednodes ns = foldl (\m x -> Map.insertWith (++) (nodeLevel x) [x] m) Map.empty ns
     (queryNodes, state) = createNodes "?" [] query emptyBuildState
@@ -239,11 +239,11 @@ createGraph query steps = mkGraph sortedlayerednodes edges
 
 sortFirstLayer :: [Node'] -> Int -> [Node']
 sortFirstLayer [] i = []
-sortFirstLayer n@(x:xs) i = nodeSetColumn x i : sortFirstLayer xs (i+1)
+sortFirstLayer (x:xs) i = nodeSetColumn x i : sortFirstLayer xs (i + 1)
     
 sortNodes :: [[Node']] -> [Edge'] -> [Node']
-sortNodes n@(x:[]) e = []
-sortNodes n@(x:xs:xss) e = medianHeurstic x xs e ++ sortNodes (xs:xss) e
+sortNodes (x:[]) e = []
+sortNodes (x:xs:xss) e = medianHeurstic x xs e ++ sortNodes (xs:xss) e
     
 medianHeurstic :: [Node'] -> [Node'] -> [Edge'] -> [Node']
 medianHeurstic l1 l2 e = map (\x -> nodeSetColumn x (median x)) l2
@@ -336,11 +336,11 @@ showEdge pos (from, to, (kind, isEnd)) =
         text "class=\"edge-ver "
         >|< text className
         >|< text "\" style=\"top: "
-        >|< pp (y1 + 24)
+        >|< pp (y1 + 35)
         >|< "px; left: "
         >|< pp x1
         >|< "px; height: "
-        >|< (y2 - y1 - 38 - 6)
+        >|< (y2 - y1 - 60 - 6)
         >|< "px;\""
       )
       (text " ")
@@ -362,14 +362,14 @@ showEdge pos (from, to, (kind, isEnd)) =
     >|< (if isEnd then Emp else tag "div"
         (
           text "class=\"edge-end edge-end-"
-          >|< text (if x2 > x1 then "left " else "right ")
+          >|< text (if x2 > x1 then "left " else if x2 < x1 then "right " else "no-curve ")
           >|< text className
           >|< text "\" style=\"top: "
-          >|< pp (y2 - 3)
+          >|< pp (y2 - 3 + 11)
           >|< "px; left: "
           >|< pp (if x1 < x2 then x2 - 16 else x2)
           >|< pp "px; width: "
-          >|< pp (((abs (x2 - x1) + 1) `div` 2) - 6)
+          >|< pp (if x1 == x2 then 0 else ((abs (x2 - x1) + 1) `div` 2) - 6)
           >|< "px;\""
         )
         (text " ")
@@ -398,7 +398,7 @@ chrVisualize query trace = tag' "html" $
     reduce (inn, id, node, out) right = showNode pos (id, node) >|< right
     nodeCount = length $ nodes graph
     pos :: Node' -> (Int, Int)
-    pos n = ((nodeColumn n) * 110, (nodeLevel n) * 38)
+    pos n = ((nodeColumn n) * 200, (nodeLevel n) * 60)
     posId :: Node -> (Int, Int)
     posId node = pos (node, fromJust $ lab graph node)
 
@@ -442,7 +442,7 @@ styles =
        \}\n\
        \.edge-hor {\n\
        \  position: absolute;\n\
-       \  height: 16px;\n\
+       \  height: 27px;\n\
        \  border-bottom: 6px solid #578999;\n\
        \  opacity: 0.4;\n\
        \  margin-left: 15px;\n\
@@ -455,11 +455,11 @@ styles =
        \  height: 6px;\n\
        \}\n\
        \.edge-hor-left {\n\
-       \  border-bottom-left-radius: 100% 22px;\n\
+       \  border-bottom-left-radius: 100% 33px;\n\
        \  border-left: 6px solid #578999;\n\
        \}\n\
        \.edge-hor-right {\n\
-       \  border-bottom-right-radius: 100% 22px;\n\
+       \  border-bottom-right-radius: 100% 33px;\n\
        \  border-right: 6px solid #578999;\n\
        \}\n\
        \.edge-hor-no-curve {\n\
@@ -467,7 +467,7 @@ styles =
        \}\n\
        \.edge-end {\n\
        \  position: absolute;\n\
-       \  height: 16px;\n\
+       \  height: 27px;\n\
        \  width: 16px;\n\
        \  border-top: 6px solid #578999;\n\
        \  opacity: 0.4;\n\
@@ -476,11 +476,16 @@ styles =
        \  z-index: -1;\n\
        \}\n\
        \.edge-end-left {\n\
-       \  border-top-right-radius: 100% 22px;\n\
+       \  border-top-right-radius: 100% 33px;\n\
        \  border-right: 6px solid #578999;\n\
        \}\n\
+       \.edge-end-no-curve {\n\
+       \  border-right: 6px solid #578999;\n\
+       \  margin-top: 14px;\n\
+       \  height: 21px;\n\
+       \}\n\
        \.edge-end-right {\n\
-       \  border-top-left-radius: 100% 22px;\n\
+       \  border-top-left-radius: 100% 33px;\n\
        \  border-left: 6px solid #578999;\n\
        \}\n\
        \.edge-guard {\n\
