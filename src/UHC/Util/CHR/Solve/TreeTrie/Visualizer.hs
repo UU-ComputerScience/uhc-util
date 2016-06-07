@@ -331,7 +331,7 @@ showEdge pos (from, to, (kind, isEnd)) =
       )
       (text " ")
   else
-    tag "div"
+    (if x1 == x2 then Emp else tag "div"
       (
         text "class=\"edge-ver "
         >|< text className
@@ -344,10 +344,11 @@ showEdge pos (from, to, (kind, isEnd)) =
         >|< "px;\""
       )
       (text " ")
+    )
     >|< tag "div"
       (
-        text "class=\"edge-hor edge-hor-"
-        >|< text (if x2 > x1 then "left " else "right ")
+        text "class=\"edge-hor"
+        >|< text (if x2 > x1 then " edge-hor-left " else if x2 < x1 then " edge-hor-right " else " edge-hor-no-curve ")
         >|< text className
         >|< text "\" style=\"top: "
         >|< pp (y2 - 19)
@@ -459,6 +460,9 @@ styles =
        \}\n\
        \.edge-hor-right {\n\
        \  border-bottom-right-radius: 100% 22px;\n\
+       \  border-right: 6px solid #578999;\n\
+       \}\n\
+       \.edge-hor-no-curve {\n\
        \  border-right: 6px solid #578999;\n\
        \}\n\
        \.edge-end {\n\
