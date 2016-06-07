@@ -248,7 +248,7 @@ sortNodes n@(x:xs:xss) e = medianHeurstic x xs e ++ sortNodes (xs:xss) e
 medianHeurstic :: [Node'] -> [Node'] -> [Edge'] -> [Node']
 medianHeurstic l1 l2 e = map (\x -> nodeSetColumn x (median x)) l2
   where
-    median n = coordinates n !! ceiling (realToFrac (length (coordinates n)) / 2)
+    median n = coordinates n !! (ceiling (realToFrac (length (coordinates n)) / 2) - 1)
     coordinates n = map nodeColumn (neighbors n)
     neighbors n = map (nodelist . fst') (edges n)
     edges n = List.filter (\x -> snd' x == fst n) e 
