@@ -331,7 +331,7 @@ showEdge pos (from, to, (kind, isEnd)) =
       )
       (text " ")
   else
-    (if x1 == x2 then Emp else tag "div"
+    tag "div"
       (
         text "class=\"edge-ver "
         >|< text className
@@ -344,7 +344,6 @@ showEdge pos (from, to, (kind, isEnd)) =
         >|< "px;\""
       )
       (text " ")
-    )
     >|< tag "div"
       (
         text "class=\"edge-hor"
