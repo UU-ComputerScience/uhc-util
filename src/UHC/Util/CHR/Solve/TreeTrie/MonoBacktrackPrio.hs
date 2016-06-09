@@ -44,6 +44,9 @@ module UHC.Util.CHR.Solve.TreeTrie.MonoBacktrackPrio
   , CHRSolveOpts(..)
   , defaultCHRSolveOpts
   
+  , StoredCHR
+  , storedChrRule'
+  
   , chrSolve
   
   , slvFreshSubst
@@ -155,6 +158,8 @@ data StoredCHR c g bp p
       -- , storedIdent     :: !(UsedByKey c)                       -- ^ the identification of a CHR, used for propagation rules (see remark at begin)
       }
   deriving (Typeable)
+storedChrRule' :: StoredCHR c g bp p -> Rule c g bp p
+storedChrRule' = _storedChrRule
 
 type instance TTKey (StoredCHR c g bp p) = TTKey c
 
@@ -989,7 +994,7 @@ chrSolve opts env = slv
     slv1 curbprio
          (FoundWorkSortedMatch
             { foundWorkSortedMatchInx = CHRConstraintInx {chrciInx = ci}
-            , foundWorkSortedMatchChr = StoredCHR {_storedChrRule = Rule {ruleSimpSz = simpSz}}
+            , foundWorkSortedMatchChr = chr@StoredCHR {_storedChrRule = Rule {ruleSimpSz = simpSz}}
             , foundWorkSortedMatchBodyAlts = alts
             , foundWorkSortedMatchWorkInx = workInxs
             , foundWorkSortedMatchSubst = matchSubst
@@ -1000,19 +1005,30 @@ chrSolve opts env = slv
         -- depending on nr of alts continue slightly different
         case alts of
           -- just continue if no alts 
-          [] -> slv
+          [] -> do
+            log Nothing
+            slv
           -- just reschedule
           [alt@(FoundBodyAlt {foundBodyAltBacktrackPrio=bprio})]
-            | curbprio == bprio -> nextwork bprio alt
+            | curbprio == bprio -> do
+                log (Just alt)
+                nextwork bprio alt
             | otherwise -> do
+                log (Just alt)
                 slvSchedule bprio $ nextwork bprio alt
                 slvScheduleRun
           -- otherwise backtrack and schedule all and then reschedule
           alts -> do
-                forM alts $ \alt@(FoundBodyAlt {foundBodyAltBacktrackPrio=bprio}) -> (backtrack $ nextwork bprio alt) >>= slvSchedule bprio
+                forM alts $ \alt@(FoundBodyAlt {foundBodyAltBacktrackPrio=bprio}) -> do
+                  log (Just alt)
+                  (backtrack $ nextwork bprio alt) >>= slvSchedule bprio
                 slvScheduleRun
 
       where
+        log alt = do
+          let a = (fmap (rbodyaltBody . foundBodyAltAlt) alt)
+          let step = SolveStep chr matchSubst a [] [] -- TODO: Set stepNewTodo, stepNewDone (last two arguments)
+          fstl ^* chrgstTrace =$: (step:)
         nextwork bprio alt@(FoundBodyAlt {foundBodyAltAlt=(RuleBodyAlt {rbodyaltBody=body})}) = do
           -- set prio for this alt
           sndl ^* chrbstBacktrackPrio =: bprio

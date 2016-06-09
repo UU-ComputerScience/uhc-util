@@ -414,7 +414,7 @@ chrmatcherLift :: (VarLookupCmb subst subst) => (subst -> Maybe subst) -> CHRMat
 chrmatcherLift f = do
     [sl,sg] <- fmap unStackedVarLookup $ getl chrmatcherstateVarLookup -- gets (unStackedVarLookup . _chrmatcherstateVarLookup)
     maybe chrMatchFail (\snew -> chrmatcherstateVarLookup =$: (snew |+>)) $ f sg
-    
+
 -- | Run a CHRMatcher
 chrmatcherRun' :: (CHREmptySubstitution subst) => (CHRMatcherFailure -> r) -> (subst -> CHRWaitForVarSet subst -> x -> r) -> CHRMatcher subst x -> CHRMatchEnv (VarLookupKey subst) -> StackedVarLookup subst -> r
 chrmatcherRun' fail succes mtch menv s = either

@@ -18,6 +18,8 @@ module UHC.Util.CHR.Solve.TreeTrie.Mono
   ( CHRStore
   , emptyCHRStore
   
+  , StoredCHR(..)
+  
   , chrStoreFromElems
   , chrStoreUnion
   , chrStoreUnions
@@ -291,7 +293,7 @@ chrSolveM tropts env chrStore cnstrs = do
                                         ) : tlMatch
                                       ) = do
                               let b = ruleBody chr
-                              st@(SolveState {stWorkList = wl, stHistoryCount = histCount}) <- get
+                              st@(SolveState {stWorkList = wl, stHistoryCount = histCount, stUsedRules = usedRules }) <- get
                               let (tlMatchY,tlMatchN) = partition (\(r@(_,(ks,_)),_) -> not (any (`elem` keysSimp) ks || slvIsUsedByPropPart (wlUsedIn wl') r)) tlMatch
                                   (keysSimp,keysProp) = splitAt simpSz keys
                                   usedIn              = Map.singleton (Set.fromList keysProp) (Set.singleton chrId)
@@ -309,6 +311,7 @@ chrSolveM tropts env chrStore cnstrs = do
                                            , stDoneCnstrSet   = Set.unions [Set.fromList bDone, Set.fromList $ map workCnstr $ take simpSz works, stDoneCnstrSet st]
                                            , stMatchCache     = if List.null bTodo' then stMatchCache st else Map.empty
                                            , stHistoryCount   = histCount + 1
+                                           , stUsedRules      = (chr : usedRules)
                                            }
 {-   
                                   chr'= subst `varUpd` chr

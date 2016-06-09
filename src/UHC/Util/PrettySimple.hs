@@ -8,10 +8,11 @@ module UHC.Util.PrettySimple
   ( PP_Doc, PP(..)
   , disp
   , hPut
+  , Doc(..)
 
   , (>|<), (>-<)
   , (>#<)
-  , hlist, vlist, hv
+  , hlist, hlistReverse, vlist, hv
   , fill
   , indent
 
@@ -103,7 +104,7 @@ empty = Emp
 -- Derived combinators
 -------------------------------------------------------------------------
 
-hlist, vlist :: PP a => [a] -> PP_Doc
+vlist, hlist, hlistReverse :: PP a => [a] -> PP_Doc
 -- | PP list horizontally
 vlist [] = empty
 vlist as = foldr  (>-<) empty as
@@ -111,6 +112,10 @@ vlist as = foldr  (>-<) empty as
 -- | PP list vertically
 hlist [] = empty
 hlist as = foldr  (>|<) empty as
+
+-- | PP list vertically reverse
+hlistReverse [] = empty
+hlistReverse as = foldr (flip (>|<)) empty as
 
 -- | PP list vertically, alias for 'vlist'
 hv :: PP a => [a] -> PP_Doc
