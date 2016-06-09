@@ -23,20 +23,27 @@ import           Data.Graph.Inductive.Graph
 import           Data.Graph.Inductive.Tree
 
 data NodeData
-  = NodeRule -- Rule with first alt
-    { nrLevel       :: Int
+  -- Applied rule with first alt (if it exists)
+  = NodeRule 
+    { nrLayer       :: Int
     , nrColumn      :: Int
     , nrName        :: String
     , nrRuleVars    :: [Tm]
     , nrFirstAlt    :: Maybe C
     }
-  | NodeAlt  -- Additional alts of a rule
-    { naLevel       :: Int
+  -- Additional alts of a rule
+  | NodeAlt
+    { naLayer       :: Int
     , naColumn      :: Int
     , naConstraint  :: C
     }
-  | NodeSynthesized -- Added node to make a proper layered graph
-    { nsLevel       :: Int
+  -- Added node to make a proper layered graph
+  -- A proper layered graph is a graph in which all edges
+  -- go from a layer to the next layer. To satisfy this,
+  -- we add synthesized nodes on edges that do not skip one
+  -- or more layers
+  | NodeSynthesized 
+    { nsLayer       :: Int
     , nsColumn      :: Int
     , nsEdgeKind    :: EdgeKind
     }
@@ -44,36 +51,46 @@ data NodeData
 data EdgeKind
   = EdgeGuard -- Usage of term in guard of rule.
   | EdgeHead  -- Usage of term in head of rule.
-  | EdgeUnify -- Usage of other term that required unification of this node.
-  | EdgeAlt   -- Link between NodeRule and NodeAlt. Both nodes have same level.
+  | EdgeUnify -- Usage of some term that required unification of this node.
+  | EdgeAlt   -- Link between NodeRule and NodeAlt. Both nodes have same layer.
   deriving Eq
 
-nodeLevel, nodeColumn :: Node' -> Int
-nodeLevel (_, NodeRule{nrLevel = level})        = level
-nodeLevel (_, NodeAlt{naLevel = level})         = level
-nodeLevel (_, NodeSynthesized{nsLevel = level}) = level
+type Node' = LNode NodeData
+-- | Edge has a kind and a bool that says whether this edge is
+--   the last edge of a sequence of edges. The last edge does not
+--   end in a synthesized node, the others do.
+type Edge' = LEdge (EdgeKind, Bool)
+
+-- | Gets the layer of a node
+nodeLayer :: Node' -> Int
+nodeLayer (_, NodeRule{nrLayer = layer})        = layer
+nodeLayer (_, NodeAlt{naLayer = layer})         = layer
+nodeLayer (_, NodeSynthesized{nsLayer = layer}) = layer
+
+-- | Gets the column of a node
+nodeColumn :: Node' -> Int
 nodeColumn (_, NodeRule{nrColumn = col})        = col
 nodeColumn (_, NodeAlt{naColumn = col})         = col
 nodeColumn (_, NodeSynthesized{nsColumn = col}) = col
 
+-- | Sets the column of a node
 nodeSetColumn :: Node' -> Int -> Node'
 nodeSetColumn (n, d@NodeRule{}) col        = (n, d{nrColumn = col})
 nodeSetColumn (n, d@NodeAlt{}) col         = (n, d{naColumn = col})
 nodeSetColumn (n, d@NodeSynthesized{}) col = (n, d{nsColumn = col})
 
-type Node' = LNode NodeData
-type Edge' = LEdge (EdgeKind, Bool)
-
-stateMap :: (a -> b -> (c, b)) -> b -> [a] -> ([c], b)
-stateMap _  state []     = ([], state)
-stateMap cb state (x:xs) = (y:ys, newState)
-  where
-    (ys,tmpState) = stateMap cb state xs
-    (y,newState)  = cb x tmpState
-
+-- | A map between a term, and the location where it was found combined
+--   with the required unifications
 type NodeMap = Map.Map Tm (Node, [Node])
-data BuildState = BuildState [Edge'] NodeMap Int Int
+-- | Contains all data needed to build the graph, during traversal of
+--   the solve trace
+data BuildState = BuildState [Node'] [Edge'] NodeMap Int Int
+emptyBuildState :: BuildState
+emptyBuildState = BuildState [] [] Map.empty 0 0
 
+-- | Finds a node based on its id.
+--   This function is efficient if it is first applied
+--   with one argument and reused.
 nodeLookup :: [Node'] -> Node -> Node'
 nodeLookup nodes = fromJust . (flip Map.lookup) map
   where
@@ -81,6 +98,7 @@ nodeLookup nodes = fromJust . (flip Map.lookup) map
     map = foldl ins Map.empty nodes
     ins m node@(id, _) = Map.insert id node m
 
+-- | Gives all terms that follow after a unification
 replaceInTm :: Tm -> Tm -> Tm -> [Tm]
 replaceInTm a b tm
   | tm == a || tm == b = [a, b]
@@ -97,24 +115,15 @@ replaceInTm a b tm
       replaceMaybe Nothing  = [Nothing]
       replaceMaybe (Just y) = fmap Just $ replaceInTm a b y
 
-emptyBuildState :: BuildState
-emptyBuildState = BuildState [] Map.empty 0 0
-
+-- | Gives all terms in a constraint
 tmsInC :: C -> [Tm]
 tmsInC (C_Con s tms) = [Tm_Con s tms]
 tmsInC _             = []
 
+-- | Gives all terms in a guard
 tmsInG :: G -> [Tm]
 tmsInG (G_Tm tm) = tmsInTm tm
 tmsInG _         = []
-
-precedentTms :: Rule C G P P -> [(Tm, EdgeKind)]
-precedentTms rule
-  =  fmap (\n -> (n, EdgeHead))  (concatMap tmsInC $ ruleHead rule)
-  ++ fmap (\n -> (n, EdgeGuard)) (concatMap tmsInG $ ruleGuard rule)
-
-tmsInBodyAlt :: RuleBodyAlt C bprio -> [Tm]
-tmsInBodyAlt = concatMap tmsInC . rbodyaltBody
 
 tmsInTm :: Tm -> [Tm]
 tmsInTm tm = tm : children tm
@@ -123,6 +132,15 @@ tmsInTm tm = tm : children tm
     children (Tm_Lst as (Just a)) = as ++ [a]
     children _                    = [] 
 
+-- | Finds all terms that were used for this rule
+--   Used by visualizer to draw edges to the origin of
+--   these rules.
+precedentTms :: Rule C G P P -> [(Tm, EdgeKind)]
+precedentTms rule
+  =  fmap (\n -> (n, EdgeHead))  (concatMap tmsInC $ ruleHead rule)
+  ++ fmap (\n -> (n, EdgeGuard)) (concatMap tmsInG $ ruleGuard rule)
+
+-- | Adds the constraint (of an alt) to the NodeMap
 addConstraint :: C -> Node -> NodeMap -> NodeMap
 addConstraint (CB_Eq a b)   = addUnify a b
 addConstraint (C_Con s tms) = addTerm $ Tm_Con s tms
@@ -140,21 +158,22 @@ addUnify a b node map = Map.foldlWithKey cb map map
       | length nodes1 <= length nodes2 = x
       | otherwise                      = y
 
-first :: [a] -> Maybe a
-first []    = Nothing
-first (x:_) = Just x
-
-stepToNodes :: SolveStep' C (MBP.StoredCHR C G P P) S -> BuildState -> ([Node'], BuildState)
-stepToNodes step state@(BuildState edges nodeMap nodeId level)
-  = ( nodes
-    , BuildState edges'' nodeMap' nodeId' level'
-    )
+-- | Generates nodes and edges for a SolveStep.
+--   Stores the resulting terms in the NodeMap.
+stepToNodes :: BuildState -> SolveStep' C (MBP.StoredCHR C G P P) S -> BuildState
+stepToNodes state@(BuildState _ _ nodeMap nodeId layer) step
+  = BuildState
+    nodes
+    edges''
+    nodeMap'
+    nodeId'
+    layer'
   where
     schr = stepChr step
     rule = MBP.storedChrRule' schr
     updRule = varUpd (stepSubst step) rule
     alt = maybe [] (fmap $ varUpd $ stepSubst step) $ stepAlt step
-    (nodes, BuildState edges' nodeMap' nodeId' level') =
+    (BuildState nodes edges' nodeMap' nodeId' layer') =
       createNodes
         (maybe "[untitled]" id (ruleName rule))
         (Map.elems (stepSubst step))
@@ -171,19 +190,17 @@ stepToNodes step state@(BuildState edges nodeMap nodeId level)
       )
       ++ edges'
 
-createNodes :: String -> [Tm] -> [C] -> BuildState -> ([Node'], BuildState)
-createNodes name vars alts (BuildState edges nodeMap nodeId level)
-  = ( nodes
-    , BuildState edges' nodeMap' (nodeId + max 1 (length alts)) (level + 1)
-    )
+createNodes :: String -> [Tm] -> [C] -> BuildState -> BuildState
+createNodes name vars alts (BuildState previousNodes previousEdges nodeMap nodeId layer)
+  = BuildState (nodes ++ previousNodes) (edges ++ previousEdges) nodeMap' (nodeId + max 1 (length alts)) (layer + 1)
   where
     nodes =
       (nodeId, NodeRule
-        { nrLevel    = level
+        { nrLayer    = layer
         , nrColumn   = 0
         , nrName     = name
         , nrRuleVars = vars
-        , nrFirstAlt = first alts
+        , nrFirstAlt = listToMaybe alts
         }
       )
       : altNodes
@@ -195,12 +212,11 @@ createNodes name vars alts (BuildState edges nodeMap nodeId level)
     updateMap map (id, NodeAlt{ naConstraint = alt }) = addConstraint alt id map
     updateMap map _ = map
     
-    altNode (constraint, i) = (nodeId + i, NodeAlt level 0 constraint)
+    altNode (constraint, i) = (nodeId + i, NodeAlt layer 0 constraint)
     altNodes = fmap altNode (drop 1 $ addIndices alts)
-    edges' =
-      (fmap (\(n, _) -> (nodeId, n, (EdgeAlt, True))) altNodes)
-      ++ edges
+    edges = (fmap (\(n, _) -> (nodeId, n, (EdgeAlt, True))) altNodes)
 
+-- | Adds synthesized nodes to create a proper layered graph
 createSynthesizedNodes :: [Node'] -> [Edge'] -> Int -> ([Edge'], [Node'])
 createSynthesizedNodes nodes es firstNode
   = create es firstNode [] []
@@ -209,20 +225,21 @@ createSynthesizedNodes nodes es firstNode
     create ((edge@(from, to, (kind, _))):edges) id accumEdges accumNodes
       = create edges id' (es ++ accumEdges) (ns ++ accumNodes)
       where
-        (es, ns, id') = split (level from) edge id
+        (es, ns, id') = split (layer from) edge id
     create _ _ accumEdges accumNodes = (accumEdges, accumNodes)
-    split fromLevel edge@(from, to, (kind, _)) id
-      | fromLevel + 1 >= level to = ([edge], [], id)
+    split fromLayer edge@(from, to, (kind, _)) id
+      | fromLayer + 1 >= layer to = ([edge], [], id)
       | otherwise                 =
         ( (from, id, (kind, False)) : edges',
-          (id, (NodeSynthesized (fromLevel + 1) 0 kind)) : nodes',
+          (id, (NodeSynthesized (fromLayer + 1) 0 kind)) : nodes',
           id'
         )
         where
-          (edges', nodes', id') = split (fromLevel + 1) (id, to, (kind, True)) (id + 1)
+          (edges', nodes', id') = split (fromLayer + 1) (id, to, (kind, True)) (id + 1)
     find = nodeLookup nodes
-    level = nodeLevel . find
+    layer = nodeLayer . find
 
+-- | Creates a graph with the visualization
 createGraph :: [C] -> [SolveStep' C (MBP.StoredCHR C G P P) S] -> Gr NodeData (EdgeKind, Bool)
 createGraph query steps = mkGraph sortedlayerednodes edges
   where
@@ -230,10 +247,10 @@ createGraph query steps = mkGraph sortedlayerednodes edges
     flayer = uniqueColumns firstLnodes ((maxLayerSize - length firstLnodes) `div` 2)
     firstLnodes : lnodes = Map.elems $ layerednodes nodes
     layerednodes :: [Node'] -> Map.Map Int [Node']
-    layerednodes ns = foldl (\m x -> Map.insertWith (++) (nodeLevel x) [x] m) Map.empty ns
-    (queryNodes, state) = createNodes "?" [] query emptyBuildState
-    (nodes'', (BuildState edges' _ id _)) = stateMap stepToNodes state steps
-    nodes' = concat nodes'' ++ queryNodes
+    layerednodes ns = foldl (\m x -> Map.insertWith (++) (nodeLayer x) [x] m) Map.empty ns
+    state = createNodes "?" [] query emptyBuildState
+    BuildState nodes' edges' _ id _ = foldr (flip stepToNodes) state steps
+    -- nodes' = concat nodes'' ++ queryNodes
     (edges, synNodes) = createSynthesizedNodes nodes' edges' id
     nodes = nodes' ++ synNodes
     maxLayerSize = maximum $ fmap length (firstLnodes : lnodes)
@@ -263,6 +280,7 @@ fst' (a, _, _) = a
 snd' :: (a, b, c) -> b
 snd' (_, b, _) = b
 
+-- | Creates a HTML tag
 tag :: String -> PP_Doc -> PP_Doc -> PP_Doc
 tag name attr content = (text ("<" ++ name)) >|< attributes attr >|< body content
   where
@@ -271,14 +289,17 @@ tag name attr content = (text ("<" ++ name)) >|< attributes attr >|< body conten
     body Emp       = text " />"
     body content   = text ">" >|< content >|< text ("</" ++ name ++ ">")
 
+-- | Creates a HTML tag without attributes
 tag' :: String -> PP_Doc -> PP_Doc
 tag' name = tag name Emp
 
+-- | Add indices to an array as a tuple with value and index
 addIndices :: [a] -> [(a, Int)]
 addIndices = flip zip [0..]
 
+-- | Generates HTML for a node
 showNode :: (Node' -> (Int, Int)) -> Node' -> PP_Doc
-showNode pos node@(_, NodeRule{nrLevel = level, nrName = name, nrRuleVars = vars, nrFirstAlt = alt}) = tag "div"
+showNode pos node@(_, NodeRule{nrLayer = layer, nrName = name, nrRuleVars = vars, nrFirstAlt = alt}) = tag "div"
   (
     text "class=\"rule\" style=\"top: "
     >|< pp (y + 10) 
@@ -318,6 +339,7 @@ showNode pos node@(_, NodeAlt{ naConstraint = constraint }) = tag "div"
     (x, y) = pos node
 showNode _ (_, NodeSynthesized{}) = Emp
 
+-- | Generates HTML for an edge
 showEdge :: (Node -> (Int, Int)) -> Edge' -> PP_Doc
 showEdge pos (from, to, (kind, isEnd)) =
   if kind == EdgeAlt then
@@ -385,6 +407,8 @@ showEdge pos (from, to, (kind, isEnd)) =
       EdgeHead  -> "edge-head"
       EdgeUnify -> "edge-unify"
 
+-- | Creates a visualization for the given query and solve trace.
+--   Output is a PP_Doc containing a HTML file.
 chrVisualize :: [C] -> SolveTrace' C (MBP.StoredCHR C G P P) S -> PP_Doc
 chrVisualize query trace = tag' "html" $
   tag' "head" (
@@ -400,10 +424,11 @@ chrVisualize query trace = tag' "html" $
     reduce (inn, id, node, out) right = showNode pos (id, node) >|< right
     nodeCount = length $ nodes graph
     pos :: Node' -> (Int, Int)
-    pos n = ((nodeColumn n) * 200, (nodeLevel n) * 60)
+    pos n = ((nodeColumn n) * 200, (nodeLayer n) * 60)
     posId :: Node -> (Int, Int)
     posId node = pos (node, fromJust $ lab graph node)
 
+-- | The stylesheet used in the visualization.
 styles :: PP_Doc
 styles =
   text "body {\n\
