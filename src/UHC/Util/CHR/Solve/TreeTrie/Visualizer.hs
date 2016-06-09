@@ -241,44 +241,60 @@ createSynthesizedNodes nodes es firstNode
 
 -- | Creates a graph with the visualization
 createGraph :: [C] -> [SolveStep' C (MBP.StoredCHR C G P P) S] -> Gr NodeData (EdgeKind, Bool)
-createGraph query steps = mkGraph sortedlayerednodes edges
+createGraph query steps = mkGraph sortedLayers edges
   where
-    sortedlayerednodes = flayer ++ sortNodes maxLayerSize ([flayer] ++ lnodes) edges
-    flayer = uniqueColumns firstLnodes ((maxLayerSize - length firstLnodes) `div` 2)
-    firstLnodes : lnodes = Map.elems $ layerednodes nodes
-    layerednodes :: [Node'] -> Map.Map Int [Node']
-    layerednodes ns = foldl (\m x -> Map.insertWith (++) (nodeLayer x) [x] m) Map.empty ns
+    -- | Sort the layers by giving each node in a layer an unique nodeColumn value
+    sortedLayers = sortedFirstLayer ++ sortNodes maxLayerSize ([sortedFirstLayer] ++ layers) edges
+    -- | Set the nodeColumn values of each of the nodes in the query (the query forms the first layer)
+    sortedFirstLayer = uniqueColumns firstLayer ((maxLayerSize - length firstLayer) `div` 2)
+    -- | Extracting [[Node']] from layerNodes
+    firstLayer : layers = Map.elems $ layerNodes nodes
+    -- | For each layer we create a list with the nodes in that layer
+    layerNodes :: [Node'] -> Map.Map Int [Node']
+    layerNodes ns = foldl (\m x -> Map.insertWith (++) (nodeLayer x) [x] m) Map.empty ns
     state = createNodes "?" [] query emptyBuildState
     BuildState nodes' edges' _ id _ = foldr (flip stepToNodes) state steps
-    -- nodes' = concat nodes'' ++ queryNodes
     (edges, synNodes) = createSynthesizedNodes nodes' edges' id
     nodes = nodes' ++ synNodes
-    maxLayerSize = maximum $ fmap length (firstLnodes : lnodes)
+    maxLayerSize = maximum $ fmap length (firstLayer : layers)
 
+-- | Sort the nodes using the median heuristic
+-- | The first layer is left as it was, the second layer is sorted using the first etc.
 sortNodes :: Int -> [[Node']] -> [Edge'] -> [Node']
 sortNodes _ (x:[]) _ = []
 sortNodes maxLayerSize (x:xs:xss) e = medianHeurstic maxLayerSize x xs e ++ sortNodes maxLayerSize (xs:xss) e
-    
-medianHeurstic :: Int -> [Node'] -> [Node'] -> [Edge'] -> [Node']
-medianHeurstic maxLayerSize l1 l2 e = uniqueColumns sortedMedianList ((maxLayerSize - length l2) `div` 2)
-  where
-    sortedMedianList = sortOn nodeColumn medianList
-    medianList = map (\x -> nodeSetColumn x (median x)) l2
-    median n = coordinates n !! (ceiling (realToFrac (length (coordinates n)) / 2) - 1)
-    coordinates n = map nodeColumn (neighbors n)
-    neighbors n = map (nodelist . fst') (edges n)
-    edges n = List.filter (\x -> snd' x == fst n) e 
-    nodelist = nodeLookup l1
 
+-- | lowerLayer is the layer to be sorted, upperLayer is assumed to be sorted
+-- | The maxLayerSize is used to center the graph (by altering the value given to uniqueColumns)
+-- | Documentation for the median heuristic:
+-- | https://cs.brown.edu/~rt/gdhandbook/chapters/hierarchical.pdf
+-- | http://www.cs.usyd.edu.au/~shhong/fab.pdf
+-- | https://books.google.nl/books?id=6hfsCAAAQBAJ&lpg=PA28&dq=median%20heuristic%20sorting%20vertices&hl=nl&pg=PA28#v=onepage&q&f=false
+medianHeurstic :: Int -> [Node'] -> [Node'] -> [Edge'] -> [Node']
+medianHeurstic maxLayerSize upperLayer lowerLayer e = uniqueColumns sortedMedianList ((maxLayerSize - length lowerLayer) `div` 2)
+  where
+    -- | The medianList sorted on the median values
+    sortedMedianList = sortOn nodeColumn medianList
+    -- | The list of median values for each of the nodes in lowerLayer
+    medianList = map (\x -> nodeSetColumn x (median x)) lowerLayer
+    -- | The median value of the x coördinates of the neighbors
+    median n = coordinates n !! (ceiling (realToFrac (length (coordinates n)) / 2) - 1)
+    -- | The values of the x coördinates of the neighbors
+    coordinates n = map nodeColumn (neighbors n)
+    -- | The neighbor nodes of the given Node' n (on a higher layer)
+    neighbors n = map (findNode . fst') (edges n)
+    -- | All the edges connected to given Node' n
+    edges n = List.filter (\(_, b, _) -> b == fst n) e
+    findNode = nodeLookup upperLayer
+
+-- | Ensure that each Node' has an unique nodeColumn (the x coördinate)
+-- | The value of the nodeColumn is set to i
 uniqueColumns :: [Node'] -> Int -> [Node']
 uniqueColumns (n:ns) i = nodeSetColumn n i : uniqueColumns ns (i + 1)
 uniqueColumns _ _ = []
     
 fst' :: (a, b, c) -> a
 fst' (a, _, _) = a
-    
-snd' :: (a, b, c) -> b
-snd' (_, b, _) = b
 
 -- | Creates a HTML tag
 tag :: String -> PP_Doc -> PP_Doc -> PP_Doc
