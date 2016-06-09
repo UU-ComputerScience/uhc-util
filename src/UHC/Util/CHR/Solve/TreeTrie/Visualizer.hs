@@ -6,8 +6,8 @@ module UHC.Util.CHR.Solve.TreeTrie.Visualizer
   where
 
 import           Prelude
-import           Data.Maybe as Maybe
-import           Data.List as List
+import           Data.Maybe
+import           Data.List
 import qualified Data.Map as Map
 import           UHC.Util.Pretty
 import           UHC.Util.PrettySimple
@@ -153,7 +153,7 @@ addUnify :: Tm -> Tm -> Node -> NodeMap -> NodeMap
 addUnify a b node map = Map.foldlWithKey cb map map
   where
     cb :: NodeMap -> Tm -> (Node, [Node]) -> NodeMap
-    cb map' tm (n, nodes) = List.foldl (\map'' key -> Map.insertWith compare key (n, node : nodes) map'') map' (replaceInTm a b tm)
+    cb map' tm (n, nodes) = foldl (\map'' key -> Map.insertWith compare key (n, node : nodes) map'') map' (replaceInTm a b tm)
     compare x@(_, nodes1) y@(_, nodes2)
       | length nodes1 <= length nodes2 = x
       | otherwise                      = y
@@ -170,7 +170,7 @@ stepToNodes state@(BuildState _ _ nodeMap nodeId layer) step
     layer'
   where
     schr = stepChr step
-    rule = MBP.storedChrRule' schr
+    rule = storedChrRule' schr
     updRule = varUpd (stepSubst step) rule
     alt = maybe [] (fmap $ varUpd $ stepSubst step) $ stepAlt step
     (BuildState nodes edges' nodeMap' nodeId' layer') =
@@ -180,9 +180,9 @@ stepToNodes state@(BuildState _ _ nodeMap nodeId layer) step
         alt
         state
     edges'' =
-      ( List.map (\(n, kind) -> (n, nodeId, (kind, True)))
+      ( fmap (\(n, kind) -> (n, nodeId, (kind, True)))
         $ concatMap (\(n, ns, kind) -> (n, kind) : fmap (\x -> (x, EdgeUnify)) ns)
-        $ Maybe.mapMaybe
+        $ mapMaybe
           (\(tm, kind) -> fmap
             (\(n, ns) -> (n, ns, kind))
             (Map.lookup tm nodeMap))
@@ -205,7 +205,7 @@ createNodes name vars alts (BuildState previousNodes previousEdges nodeMap nodeI
       )
       : altNodes
     altTms = concatMap tmsInC alts
-    nodeMap' = List.foldl updateMap nodeMap nodes
+    nodeMap' = foldl updateMap nodeMap nodes
     -- Updates node map for a new node
     updateMap :: NodeMap -> Node' -> NodeMap
     updateMap map (id, NodeRule{ nrFirstAlt = Just alt }) = addConstraint alt id map
@@ -267,7 +267,7 @@ medianHeurstic maxLayerSize l1 l2 e = uniqueColumns sortedMedianList ((maxLayerS
     median n = coordinates n !! (ceiling (realToFrac (length (coordinates n)) / 2) - 1)
     coordinates n = map nodeColumn (neighbors n)
     neighbors n = map (nodelist . fst') (edges n)
-    edges n = List.filter (\x -> snd' x == fst n) e 
+    edges n = filter (\x -> snd' x == fst n) e 
     nodelist = nodeLookup l1
 
 uniqueColumns :: [Node'] -> Int -> [Node']
