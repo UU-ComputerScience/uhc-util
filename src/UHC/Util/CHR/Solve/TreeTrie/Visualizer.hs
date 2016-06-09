@@ -236,7 +236,7 @@ createGraph query steps = mkGraph sortedlayerednodes edges
     nodes' = concat nodes'' ++ queryNodes
     (edges, synNodes) = createSynthesizedNodes nodes' edges' id
     nodes = nodes' ++ synNodes
-    maxLayerSize = maximum $ fmap length lnodes
+    maxLayerSize = maximum $ fmap length (firstLnodes : lnodes)
 
 sortNodes :: Int -> [[Node']] -> [Edge'] -> [Node']
 sortNodes _ (x:[]) _ = []
