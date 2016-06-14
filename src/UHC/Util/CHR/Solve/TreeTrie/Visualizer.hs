@@ -22,6 +22,15 @@ import           UHC.Util.Substitutable
 import           Data.Graph.Inductive.Graph
 import           Data.Graph.Inductive.Tree
 
+sortGroupOn :: Ord b => (a -> b) -> [a] -> [[a]]
+sortGroupOn f = construct . sortOn f
+  where
+    construct []     = []
+    construct (y:ys) = group : construct rest
+      where
+        group = y : takeWhile ((f y ==) . f) ys
+        rest  =     dropWhile ((f y ==) . f) ys
+
 data NodeData
   -- Applied rule with first alt (if it exists)
   = NodeRule 
@@ -60,6 +69,10 @@ type Node' = LNode NodeData
 --   the last edge of a sequence of edges. The last edge does not
 --   end in a synthesized node, the others do.
 type Edge' = LEdge (EdgeKind, Bool)
+type NodeEdge = (Node', Node', EdgeKind, Bool)
+
+asEdge :: NodeEdge -> Edge'
+asEdge ((from, _), (to, _), kind, isLast) = (from, to, (kind, isLast))
 
 -- | Gets the layer of a node
 nodeLayer :: Node' -> Int
@@ -81,22 +94,12 @@ nodeSetColumn (n, d@NodeSynthesized{}) col = (n, d{nsColumn = col})
 
 -- | A map between a term, and the location where it was found combined
 --   with the required unifications
-type NodeMap = Map.Map Tm (Node, [Node])
+type NodeMap = Map.Map Tm (Node', [Node'])
 -- | Contains all data needed to build the graph, during traversal of
 --   the solve trace
-data BuildState = BuildState [Node'] [Edge'] NodeMap Int Int
+data BuildState = BuildState [Node'] [NodeEdge] NodeMap Int Int
 emptyBuildState :: BuildState
 emptyBuildState = BuildState [] [] Map.empty 0 0
-
--- | Finds a node based on its id.
---   This function is efficient if it is first applied
---   with one argument and reused.
-nodeLookup :: [Node'] -> Node -> Node'
-nodeLookup nodes = fromJust . (flip Map.lookup) map
-  where
-    map :: Map.Map Node Node'
-    map = foldl ins Map.empty nodes
-    ins m node@(id, _) = Map.insert id node m
 
 -- | Gives all terms that follow after a unification
 replaceInTm :: Tm -> Tm -> Tm -> [Tm]
@@ -141,18 +144,18 @@ precedentTms rule
   ++ fmap (\n -> (n, EdgeGuard)) (concatMap tmsInG $ ruleGuard rule)
 
 -- | Adds the constraint (of an alt) to the NodeMap
-addConstraint :: C -> Node -> NodeMap -> NodeMap
+addConstraint :: C -> Node' -> NodeMap -> NodeMap
 addConstraint (CB_Eq a b)   = addUnify a b
 addConstraint (C_Con s tms) = addTerm $ Tm_Con s tms
 addConstraint c             = const id
 
-addTerm :: Tm -> Node -> NodeMap -> NodeMap
+addTerm :: Tm -> Node' -> NodeMap -> NodeMap
 addTerm tm node =  Map.insert tm (node, [])
 
-addUnify :: Tm -> Tm -> Node -> NodeMap -> NodeMap
+addUnify :: Tm -> Tm -> Node' -> NodeMap -> NodeMap
 addUnify a b node map = Map.foldlWithKey cb map map
   where
-    cb :: NodeMap -> Tm -> (Node, [Node]) -> NodeMap
+    cb :: NodeMap -> Tm -> (Node', [Node']) -> NodeMap
     cb map' tm (n, nodes) = foldl (\map'' key -> Map.insertWith compare key (n, node : nodes) map'') map' (replaceInTm a b tm)
     compare x@(_, nodes1) y@(_, nodes2)
       | length nodes1 <= length nodes2 = x
@@ -173,14 +176,14 @@ stepToNodes state@(BuildState _ _ nodeMap nodeId layer) step
     rule = storedChrRule' schr
     updRule = varUpd (stepSubst step) rule
     alt = maybe [] (fmap $ varUpd $ stepSubst step) $ stepAlt step
-    (BuildState nodes edges' nodeMap' nodeId' layer') =
+    (BuildState nodes edges' nodeMap' nodeId' layer', primaryNode) =
       createNodes
         (maybe "[untitled]" id (ruleName rule))
         (Map.elems (stepSubst step))
         alt
         state
     edges'' =
-      ( fmap (\(n, kind) -> (n, nodeId, (kind, True)))
+      ( fmap (\(n, kind) -> (n, primaryNode, kind, True))
         $ concatMap (\(n, ns, kind) -> (n, kind) : fmap (\x -> (x, EdgeUnify)) ns)
         $ mapMaybe
           (\(tm, kind) -> fmap
@@ -190,11 +193,13 @@ stepToNodes state@(BuildState _ _ nodeMap nodeId layer) step
       )
       ++ edges'
 
-createNodes :: String -> [Tm] -> [C] -> BuildState -> BuildState
+createNodes :: String -> [Tm] -> [C] -> BuildState -> (BuildState, Node')
 createNodes name vars alts (BuildState previousNodes previousEdges nodeMap nodeId layer)
-  = BuildState (nodes ++ previousNodes) (edges ++ previousEdges) nodeMap' (nodeId + max 1 (length alts)) (layer + 1)
+  = ( BuildState (nodes ++ previousNodes) (edges ++ previousEdges) nodeMap' (nodeId + max 1 (length alts)) (layer + 1)
+    , primaryNode
+    )
   where
-    nodes =
+    primaryNode =
       (nodeId, NodeRule
         { nrLayer    = layer
         , nrColumn   = 0
@@ -203,66 +208,77 @@ createNodes name vars alts (BuildState previousNodes previousEdges nodeMap nodeI
         , nrFirstAlt = listToMaybe alts
         }
       )
-      : altNodes
+    nodes = primaryNode : altNodes
     altTms = concatMap tmsInC alts
     nodeMap' = foldl updateMap nodeMap nodes
     -- Updates node map for a new node
     updateMap :: NodeMap -> Node' -> NodeMap
-    updateMap map (id, NodeRule{ nrFirstAlt = Just alt }) = addConstraint alt id map
-    updateMap map (id, NodeAlt{ naConstraint = alt }) = addConstraint alt id map
+    updateMap map node@(_, NodeRule{ nrFirstAlt = Just alt }) = addConstraint alt node map
+    updateMap map node@(_, NodeAlt{ naConstraint = alt }) = addConstraint alt node map
     updateMap map _ = map
     
     altNode (constraint, i) = (nodeId + i, NodeAlt layer 0 constraint)
     altNodes = fmap altNode (drop 1 $ addIndices alts)
-    edges = (fmap (\(n, _) -> (nodeId, n, (EdgeAlt, True))) altNodes)
+    edges = (fmap (\n -> (primaryNode, n, EdgeAlt, True)) altNodes)
 
 -- | Adds synthesized nodes to create a proper layered graph
-createSynthesizedNodes :: [Node'] -> [Edge'] -> Int -> ([Edge'], [Node'])
+createSynthesizedNodes :: [Node'] -> [NodeEdge] -> Int -> ([NodeEdge], [Node'])
 createSynthesizedNodes nodes es firstNode
   = create es firstNode [] []
   where
-    create :: [Edge'] -> Node -> [Edge'] -> [Node'] -> ([Edge'], [Node'])
-    create ((edge@(from, to, (kind, _))):edges) id accumEdges accumNodes
+    create :: [NodeEdge] -> Int -> [NodeEdge] -> [Node'] -> ([NodeEdge], [Node'])
+    create ((edge@(from, to, kind, _)):edges) id accumEdges accumNodes
       = create edges id' (es ++ accumEdges) (ns ++ accumNodes)
       where
-        (es, ns, id') = split (layer from) edge id
+        (es, ns, id') = split (nodeLayer from) edge id
     create _ _ accumEdges accumNodes = (accumEdges, accumNodes)
-    split fromLayer edge@(from, to, (kind, _)) id
-      | fromLayer + 1 >= layer to = ([edge], [], id)
-      | otherwise                 =
-        ( (from, id, (kind, False)) : edges',
-          (id, (NodeSynthesized (fromLayer + 1) 0 kind)) : nodes',
+    split :: Int -> NodeEdge -> Int -> ([NodeEdge], [Node'], Int)
+    split fromLayer edge@(from, to, kind, _) id
+      | fromLayer + 1 >= nodeLayer to = ([edge], [], id)
+      | otherwise                     =
+        ( (from, node, kind, False) : edges',
+          node : nodes',
           id'
         )
         where
-          (edges', nodes', id') = split (fromLayer + 1) (id, to, (kind, True)) (id + 1)
-    find = nodeLookup nodes
-    layer = nodeLayer . find
+          node = (id, (NodeSynthesized (fromLayer + 1) 0 kind))
+          (edges', nodes', id') = split (fromLayer + 1) (node, to, kind, True) (id + 1)
 
 -- | Creates a graph with the visualization
 createGraph :: [C] -> [SolveStep' C (MBP.StoredCHR C G P P) S] -> Gr NodeData (EdgeKind, Bool)
-createGraph query steps = mkGraph sortedLayers edges
+createGraph query steps = mkGraph sortedLayers (fmap asEdge edges)
   where
     -- | Sort the layers by giving each node in a layer an unique nodeColumn value
-    sortedLayers = sortedFirstLayer ++ sortNodes maxLayerSize ([sortedFirstLayer] ++ layers) edges
+    sortedLayers = sortedFirstLayer ++ sortNodes maxLayerSize (sortedFirstLayer : layers) layeredEdges
     -- | Set the nodeColumn values of each of the nodes in the query (the query forms the first layer)
     sortedFirstLayer = uniqueColumns firstLayer ((maxLayerSize - length firstLayer) `div` 2)
     -- | Extracting [[Node']] from layerNodes
-    firstLayer : layers = Map.elems $ layerNodes nodes
+    firstLayer : layers = sortGroupOn nodeLayer nodes
+    -- firstLayer : layers = Map.elems $ layerNodes nodes
     -- | For each layer we create a list with the nodes in that layer
-    layerNodes :: [Node'] -> Map.Map Int [Node']
-    layerNodes ns = foldl (\m x -> Map.insertWith (++) (nodeLayer x) [x] m) Map.empty ns
-    state = createNodes "?" [] query emptyBuildState
+    -- layerNodes :: [Node'] -> Map.Map Int [Node']
+    -- layerNodes ns = foldl (\m x -> Map.insertWith (++) (nodeLayer x) [x] m) Map.empty ns
+    (state, _) = createNodes "?" [] query emptyBuildState
     BuildState nodes' edges' _ id _ = foldr (flip stepToNodes) state steps
     (edges, synNodes) = createSynthesizedNodes nodes' edges' id
     nodes = nodes' ++ synNodes
     maxLayerSize = maximum $ fmap length (firstLayer : layers)
+    edgesCrossLayer = filter (\(from, to, _, _) -> nodeLayer from /= nodeLayer to) edges
+    layeredEdges = sortGroupOn (nodeLayer . fst') edgesCrossLayer
 
 -- | Sort the nodes using the median heuristic
 -- | The first layer is left as it was, the second layer is sorted using the first etc.
-sortNodes :: Int -> [[Node']] -> [Edge'] -> [Node']
+sortNodes :: Int -> [[Node']] -> [[NodeEdge]] -> [Node']
 sortNodes _ (x:[]) _ = []
-sortNodes maxLayerSize (x:xs:xss) e = medianHeurstic maxLayerSize x xs e ++ sortNodes maxLayerSize (xs:xss) e
+sortNodes maxLayerSize (x:xs:xss) e = medianHeurstic maxLayerSize x xs edges ++ sortNodes maxLayerSize (xs:xss) rest
+  where
+    (edges, rest) =
+      if null e then
+        ([], [])
+      else if (nodeLayer $ fst' $ head $ head e) == nodeLayer (head x) then
+        (head e, tail e)
+      else
+        ([], e)
 
 -- | lowerLayer is the layer to be sorted, upperLayer is assumed to be sorted
 -- | The maxLayerSize is used to center the graph (by altering the value given to uniqueColumns)
@@ -270,7 +286,7 @@ sortNodes maxLayerSize (x:xs:xss) e = medianHeurstic maxLayerSize x xs e ++ sort
 -- | https://cs.brown.edu/~rt/gdhandbook/chapters/hierarchical.pdf
 -- | http://www.cs.usyd.edu.au/~shhong/fab.pdf
 -- | https://books.google.nl/books?id=6hfsCAAAQBAJ&lpg=PA28&dq=median%20heuristic%20sorting%20vertices&hl=nl&pg=PA28#v=onepage&q&f=false
-medianHeurstic :: Int -> [Node'] -> [Node'] -> [Edge'] -> [Node']
+medianHeurstic :: Int -> [Node'] -> [Node'] -> [NodeEdge] -> [Node']
 medianHeurstic maxLayerSize upperLayer lowerLayer e = uniqueColumns sortedMedianList ((maxLayerSize - length lowerLayer) `div` 2)
   where
     -- | The medianList sorted on the median values
@@ -278,23 +294,27 @@ medianHeurstic maxLayerSize upperLayer lowerLayer e = uniqueColumns sortedMedian
     -- | The list of median values for each of the nodes in lowerLayer
     medianList = map (\x -> nodeSetColumn x (median x)) lowerLayer
     -- | The median value of the x coördinates of the neighbors
-    median n = coordinates n !! (ceiling (realToFrac (length (coordinates n)) / 2) - 1)
+    median n
+      | neighborCount == 0 = 0
+      | otherwise          = coords !! (ceiling (realToFrac neighborCount / 2) - 1)
+      where
+        coords = coordinates n
+        neighborCount = length coords
     -- | The values of the x coördinates of the neighbors
     coordinates n = map nodeColumn (neighbors n)
     -- | The neighbor nodes of the given Node' n (on a higher layer)
-    neighbors n = map (findNode . fst') (edges n)
+    neighbors n = map (fst') (edges n)
     -- | All the edges connected to given Node' n
-    edges n = filter (\(_, b, _) -> b == fst n) e
-    findNode = nodeLookup upperLayer
+    edges n = filter (\(_, (id, _), _, _) -> id == fst n) e
 
 -- | Ensure that each Node' has an unique nodeColumn (the x coördinate)
 -- | The value of the nodeColumn is set to i
 uniqueColumns :: [Node'] -> Int -> [Node']
 uniqueColumns (n:ns) i = nodeSetColumn n i : uniqueColumns ns (i + 1)
 uniqueColumns _ _ = []
-    
-fst' :: (a, b, c) -> a
-fst' (a, _, _) = a
+
+fst' :: (a, b, c, d) -> a
+fst' (a, _, _, _) = a
 
 -- | Creates a HTML tag
 tag :: String -> PP_Doc -> PP_Doc -> PP_Doc
