@@ -8,6 +8,7 @@ module UHC.Util.CHR.Solve.TreeTrie.Examples.Term.Main
 
 import           Data.Maybe
 import           System.IO
+import           Data.Time.Clock.POSIX
 import           Control.Monad
 import           Control.Monad.IO.Class
 import           Control.Monad.State.Class
@@ -70,7 +71,8 @@ runFile runopts f = do
                 then
                   do
                     (CHRGlobState{_chrgstTrace = trace}, _) <- get
-                    let fileName = "visualization.html"
+                    time <- liftIO getPOSIXTime
+                    let fileName = "visualization-" ++ show (round time) ++ ".html"
                     liftIO $ writeFile fileName (showPP $ chrVisualize query trace)
                     liftIO $ msg "VISUALIZATION"
                     liftIO $ putStrLn $ "Written visualization as " ++ fileName

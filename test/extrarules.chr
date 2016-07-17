@@ -3,24 +3,23 @@ Tests how unused rules affect runtime.
 Comment out a section of unusedXX rules to test a specific size.
 Results:
 #unused rules  real  user  sys
-         8192  1.539 1.301 0.254
-		 4096  1.022 0.868 0.184
-		 2048  0.807 0.689 0.163
-		 1024  0.649 0.530 0.155
-		  512  0.627 0.507 0.155
-		  256  0.571 0.468 0.149
-		  128  0.555 0.446 0.149
-		   64  0.550 0.429 0.147
-		    1  0.534 0.439 0.149
+         8192  25.690 24.343 1.080
+         4096  12.619 12.038 0.612
+         2048   6.624  6.258 0.375
+         1024   3.551  3.365 0.253
+          512   2.037  1.919 0.190
+          256   1.320  1.203 0.176
+          128   0.987  0.883 0.165
+           64   0.739  0.651 0.148
+            1   0.532  0.473 0.130
 
-Time scales sublinear.
-The time stays almost the same in tests with at most 128 unused rules.
+Time scales linear. The visualizer shows that the extra rules are never applied.
 -}
 
 
 reflexivity  @ Leq x y <=> x == y | .
 antisymmetry @ Leq x y , Leq y x <=> x == y.
-idempotence  @ Leq x y  Leq x y <=> .
+idempotence  @ Leq x y \ Leq x y <=> .
 transitivity @ Leq x y , Leq y z ==> Leq x z.
 
 unused0 @ Leq x y, Leq y z, Leq x v \ Leq x z, Leq y x <=> Leq x x, x = x.
@@ -8215,4 +8214,4 @@ unused8188 @ Leq x y, Leq y z, Leq x v \ Leq x z, Leq y x <=> Leq x v, v = v.
 unused8189 @ Leq x y, Leq y z, Leq x v \ Leq x z, Leq y x <=> Leq y v, v = v.
 unused8190 @ Leq x y, Leq y z, Leq x v \ Leq x z, Leq y x <=> Leq z v, v = v.
 unused8191 @ Leq x y, Leq y z, Leq x v \ Leq x z, Leq y x <=> Leq v v, v = v.
--- ? Leq a b, Leq b c, Leq c a.
+? Leq a b, Leq b c, Leq c a.
