@@ -200,7 +200,7 @@ type SolveState c g s = SolveState' c (Rule c g () ()) (StoredCHR c g) s
 -- | (Class alias) API for solving requirements
 class ( IsCHRConstraint env c s
       , IsCHRGuard env g s
-      , VarLookupCmb s s
+      , LookupApply s s
       , VarUpdatable s s
       , CHREmptySubstitution s
       , TrTrKey c ~ TTKey c
@@ -494,7 +494,7 @@ slvMatch
   :: ( CHREmptySubstitution s
      , CHRMatchable env c s
      , CHRCheckable env g s
-     , VarLookupCmb s s
+     , LookupApply s s
      )
      => env -> StoredCHR c g -> [c] -> Maybe s
 slvMatch env chr cnstrs

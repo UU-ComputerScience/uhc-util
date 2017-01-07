@@ -26,7 +26,8 @@ module UHC.Util.VarLookup
     , VarLookupFix, varlookupFix
     , varlookupFixDel
     
-    , VarLookupCmb (..)
+    , VarLookupCmb (..)     -- 20170107 TBD: should not be both, VarLookupCmb to be replaced by LookupApply
+    , LookupApply(..)
     
     -- , VarLookupBase (..)
     
@@ -44,6 +45,7 @@ import           Control.Applicative
 import           Data.Maybe
 import           UHC.Util.Pretty
 import           UHC.Util.Lookup.Stacked
+import           UHC.Util.Lookup.Types      as Lk
 import qualified Data.Set as Set
 
 -------------------------------------------------------------------------------------------
@@ -168,6 +170,10 @@ class VarLookupCmb m1 m2 where
 
 infixr 7 |+>
 
+-- build on LookupApply, if available
+instance {-# OVERLAPPABLE #-} Lk.LookupApply m1 m2 => VarLookupCmb m1 m2 where
+  (|+>) = Lk.apply
+
 {-
 #if __GLASGOW_HASKELL__ >= 710
 instance {-# OVERLAPPING #-}
@@ -234,25 +240,4 @@ type instance VarLookupKey (StackedVarLookup s) = VarLookupKey s
 type instance VarLookupVal (StackedVarLookup s) = VarLookupVal s
 type instance StackedElt   (StackedVarLookup s) = s
 
-
-{-
-instance Show (StackedVarLookup s) where
-  show _ = "StackedVarLookup"
-
-instance PP s => PP (StackedVarLookup s) where
-  pp (StackedVarLookup xs) = ppCurlysCommas $ map pp xs
--}
-
-{-
-instance (VarLookup m) => VarLookup (StackedVarLookup m) where
-  varlookupWithMetaLev l k (StackedVarLookup ms) = listToMaybe $ catMaybes $ map (varlookupWithMetaLev l k) ms
-  varlookupKeysSetWithMetaLev l (StackedVarLookup ms) = Set.unions $ map (varlookupKeysSetWithMetaLev l) ms
-  varlookupEmpty = StackedVarLookup [varlookupEmpty]
-  {-# INLINE varlookupEmpty #-}
-  varlookupSingletonWithMetaLev l k v = StackedVarLookup [varlookupSingletonWithMetaLev l k v]
-  {-# INLINE varlookupSingletonWithMetaLev #-}
-
-instance VarLookupCmb m1 m2 => VarLookupCmb m1 (StackedVarLookup m2) where
-  m1 |+> StackedVarLookup (m2:m2s) = StackedVarLookup $ (m1 |+> m2) : m2s
--}
 

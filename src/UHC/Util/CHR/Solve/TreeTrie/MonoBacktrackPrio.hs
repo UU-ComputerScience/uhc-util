@@ -1117,13 +1117,8 @@ slvCandidate waitingWk alreadyMatchedCombis wi (StoredCHR {_storedHeadKeys = ks,
 
 -- | Match the stored CHR with a set of possible constraints, giving a substitution on success
 slvMatch
-  :: ( {-
-       CHREmptySubstitution s
-     , VarLookupCmb s s
-     , -}
-       MonoBacktrackPrio c g bp p s env m
-     {- these below should not be necessary as they are implied (via superclasses) by MonoBacktrackPrio, but deeper nested superclasses seem not to be picked up...
-     -}
+  :: ( MonoBacktrackPrio c g bp p s env m
+     -- these below should not be necessary as they are implied (via superclasses) by MonoBacktrackPrio, but deeper nested superclasses seem not to be picked up...
      , CHRMatchable env c s
      , CHRCheckable env g s
      , CHRMatchable env bp s

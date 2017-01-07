@@ -273,8 +273,8 @@ instance Ord k => VarLookup (VarMp' k v) where
   {-# INLINE varlookupSingletonWithMetaLev #-}
 
 
-instance Ord k => VarLookupCmb (VarMp' k v) (VarMp' k v) where
-  m1 |+> m2 = varmpUnionWith const m1 m2
+instance Ord k => LookupApply (VarMp' k v) (VarMp' k v) where
+  m1 `apply` m2 = varmpUnionWith const m1 m2
 
 {-
 instToL1VarMp :: [InstTo] -> VarMp

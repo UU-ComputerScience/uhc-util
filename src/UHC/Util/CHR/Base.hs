@@ -313,8 +313,6 @@ class ( IsCHRPrio env bp subst
       -- , Num (CHRPrioEvaluatableVal bp)
       ) => IsCHRBacktrackPrio env bp subst
 
--- instance {-# OVERLAPPABLE #-} (CHREmptySubstitution subst, VarLookupCmb subst subst) => IsCHRBacktrackPrio env () subst
-
 -------------------------------------------------------------------------------------------
 --- What a constraint must be capable of
 -------------------------------------------------------------------------------------------

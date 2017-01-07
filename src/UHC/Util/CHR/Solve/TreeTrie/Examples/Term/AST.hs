@@ -218,9 +218,6 @@ instance VarLookup S where
   varlookupSingletonWithMetaLev _ = Map.singleton
   varlookupEmpty = Map.empty
 
-instance VarLookupCmb S S where
-  (|+>) = Map.union
-
 instance Lk.LookupApply S S where
   apply = Lk.union
 

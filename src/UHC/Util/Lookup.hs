@@ -4,7 +4,6 @@
 
 module UHC.Util.Lookup
   (
-  -- * re-export of base
     module UHC.Util.Lookup.Types
   , module UHC.Util.Lookup.Instances
   , module UHC.Util.Lookup.Scoped

@@ -85,24 +85,18 @@ module UHC.Util.VarMp
     )
   where
 
-import Data.List
--- import EH100.Base.Common
--- import EH100.Ty
+import           Data.List
 import qualified Data.Map as Map
 import qualified Data.Set as Set
-import Data.Maybe
-import UHC.Util.Pretty
--- import EH100.Ty.Pretty
--- import EH100.Error
-import UHC.Util.AssocL
-import UHC.Util.VarLookup
--- import EH100.Base.Debug
-import UHC.Util.Utils
-import Control.Monad
-import Data.Typeable (Typeable)
--- import Data.Generics (Data)
--- import EH100.Base.Binary
-import UHC.Util.Serialize
+import           Data.Maybe
+import           UHC.Util.Pretty
+import           UHC.Util.AssocL
+import           UHC.Util.VarLookup
+import           UHC.Util.Lookup.Types
+import           UHC.Util.Utils
+import           Control.Monad
+import           Data.Typeable              (Typeable)
+import           UHC.Util.Serialize
 
 
 
@@ -276,8 +270,8 @@ instance Ord k => VarLookup (VarMp' k v) where
   {-# INLINE varlookupSingletonWithMetaLev #-}
 
 
-instance Ord k => VarLookupCmb (VarMp' k v) (VarMp' k v) where
-  m1 |+> m2 = varmpUnionWith const m1 m2
+instance Ord k => LookupApply (VarMp' k v) (VarMp' k v) where
+  m1 `apply` m2 = varmpUnionWith const m1 m2
 
 {-
 instToL1VarMp :: [InstTo] -> VarMp
