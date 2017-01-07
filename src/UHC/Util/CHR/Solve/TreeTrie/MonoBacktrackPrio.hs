@@ -95,6 +95,8 @@ import           UHC.Util.CHR.Rule
 import           UHC.Util.CHR.Solve.TreeTrie.Internal.Shared
 import           UHC.Util.Substitutable
 import           UHC.Util.VarLookup
+import           UHC.Util.Lookup                               (Lookup, LookupApply, Scoped)
+import qualified UHC.Util.Lookup                               as Lk
 import           UHC.Util.VarMp
 import           UHC.Util.AssocL
 import           UHC.Util.Fresh
@@ -327,7 +329,10 @@ class ( IsCHRSolvable env cnstr guard bprio prio subst
       -- , Ord (TTKey cnstr)
       -- , Ord prio
       -- , Ord (VarLookupKey subst)
-      , VarLookup subst -- (VarLookupKey subst) (VarLookupVal subst)
+      -- , VarLookup subst -- (VarLookupKey subst) (VarLookupVal subst)
+      , Lookup subst (VarLookupKey subst) (VarLookupVal subst)
+      , LookupApply subst subst
+      -- , Scoped subst
       -- , TTKeyable cnstr
       -- , MonadIO m -- for debugging
       , Fresh Int (ExtrValVarKey (VarLookupVal subst))
@@ -887,8 +892,8 @@ chrSolve opts env = slv
                   case mbSlv of
                     Just (s,_) -> do
                           -- the newfound subst may reactivate waiting work
-                          splitOffResolvedWaitForVarWork (varlookupKeysSet s) >>= mapM_ addToWorkQueue
-                          sndl ^* chrbstSolveSubst =$: (s |+>)
+                          splitOffResolvedWaitForVarWork (Lk.keysSet s) >>= mapM_ addToWorkQueue
+                          sndl ^* chrbstSolveSubst =$: (s `Lk.apply`)
                           -- just continue with next work
                           slv
                     _ | chrslvOptSucceedOnFailedSolve opts -> do
@@ -1035,7 +1040,7 @@ chrSolve opts env = slv
           -- fresh vars for unbound body metavars
           freshSubst <- slvFreshSubst freeHeadVars body
           -- add each constraint from the body, applying the meta var subst
-          newWkInxs <- forM body $ addConstraintAsWork . ((freshSubst |+> matchSubst) `varUpd`)
+          newWkInxs <- forM body $ addConstraintAsWork . ((freshSubst `Lk.apply` matchSubst) `varUpd`)
           -- mark this combi of chr and work as visited
           let matchedCombi = MatchedCombi ci workInxs
           sndl ^* chrbstMatchedCombis =$: Set.insert matchedCombi
@@ -1056,9 +1061,9 @@ slvFreshSubst
        -> x
        -> CHRMonoBacktrackPrioT c g bp p s e m s
 slvFreshSubst except x = 
-    fmap (foldr (|+>) varlookupEmpty) $
+    fmap (foldr Lk.apply Lk.empty) $
       forM (Set.toList $ varFreeSet x `Set.difference` except) $ \v ->
-        modifyAndGet (sndl ^* chrbstFreshVar) (freshWith $ Just v) >>= \v' -> return $ (varlookupSingleton v (varTermMkKey v') :: s)
+        modifyAndGet (sndl ^* chrbstFreshVar) (freshWith $ Just v) >>= \v' -> return $ (Lk.singleton v (varTermMkKey v') :: s)
 
 -- | Lookup work in a store part of the global state
 slvLookup

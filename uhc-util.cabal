@@ -2,11 +2,11 @@ Name:				uhc-util
 Version:			0.1.6.8
 cabal-version:      >= 1.6
 License:			BSD3
-Copyright:			Utrecht University, Department of Information and Computing Sciences, Software Technology group
+Copyright:			Atze Dijkstra & Utrecht University, Department of Information and Computing Sciences, Software Technology group
 Build-Type:			Simple
 license-file:		LICENSE 
 Author:				Atze Dijkstra
-Maintainer:         atze@uu.nl
+Maintainer:         atzedijkstra@gmail.com
 Homepage:           https://github.com/UU-ComputerScience/uhc-util
 Bug-Reports:        https://github.com/UU-ComputerScience/uhc-util/issues
 Category:			Development
@@ -37,7 +37,8 @@ library
     time >= 1.2,
     fclabels >= 2.0.3,
     logict-state >= 0.1.0.2,
-    pqueue >= 1.3.1
+    pqueue >= 1.3.1,
+    vector >= 0.11
   Exposed-Modules:
     UHC.Util.AGraph,
     UHC.Util.AssocL,
@@ -63,6 +64,11 @@ library
     UHC.Util.Fresh,
     UHC.Util.Hashable,
     UHC.Util.Lens,
+    UHC.Util.Lookup,
+    UHC.Util.Lookup.Types,
+    UHC.Util.Lookup.Instances,
+    UHC.Util.Lookup.Scoped,
+    UHC.Util.Lookup.Stacked,
     UHC.Util.Nm,
     UHC.Util.ParseErrPrettyPrint,
     UHC.Util.ParseUtils,

@@ -15,11 +15,12 @@ module UHC.Util.Lens
   , (^.)
   , (^=)
   , (^$=)
+  , getL
   
   , (=.)
   , (=:)
   , (=$:)
-  , modifyAndGet
+  , modifyAndGet, (=$^:), modL
   , getl
   
   -- * Misc
@@ -76,6 +77,11 @@ infixl 8 ^.
 a ^. f = get f a
 {-# INLINE (^.) #-}
 
+-- | Alias for 'get' to avoid conflict with state get; not happy choice because of 'getl'
+getL :: (f :-> a) -> f -> a
+getL = get
+{-# INLINE getL #-}
+
 infixr 4 ^=
 -- | functional setter, which acts like a field assigner
 (^=) :: (a :-> b) -> b -> a -> a
@@ -90,13 +96,13 @@ infixr 4 ^$=
 
 -- * Operator interface for monadic part (occasionally similar to Data.Lens)
 
-{-
 infixr 4 =$^:
 -- | monadic modify & set & get
-(=$^:) :: MS.MonadState f m => (f :-> o) -> (o -> (a,o)) -> m a
-(=$^:) = M.modify
+(=$^:), modL :: MS.MonadState f m => (f :-> o) -> (o -> (a,o)) -> m a
+(=$^:) = M.modifyAndGet
 {-# INLINE (=$^:) #-}
--}
+modL = M.modifyAndGet
+{-# INLINE modL #-}
 
 infixr 4 =$:
 -- | monadic modify & set

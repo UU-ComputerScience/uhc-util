@@ -18,6 +18,7 @@ module UHC.Util.CHR.Solve.TreeTrie.Examples.Term.AST
   where
 
 import           UHC.Util.VarLookup
+import qualified UHC.Util.Lookup                                as Lk
 import           UHC.Util.Substitutable
 import           UHC.Util.TreeTrie
 import           UHC.Util.Pretty as PP
@@ -37,8 +38,8 @@ import qualified Data.List as List
 import           Control.Monad
 import           Control.Monad.IO.Class
 import           Control.Applicative
-import qualified UHC.Util.CHR.Solve.TreeTrie.Mono as M
-import qualified UHC.Util.CHR.Solve.TreeTrie.MonoBacktrackPrio as MBP
+import qualified UHC.Util.CHR.Solve.TreeTrie.Mono               as M
+import qualified UHC.Util.CHR.Solve.TreeTrie.MonoBacktrackPrio  as MBP
 
 import           UHC.Util.Debug
 
@@ -218,6 +219,9 @@ instance VarLookup S where
 
 instance VarLookupCmb S S where
   (|+>) = Map.union
+
+instance Lk.LookupApply S S where
+  apply = Lk.union
 
 instance VarUpdatable S S where
   varUpd s = Map.map (s `varUpd`) -- (|+>)

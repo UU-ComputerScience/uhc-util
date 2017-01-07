@@ -16,16 +16,16 @@ sys	0m0.836s
 -}
 
 {-
--}
 -- 4 Queens problem
 queens @ Queens <=> Row 1, Row 2, Row 3, Row 4.
 row @ Row r <=> Queen r 1 \/ Queen r 2 \/ Queen r 3 \/ Queen r 4.
+-}
 
 {-
+-}
 -- 5 Queens problem
 queens @ Queens <=> Row 1, Row 2, Row 3, Row 4, Row 5.
 row @ Row r <=> Queen r 1 \/ Queen r 2 \/ Queen r 3 \/ Queen r 4 \/ Queen r 5.
--}
 
 {-
 -- 6 Queens problem

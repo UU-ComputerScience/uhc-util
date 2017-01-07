@@ -74,6 +74,8 @@ module UHC.Util.CHR.Base
 
 -- import qualified UHC.Util.TreeTrie as TreeTrie
 import           UHC.Util.VarMp
+import           UHC.Util.Lookup            (Lookup, LookupApply)
+import qualified UHC.Util.Lookup            as Lk
 import           Data.Word
 import           Data.Monoid
 import           Data.Typeable
@@ -180,6 +182,8 @@ chrMatchResolveCompareAndContinue
   :: forall s .
      ( VarLookup s
      , VarLookupCmb s s
+     -- , Lookup s (VarLookupKey s) (VarLookupVal s)
+     -- , LookupApply s s
      , Ord (VarLookupKey s)
      , VarTerm (VarLookupVal s)
      , ExtrValVarKey (VarLookupVal s) ~ VarLookupKey s
@@ -213,7 +217,7 @@ chrMatchResolveCompareAndContinue how ok t1 t2
                                  | otherwise                        -> varContinue chrMatchFail (ok t1) v2
                                  where maybind = chrmatchenvMetaMayBind menv v2
               _                                                     -> chrMatchFail -- ok t1 t2
-        varContinue = varlookupResolveAndContinueM varTermMbKey chrMatchSubst
+        varContinue = {- Lk. -} varlookupResolveAndContinueM varTermMbKey chrMatchSubst
 
 -------------------------------------------------------------------------------------------
 --- CHRCheckable
