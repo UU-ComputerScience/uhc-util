@@ -19,6 +19,7 @@ module UHC.Util.CHR.Solve.TreeTrie.Examples.Term.AST
 
 import           UHC.Util.VarLookup
 import qualified UHC.Util.Lookup                                as Lk
+import qualified UHC.Util.Lookup.Stacked                        as Lk
 import           UHC.Util.Substitutable
 import           UHC.Util.TreeTrie
 import           UHC.Util.Pretty as PP
@@ -360,7 +361,7 @@ instance CHRMatchable E Tm S where
 tmEval :: Tm -> CHRMatcher S Tm
 tmEval x = case x of
           Tm_Int _    -> return x
-          Tm_Var v    -> varlookupResolveAndContinueM varTermMbKey chrMatchSubst chrMatchFailNoBinding tmEval v
+          Tm_Var v    -> Lk.lookupResolveAndContinueM varTermMbKey chrMatchSubst chrMatchFailNoBinding tmEval v
           Tm_Op  o xs -> tmEvalOp o xs
           _           -> chrMatchFail
 
@@ -399,7 +400,7 @@ instance CHRMatchable E P S where
 type instance CHRPrioEvaluatableVal Tm = Prio
 
 instance CHRPrioEvaluatable E Tm S where
-  chrPrioEval e s t = case chrmatcherRun' (\_ -> Tm_Int $ fromIntegral $ unPrio $ (minBound :: Prio)) (\_ _ x -> x) (tmEval t) emptyCHRMatchEnv (StackedVarLookup [s]) of
+  chrPrioEval e s t = case chrmatcherRun' (\_ -> Tm_Int $ fromIntegral $ unPrio $ (minBound :: Prio)) (\_ _ x -> x) (tmEval t) emptyCHRMatchEnv (Lk.lifts s) of
     Tm_Int i -> fromIntegral i
     t        -> minBound
   chrPrioLift = Tm_Int . fromIntegral

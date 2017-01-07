@@ -35,7 +35,7 @@ module UHC.Util.VarLookup
     , MetaLev
     , metaLevVal
     
-    , StackedVarLookup(..)
+    , StackedVarLookup -- (..)
     
     )
   where
@@ -43,6 +43,7 @@ module UHC.Util.VarLookup
 import           Control.Applicative
 import           Data.Maybe
 import           UHC.Util.Pretty
+import           UHC.Util.Lookup.Stacked
 import qualified Data.Set as Set
 
 -------------------------------------------------------------------------------------------
@@ -223,18 +224,26 @@ varlookupcmbFix m1 m2 = m1 |+> m2
 -------------------------------------------------------------------------------------------
 
 -- | Stacked VarLookup derived from a base one, to allow a use of multiple lookups but update on top only
+{-
 newtype StackedVarLookup s = StackedVarLookup {unStackedVarLookup :: [s]}
   deriving Foldable
+-}
+type StackedVarLookup s = Stacks s
 
 type instance VarLookupKey (StackedVarLookup s) = VarLookupKey s
 type instance VarLookupVal (StackedVarLookup s) = VarLookupVal s
+type instance StackedElt   (StackedVarLookup s) = s
 
+
+{-
 instance Show (StackedVarLookup s) where
   show _ = "StackedVarLookup"
 
 instance PP s => PP (StackedVarLookup s) where
   pp (StackedVarLookup xs) = ppCurlysCommas $ map pp xs
+-}
 
+{-
 instance (VarLookup m) => VarLookup (StackedVarLookup m) where
   varlookupWithMetaLev l k (StackedVarLookup ms) = listToMaybe $ catMaybes $ map (varlookupWithMetaLev l k) ms
   varlookupKeysSetWithMetaLev l (StackedVarLookup ms) = Set.unions $ map (varlookupKeysSetWithMetaLev l) ms
@@ -245,4 +254,5 @@ instance (VarLookup m) => VarLookup (StackedVarLookup m) where
 
 instance VarLookupCmb m1 m2 => VarLookupCmb m1 (StackedVarLookup m2) where
   m1 |+> StackedVarLookup (m2:m2s) = StackedVarLookup $ (m1 |+> m2) : m2s
+-}
 

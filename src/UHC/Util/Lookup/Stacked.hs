@@ -10,6 +10,7 @@
 
 module UHC.Util.Lookup.Stacked
   ( Stacked(..)
+  , StackedElt
   
   , Stacks(..)
   )
@@ -20,6 +21,7 @@ import           Control.Applicative
 import           Control.Arrow
 import           Control.Monad.State
 import           UHC.Util.Lookup.Types
+import           UHC.Util.Pretty
 import           UHC.Util.Lens               as L
 import           Prelude                     hiding (lookup, null)
 import           Data.Maybe
@@ -46,21 +48,24 @@ newtype Stacks l = Stacks {unStacks :: [l]}
 -- Stacked API
 -------------------------------------------------------------------------------------------
 
+type family StackedElt stk :: *
+
 -- | Functionality on top of 'Lookup' for awareness of a scope.
--- Minimal definition 'lifts', 'top'/'topM', 'pop'/'popM', 'push'/'pushM'
-class Stacked stk elt | stk -> elt where
-  -- internal api
-  lifts         :: elt -> stk
+-- Minimal definition 'lifts', 'unlifts,', 'top'/'topM', 'pop'/'popM', 'push'/'pushM'
+class Stacked stk where
+  -- lifting in/out
+  lifts         :: StackedElt stk -> stk
+  unlifts       :: stk -> [StackedElt stk]
   
   -- basic api
-  top           :: stk -> elt
-  pop           :: stk -> (elt,stk)
-  push          :: elt -> stk -> stk
+  top           :: stk -> StackedElt stk
+  pop           :: stk -> (StackedElt stk,stk)
+  push          :: StackedElt stk -> stk -> stk
   
   -- monadic api
-  topM          :: (MonadState stk m) => m elt
-  popM          :: (MonadState stk m) => m elt
-  pushM         :: (MonadState stk m) => elt -> m ()
+  topM          :: (MonadState stk m) => m (StackedElt stk)
+  popM          :: (MonadState stk m) => m (StackedElt stk)
+  pushM         :: (MonadState stk m) => StackedElt stk -> m ()
   
   -- lifted variations
   tops          :: stk -> stk
@@ -94,8 +99,11 @@ class Stacked stk elt | stk -> elt where
 -- Default impl
 -------------------------------------------------------------------------------------------
 
-instance Stacked (Stacks lkup) lkup where
+type instance StackedElt (Stacks e) = e
+
+instance Stacked (Stacks lkup) where
   lifts e = Stacks [e]
+  unlifts = unStacks
   top = List.head . unStacks
   pop (Stacks (h:t)) = (h, Stacks t)
   push h (Stacks t) = Stacks (h:t)
@@ -113,4 +121,10 @@ instance (Lookup lkup k v) => Lookup (Stacks lkup) k v where
 -- modifications only for top level, otherwise use <$>
 instance LookupApply l1 l2 => LookupApply l1 (Stacks l2) where
   l1 `apply` Stacks (h:t) = Stacks $ apply l1 h : t
+
+instance Show (Stacks s) where
+  show _ = "Stacks"
+
+instance PP s => PP (Stacks s) where
+  pp (Stacks xs) = ppCurlysCommas $ map pp xs
 
