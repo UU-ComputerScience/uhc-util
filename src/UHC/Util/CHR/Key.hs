@@ -11,7 +11,7 @@ module UHC.Util.CHR.Key
   )
   where
 
-import UHC.Util.TreeTrie
+import           UHC.Util.TreeTrie
 
 -------------------------------------------------------------------------------------------
 --- TTKeyable

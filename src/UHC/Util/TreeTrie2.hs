@@ -1,4 +1,4 @@
-{-# LANGUAGE CPP, ScopedTypeVariables, StandaloneDeriving, TypeFamilies, MultiParamTypeClasses #-}
+{-# LANGUAGE CPP, ScopedTypeVariables, StandaloneDeriving, TypeFamilies, MultiParamTypeClasses, PatternGuards, GADTs #-}
 
 -------------------------------------------------------------------------------------------
 --- TreeTrie, variation which allows matching on subtrees marked as a variable (kind of unification)
@@ -25,6 +25,8 @@ candidates is returned.
 
 module UHC.Util.TreeTrie2
   ( -- * Key into TreeTrie
+    PreKey1
+  -- , PreKey1Cont(..)
   {-
     TreeTrie1Key(..)
   , TreeTrieMp1Key(..)
@@ -41,10 +43,20 @@ module UHC.Util.TreeTrie2
   , ttkFixate
   
   , ttkParentChildren
-  
+  -}
     -- * Keyable
+  , TrTrKey
   , TreeTrieKeyable(..)
+  , toTreeTrieKey
   
+  , prekey1
+  , prekey1Wild
+  , prekey1Nil
+  , prekey1Delegate
+  , prekey1WithChildren
+  , prekey1WithChild
+  
+  {-
     -- * TreeTrie
   , TreeTrie
   , emptyTreeTrie
@@ -77,171 +89,105 @@ module UHC.Util.TreeTrie2
   )
   where
 
-import qualified Data.Set as Set
-import qualified Data.Map as Map
+import qualified Data.Set                   as Set
+import qualified Data.Map                   as Map
 import           Data.Maybe
-import           Prelude hiding (lookup,null)
-import qualified UHC.Util.FastSeq as Seq
-import qualified Data.List as List
+import           Prelude                    hiding (lookup,null)
+import qualified UHC.Util.FastSeq           as Seq
+import qualified Data.List                  as List
 import           UHC.Util.AssocL
 import           UHC.Util.Utils
-import           UHC.Util.Pretty hiding (empty)
-import qualified UHC.Util.Pretty as PP
+import           UHC.Util.Pretty            hiding (empty)
+import qualified UHC.Util.Pretty            as PP
 import           Control.Monad
 import           Data.Typeable(Typeable)
 import           GHC.Generics
 import           UHC.Util.Serialize
 
 -------------------------------------------------------------------------------------------
---- Key into TreeTrie
+--- Key AST, used to index into TreeTrie
 -------------------------------------------------------------------------------------------
 
--- | Both key and trie can allow partial matching, indicated by TreeTrie1Key
-data TreeTrie1Key k
-  = TT1K_One    !k
-  | TT1K_Any                            -- used to wildcard match a single node in a tree
-  deriving (Eq, Ord, Generic)
+-- | Key used on 1 level of trie
+data Key1 k
+  = Key1_Single k
+  | Key1_Multi  [Key1 k]
+  | Key1_Wild                   -- ^ equal to anything
+  | Key1_Nil                    -- ^ equal to nothing, except Key1_Wild
+  deriving (Generic, Typeable)
 
--- | A key in a layer of TreeTrieMpKey
-data TreeTrieMp1Key k
-  = TTM1K       ![TreeTrie1Key k]
-  | TTM1K_Any                           -- used to wildcard match multiple children, internal only
-  deriving (Eq, Ord, Generic)
+instance Functor Key1 where
+  fmap f (Key1_Single k) = Key1_Single $ f k
+  fmap f (Key1_Multi ks) = Key1_Multi  $ map (fmap f) ks
+  fmap _ Key1_Wild       = Key1_Wild
+  fmap _ Key1_Nil        = Key1_Nil
 
--- | The key into a map used internally by the trie
-newtype TreeTrieMpKey k
-  = TreeTrieMpKey {unTreeTrieMpKey :: [TreeTrieMp1Key k]}
-  deriving (Eq, Ord, Generic)
+instance Eq k => Eq (Key1 k) where
+  Key1_Single k1 == Key1_Single k2 = k1  == k2
+  Key1_Multi ks1 == Key1_Multi ks2 = ks1 == ks2
+  Key1_Nil       == Key1_Nil       = True
+  Key1_Wild      == _              = True
+  _              == Key1_Wild      = True
+  _              == _              = False
 
--- | The key used externally to index into a trie
-newtype TreeTrieKey k
-  = TreeTrieKey {unTreeTrieKey :: [TreeTrieMpKey k]}
-  deriving (Eq, Ord, Generic)
+instance Ord k => Ord (Key1 k) where
+  Key1_Single k1 `compare` Key1_Single k2 = k1  `compare` k2
+  Key1_Multi ks1 `compare` Key1_Multi ks2 = ks1 `compare` ks2
+  Key1_Nil       `compare` Key1_Nil       = EQ
+  Key1_Wild      `compare` _              = EQ
+  _              `compare` Key1_Wild      = EQ
+  Key1_Nil       `compare` _              = LT
+  _              `compare` Key1_Nil       = GT
+  Key1_Single _  `compare` _              = LT
+  _              `compare` Key1_Single _  = GT
 
-#if __GLASGOW_HASKELL__ >= 708
-deriving instance Typeable  TreeTrie1Key
-deriving instance Typeable  TreeTrieMp1Key
-#else
-deriving instance Typeable1 TreeTrie1Key
-deriving instance Typeable1 TreeTrieMp1Key
-#endif
--- deriving instance Data x => Data (TreeTrie1Key x) 
--- deriving instance Data x => Data (TreeTrieMp1Key x) 
+instance Show k => Show (Key1 k) where
+  show (Key1_Single k) = "(" ++ show k ++ ")"
+  show (Key1_Multi ks) = "[" ++ (concat $ List.intersperse "," $ map show ks) ++ "]"
+  show  Key1_Wild      = "*"
+  show  Key1_Nil       = "_"
 
-instance Show k => Show (TreeTrie1Key k) where
-  show  TT1K_Any    = "*"
-  show (TT1K_One k) = "(1:" ++ show k ++ ")"
+instance PP k => PP (Key1 k) where
+  pp (Key1_Single k) = ppParens k
+  pp (Key1_Multi ks) = ppBracketsCommas ks
+  pp  Key1_Wild      = pp "*"
+  pp  Key1_Nil       = pp "_"
 
-instance Show k => Show (TreeTrieMp1Key k) where
-  show (TTM1K_Any )  = "**" -- ++ show i
-  show (TTM1K k)     = show k
+-- | Full key
+newtype Key k = Key {unKey :: [Key1 k]}
+  deriving (Eq, Ord, Generic, Typeable, Show)
 
-instance PP k => PP (TreeTrie1Key k) where
-  pp  TT1K_Any    = pp "*"
-  pp (TT1K_One k) = ppParens $ "1:" >|< k
+instance PP k => PP (Key k) where
+  pp = ppBracketsCommas . unKey
 
-instance PP k => PP (TreeTrieMp1Key k) where
-  pp = ppTreeTrieMp1Key
+-- | Simplify a generated raw Key1 into its canonical form used for indexing
+key1RawToCanon :: Key1 k -> Key1 k
+key1RawToCanon k = case k of
+    Key1_Multi ks 
+      | List.null ks  -> Key1_Nil
+      | all iswld sks -> Key1_Wild
+      | all issim sks -> Key1_Nil
+      | [sk] <- sks   -> sk
+      | otherwise     -> Key1_Multi sks
+      where sks = map key1RawToCanon ks
+    -- k | issimp k       -> Key1_Nil
+    k                  -> k
+  where -- issimp Key1_Wild = True
+        isnil Key1_Nil  = True
+        isnil _         = False
+        iswld Key1_Wild = True
+        iswld _         = False
+        issim k         = isnil k || iswld k
 
-ppTreeTrieMp1Key :: PP k => TreeTrieMp1Key k -> PP_Doc
-ppTreeTrieMp1Key (TTM1K l) = ppBracketsCommas l
-ppTreeTrieMp1Key (TTM1K_Any ) = pp "**" -- >|< i
-
-ppTreeTrieMpKey :: PP k => TreeTrieMpKey k -> PP_Doc
-ppTreeTrieMpKey = ppListSep "<" ">" "," . map ppTreeTrieMp1Key . unTreeTrieMpKey
-
--- | Pretty print TrieKey
-ppTreeTrieKey :: PP k => TreeTrieKey k -> PP_Doc
-ppTreeTrieKey = ppBracketsCommas . map ppTreeTrieMpKey . unTreeTrieKey
-
-instance Show k => Show (TreeTrieMpKey k) where
-  show (TreeTrieMpKey ks) = show ks
-
-instance Show k => Show (TreeTrieKey k) where
-  show (TreeTrieKey ks) = show ks
-
-instance PP k => PP (TreeTrieMpKey k) where
-  pp = ppTreeTrieMpKey
-  {-# INLINE pp #-}
-
-instance PP k => PP (TreeTrieKey k) where
-  pp = ppTreeTrieKey
-  {-# INLINE pp #-}
-
--------------------------------------------------------------------------------------------
---- TreeTrieMpKey inductive construction from new node and children keys
--------------------------------------------------------------------------------------------
-
-
--- | Make singleton, which should at end be stripped from bottom layer of empty TTM1K []
-ttkSingleton :: TreeTrie1Key k -> TreeTrieKey k
-ttkSingleton k = TreeTrieKey $ TreeTrieMpKey [TTM1K [k]] : unTreeTrieKey ttkEmpty
-
--- | empty key
-ttkEmpty :: TreeTrieKey k
-ttkEmpty = TreeTrieKey [TreeTrieMpKey [TTM1K []]]
-
--- | Construct intermediate structure for children for a new Key
---   length ks >= 2
-ttkChildren :: [TreeTrieKey k] -> TreeTrieKey k
-ttkChildren ks
-  = TreeTrieKey $ map TreeTrieMpKey
-    $ [TTM1K $ concat [k | TTM1K k <- flatten hs]]       -- first level children are put together in singleton list of list with all children
-      : merge (split tls)                                 -- and the rest is just concatenated
-  where (hs,tls) = split ks
-        split = unzip . map ((\(h,t) -> (h, TreeTrieKey t)) . hdAndTl . unTreeTrieKey)
-        merge (hs,[]) = [flatten hs]
-        merge (hs,tls) = flatten hs : merge (split $ filter (not . List.null . unTreeTrieKey) tls)
-        flatten = concatMap (\(TreeTrieMpKey h) -> h)
-
--- | Add a new layer with single node on top, combining the rest.
-ttkAdd' :: TreeTrie1Key k -> TreeTrieKey k -> TreeTrieKey k
-ttkAdd' k (TreeTrieKey ks) = TreeTrieKey $ TreeTrieMpKey [TTM1K [k]] : ks
-
--- | Add a new layer with single node on top, combining the rest.
---   length ks >= 2
-ttkAdd :: TreeTrie1Key k -> [TreeTrieKey k] -> TreeTrieKey k
-ttkAdd k ks = ttkAdd' k (ttkChildren ks)
-
--- | Fixate by removing lowest layer empty children
-ttkFixate :: TreeTrieKey k -> TreeTrieKey k
-ttkFixate (TreeTrieKey (kk : kks))
-  | all (\(TTM1K k) -> List.null k) (unTreeTrieMpKey kk)
-              = TreeTrieKey []
-  | otherwise = TreeTrieKey $ kk : unTreeTrieKey (ttkFixate $ TreeTrieKey kks)
-ttkFixate _   = TreeTrieKey []
-
--------------------------------------------------------------------------------------------
---- TreeTrieKey deconstruction
--------------------------------------------------------------------------------------------
-
-
--- | Split key into parent and children components, inverse of ttkAdd'
-ttkParentChildren :: TreeTrieKey k -> ( TreeTrie1Key k, TreeTrieKey k )
-ttkParentChildren (TreeTrieKey k)
-  = case k of
-      (TreeTrieMpKey [TTM1K [h]] : t) -> (h, TreeTrieKey t)
-
--------------------------------------------------------------------------------------------
---- TreeTrieMpKey matching
--------------------------------------------------------------------------------------------
-
-
--- | Match 1st arg with wildcards to second, returning the to be propagated key to next layer in tree
-matchTreeTrieMpKeyTo :: Eq k => TreeTrieMpKey k -> TreeTrieMpKey k -> Maybe (TreeTrieMpKey k -> TreeTrieMpKey k)
-matchTreeTrieMpKeyTo (TreeTrieMpKey l) (TreeTrieMpKey r)
-  | all isJust llrr = Just (\(TreeTrieMpKey k) -> TreeTrieMpKey $ concat $ zipWith ($) (concatMap (fromJust) llrr) k)
-  | otherwise       = Nothing
-  where llrr = zipWith m l r
-        m (TTM1K     l) (TTM1K r) | length l == length r && all isJust lr
-                                                  = Just (concatMap fromJust lr)
-                                  | otherwise     = Nothing
-                                  where lr = zipWith m1 l r
-        m (TTM1K_Any  ) (TTM1K []) = Just []
-        m (TTM1K_Any  ) (TTM1K r ) = Just [const $ replicate (length r) TTM1K_Any]
-        m1  TT1K_Any     _                    = Just [const [TTM1K_Any]]
-        m1 (TT1K_One l) (TT1K_One r) | l == r = Just [\x -> [x]]
-        m1  _            _                    = Nothing
+-- | Simplify a generated raw Key into its canonical form used for indexing
+keyRawToCanon :: Key k -> Key k
+keyRawToCanon = Key . simp . unKey
+  where simp ks = case ks of
+          (k:ks) | Key1_Nil  <- kc -> []
+                 | Key1_Wild <- kc -> [] -- [Key1_Wild]
+                 | otherwise       -> kc : simp ks
+            where kc = key1RawToCanon k
+          _ -> []
 
 -------------------------------------------------------------------------------------------
 --- Keyable
@@ -249,9 +195,54 @@ matchTreeTrieMpKeyTo (TreeTrieMpKey l) (TreeTrieMpKey r)
 
 type family TrTrKey x :: *
 
+type instance TrTrKey [x] = TrTrKey x
+
+data PreKey1Cont y where
+  PreKey1Cont_None :: PreKey1Cont y
+  PreKey1Cont      :: (TrTrKey y ~ TrTrKey x, TreeTrieKeyable x) =>  x  -> PreKey1Cont y
+  PreKey1Conts     :: (TrTrKey y ~ TrTrKey x, TreeTrieKeyable x) => [x] -> PreKey1Cont y
+
+data PreKey1 x
+  = PreKey1       (TrTrKey x) (PreKey1Cont x)
+  | PreKey1_Deleg             (PreKey1Cont x)
+  | PreKey1_Wild
+  | PreKey1_Nil
+  
 -- | Keyable values, i.e. capable of yielding a TreeTrieKey for retrieval from a trie
 class TreeTrieKeyable x where
-  toTreeTrieKey :: x -> TreeTrieKey (TrTrKey x)
+  toTreeTriePreKey1 :: x -> PreKey1 x
+
+toTreeTrieKey :: TreeTrieKeyable x => x -> Key (TrTrKey x)
+toTreeTrieKey = keyRawToCanon . Key . mkx
+  where nil   = repeat Key1_Nil
+        mkx x = case toTreeTriePreKey1 x of
+                  PreKey1 k     mbx -> Key1_Single k : cont mbx
+                  PreKey1_Deleg mbx -> cont mbx
+                  PreKey1_Wild      -> repeat Key1_Wild
+                  PreKey1_Nil       -> nil
+        cont :: PreKey1Cont y -> [Key1 (TrTrKey y)]
+        cont c = case c of
+          PreKey1Cont_None -> nil
+          PreKey1Cont  x   -> mkx x
+          PreKey1Conts xs  -> zipWithN Key1_Multi $ map mkx xs
+
+prekey1 :: TrTrKey x -> PreKey1 x
+prekey1 k = PreKey1 k PreKey1Cont_None
+
+prekey1Wild :: PreKey1 x
+prekey1Wild = PreKey1_Wild
+
+prekey1Nil :: PreKey1 x
+prekey1Nil = PreKey1_Nil
+
+prekey1Delegate :: (TrTrKey y ~ TrTrKey x, TreeTrieKeyable y) => y -> PreKey1 x
+prekey1Delegate c = PreKey1_Deleg (PreKey1Cont c)
+
+prekey1WithChild :: (TrTrKey y ~ TrTrKey x, TreeTrieKeyable y) => TrTrKey x -> y -> PreKey1 x
+prekey1WithChild k c = PreKey1 k (PreKey1Cont c)
+
+prekey1WithChildren :: (TrTrKey y ~ TrTrKey x, TreeTrieKeyable y) => TrTrKey x -> [y] -> PreKey1 x
+prekey1WithChildren k cs = PreKey1 k (PreKey1Conts cs)
 
 -------------------------------------------------------------------------------------------
 --- TreeTrie structure
@@ -259,7 +250,7 @@ class TreeTrieKeyable x where
 
 -- | Child structure
 type TreeTrieChildren k v
-  = Map.Map (TreeTrieMpKey k) (TreeTrie k v)
+  = Map.Map (Key1 k) (TreeTrie k v)
 
 -- | The trie structure, branching out on (1) kind, (2) nr of children, (3) actual key
 data TreeTrie k v
@@ -274,12 +265,13 @@ emptyTreeTrie = TreeTrie Nothing Map.empty
 
 empty = emptyTreeTrie
 
+{-
 instance (Show k, Show v) => Show (TreeTrie k v) where
   showsPrec _ t = showList $ toListByKey t
 
 instance (PP k, PP v) => PP (TreeTrie k v) where
   pp t = ppBracketsCommasBlock $ map (\(a,b) -> ppTreeTrieKey a >#< ":" >#< b) $ toListByKey t
-
+-}
 
 -------------------------------------------------------------------------------------------
 --- Conversion
@@ -287,7 +279,7 @@ instance (PP k, PP v) => PP (TreeTrie k v) where
 
 -- Reconstruction of original key-value pairs.
 
-
+{-
 toFastSeqSubs :: TreeTrieChildren k v -> Seq.FastSeq (TreeTrieKey k, v)
 toFastSeqSubs ttries
   = Seq.unions
@@ -319,6 +311,7 @@ fromListWith cmb = fromListByKeyWith cmb
 
 fromList :: Ord k => [(TreeTrieKey k,v)] -> TreeTrie k v
 fromList = fromListByKey
+-}
 
 -------------------------------------------------------------------------------------------
 --- TreeTrie lookup/insertion, how to
@@ -339,6 +332,7 @@ data TreeTrieLookup
 --- Lookup
 -------------------------------------------------------------------------------------------
 
+{-
 data LookupAllMatch v
   = LookupAllMatch
       { lookupAllMatchWildInTrie    :: [v]
@@ -392,6 +386,7 @@ lookupAllMatch (TreeTrieKey ks) ttrie
                         , let m = matchTreeTrieMpKeyTo k kt
                         , isJust m
                         ]
+-}
 {-
     -- lookup
     l updTKey ks ttrie = case ks of
@@ -530,14 +525,16 @@ isEmpty ttrie
 null :: TreeTrie k v -> Bool
 null = isEmpty
 
+{-
 elems :: TreeTrie k v -> [v]
 elems = map snd . toListByKey
+-}
 
 -------------------------------------------------------------------------------------------
 --- Construction
 -------------------------------------------------------------------------------------------
 
-
+{-
 singleton :: Ord k => TreeTrieKey k -> v -> TreeTrie k v
 singleton (TreeTrieKey keys) val
   = s keys
@@ -546,12 +543,13 @@ singleton (TreeTrieKey keys) val
 
 singletonKeyable :: (Ord (TrTrKey v),TreeTrieKeyable v) => v -> TreeTrie (TrTrKey v) v
 singletonKeyable val = singleton (toTreeTrieKey val) val
+-}
 
 -------------------------------------------------------------------------------------------
 --- Union, insert, ...
 -------------------------------------------------------------------------------------------
 
-
+{-
 unionWith :: Ord k => (v -> v -> v) -> TreeTrie k v -> TreeTrie k v -> TreeTrie k v
 unionWith cmb t1 t2
   = TreeTrie
@@ -583,6 +581,7 @@ insert = insertByKey
 
 insertKeyable :: (Ord (TrTrKey v),TreeTrieKeyable v) => v -> TreeTrie (TrTrKey v) v -> TreeTrie (TrTrKey v) v
 insertKeyable val = insertByKey (toTreeTrieKey val) val
+-}
 
 -------------------------------------------------------------------------------------------
 --- Delete, ...
@@ -612,6 +611,7 @@ deleteListByKey keys ttrie = foldl (\t k -> deleteByKey k t) ttrie keys
 --- Instances: Serialize
 -------------------------------------------------------------------------------------------
 
+{-
 instance Serialize k => Serialize (TreeTrie1Key k) where
   sput (TT1K_Any            ) = sputWord8 0
   sput (TT1K_One   a        ) = sputWord8 1 >> sput a
@@ -636,11 +636,13 @@ instance (Ord k, Serialize k, Serialize v) => Serialize (TreeTrie k v) where
   
 instance (Serialize k) => Serialize (TreeTrieMpKey k)
 instance (Serialize k) => Serialize (TreeTrieKey k)
+-}
 
 -------------------------------------------------------------------------------------------
 --- Test
 -------------------------------------------------------------------------------------------
 
+{-
 test1
   = fromListByKey
       [ ( TreeTrieKey
@@ -677,6 +679,7 @@ t1k1 = TreeTrieKey
           , TreeTrieMpKey [TTM1K [TT1K_Any, TT1K_One "P"]]
           , TreeTrieMpKey [TTM1K [TT1K_One "D", TT1K_One "F"], TTM1K []]
           ]
+-}
 
 {-
 m1 = fromJust 
@@ -823,3 +826,161 @@ l1t3 = lookupPartialByKey' (,) TTL_WildInTrie
   ]
 
 -}
+
+-------------------------------------------------------------------------------------------
+--- Key into TreeTrie
+-------------------------------------------------------------------------------------------
+
+{-
+-- | Both key and trie can allow partial matching, indicated by TreeTrie1Key
+data TreeTrie1Key k
+  = TT1K_One    !k
+  | TT1K_Any                            -- used to wildcard match a single node in a tree
+  deriving (Eq, Ord, Generic)
+
+-- | A key in a layer of TreeTrieMpKey
+data TreeTrieMp1Key k
+  = TTM1K       ![TreeTrie1Key k]
+  | TTM1K_Any                           -- used to wildcard match multiple children, internal only
+  deriving (Eq, Ord, Generic)
+
+-- | The key into a map used internally by the trie
+newtype TreeTrieMpKey k
+  = TreeTrieMpKey {unTreeTrieMpKey :: [TreeTrieMp1Key k]}
+  deriving (Eq, Ord, Generic)
+
+-- | The key used externally to index into a trie
+newtype TreeTrieKey k
+  = TreeTrieKey {unTreeTrieKey :: [TreeTrieMpKey k]}
+  deriving (Eq, Ord, Generic)
+
+#if __GLASGOW_HASKELL__ >= 708
+deriving instance Typeable  TreeTrie1Key
+deriving instance Typeable  TreeTrieMp1Key
+#else
+deriving instance Typeable1 TreeTrie1Key
+deriving instance Typeable1 TreeTrieMp1Key
+#endif
+-- deriving instance Data x => Data (TreeTrie1Key x) 
+-- deriving instance Data x => Data (TreeTrieMp1Key x) 
+
+instance Show k => Show (TreeTrie1Key k) where
+  show  TT1K_Any    = "*"
+  show (TT1K_One k) = "(1:" ++ show k ++ ")"
+
+instance Show k => Show (TreeTrieMp1Key k) where
+  show (TTM1K_Any )  = "**" -- ++ show i
+  show (TTM1K k)     = show k
+
+instance PP k => PP (TreeTrie1Key k) where
+  pp  TT1K_Any    = pp "*"
+  pp (TT1K_One k) = ppParens $ "1:" >|< k
+
+instance PP k => PP (TreeTrieMp1Key k) where
+  pp = ppTreeTrieMp1Key
+
+ppTreeTrieMp1Key :: PP k => TreeTrieMp1Key k -> PP_Doc
+ppTreeTrieMp1Key (TTM1K l) = ppBracketsCommas l
+ppTreeTrieMp1Key (TTM1K_Any ) = pp "**" -- >|< i
+
+ppTreeTrieMpKey :: PP k => TreeTrieMpKey k -> PP_Doc
+ppTreeTrieMpKey = ppListSep "<" ">" "," . map ppTreeTrieMp1Key . unTreeTrieMpKey
+
+-- | Pretty print TrieKey
+ppTreeTrieKey :: PP k => TreeTrieKey k -> PP_Doc
+ppTreeTrieKey = ppBracketsCommas . map ppTreeTrieMpKey . unTreeTrieKey
+
+instance Show k => Show (TreeTrieMpKey k) where
+  show (TreeTrieMpKey ks) = show ks
+
+instance Show k => Show (TreeTrieKey k) where
+  show (TreeTrieKey ks) = show ks
+
+instance PP k => PP (TreeTrieMpKey k) where
+  pp = ppTreeTrieMpKey
+  {-# INLINE pp #-}
+
+instance PP k => PP (TreeTrieKey k) where
+  pp = ppTreeTrieKey
+  {-# INLINE pp #-}
+
+-}
+
+-------------------------------------------------------------------------------------------
+--- TreeTrieMpKey inductive construction from new node and children keys
+-------------------------------------------------------------------------------------------
+
+{-
+-- | Make singleton, which should at end be stripped from bottom layer of empty TTM1K []
+ttkSingleton :: TreeTrie1Key k -> TreeTrieKey k
+ttkSingleton k = TreeTrieKey $ TreeTrieMpKey [TTM1K [k]] : unTreeTrieKey ttkEmpty
+
+-- | empty key
+ttkEmpty :: TreeTrieKey k
+ttkEmpty = TreeTrieKey [TreeTrieMpKey [TTM1K []]]
+
+-- | Construct intermediate structure for children for a new Key
+--   length ks >= 2
+ttkChildren :: [TreeTrieKey k] -> TreeTrieKey k
+ttkChildren ks
+  = TreeTrieKey $ map TreeTrieMpKey
+    $ [TTM1K $ concat [k | TTM1K k <- flatten hs]]       -- first level children are put together in singleton list of list with all children
+      : merge (split tls)                                 -- and the rest is just concatenated
+  where (hs,tls) = split ks
+        split = unzip . map ((\(h,t) -> (h, TreeTrieKey t)) . hdAndTl . unTreeTrieKey)
+        merge (hs,[]) = [flatten hs]
+        merge (hs,tls) = flatten hs : merge (split $ filter (not . List.null . unTreeTrieKey) tls)
+        flatten = concatMap (\(TreeTrieMpKey h) -> h)
+
+-- | Add a new layer with single node on top, combining the rest.
+ttkAdd' :: TreeTrie1Key k -> TreeTrieKey k -> TreeTrieKey k
+ttkAdd' k (TreeTrieKey ks) = TreeTrieKey $ TreeTrieMpKey [TTM1K [k]] : ks
+
+-- | Add a new layer with single node on top, combining the rest.
+--   length ks >= 2
+ttkAdd :: TreeTrie1Key k -> [TreeTrieKey k] -> TreeTrieKey k
+ttkAdd k ks = ttkAdd' k (ttkChildren ks)
+
+-- | Fixate by removing lowest layer empty children
+ttkFixate :: TreeTrieKey k -> TreeTrieKey k
+ttkFixate (TreeTrieKey (kk : kks))
+  | all (\(TTM1K k) -> List.null k) (unTreeTrieMpKey kk)
+              = TreeTrieKey []
+  | otherwise = TreeTrieKey $ kk : unTreeTrieKey (ttkFixate $ TreeTrieKey kks)
+ttkFixate _   = TreeTrieKey []
+-}
+
+-------------------------------------------------------------------------------------------
+--- TreeTrieKey deconstruction
+-------------------------------------------------------------------------------------------
+
+{-
+-- | Split key into parent and children components, inverse of ttkAdd'
+ttkParentChildren :: TreeTrieKey k -> ( TreeTrie1Key k, TreeTrieKey k )
+ttkParentChildren (TreeTrieKey k)
+  = case k of
+      (TreeTrieMpKey [TTM1K [h]] : t) -> (h, TreeTrieKey t)
+-}
+
+-------------------------------------------------------------------------------------------
+--- TreeTrieMpKey matching
+-------------------------------------------------------------------------------------------
+
+{-
+-- | Match 1st arg with wildcards to second, returning the to be propagated key to next layer in tree
+matchTreeTrieMpKeyTo :: Eq k => TreeTrieMpKey k -> TreeTrieMpKey k -> Maybe (TreeTrieMpKey k -> TreeTrieMpKey k)
+matchTreeTrieMpKeyTo (TreeTrieMpKey l) (TreeTrieMpKey r)
+  | all isJust llrr = Just (\(TreeTrieMpKey k) -> TreeTrieMpKey $ concat $ zipWith ($) (concatMap (fromJust) llrr) k)
+  | otherwise       = Nothing
+  where llrr = zipWith m l r
+        m (TTM1K     l) (TTM1K r) | length l == length r && all isJust lr
+                                                  = Just (concatMap fromJust lr)
+                                  | otherwise     = Nothing
+                                  where lr = zipWith m1 l r
+        m (TTM1K_Any  ) (TTM1K []) = Just []
+        m (TTM1K_Any  ) (TTM1K r ) = Just [const $ replicate (length r) TTM1K_Any]
+        m1  TT1K_Any     _                    = Just [const [TTM1K_Any]]
+        m1 (TT1K_One l) (TT1K_One r) | l == r = Just [\x -> [x]]
+        m1  _            _                    = Nothing
+-}
+

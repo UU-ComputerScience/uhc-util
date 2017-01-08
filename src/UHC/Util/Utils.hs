@@ -24,6 +24,7 @@ module UHC.Util.Utils
   , splitPlaces
   , combineToDistinguishedEltsBy
   , partitionOnSplit
+  , zipWithN
   
     -- * Tuple
   , tup123to1, tup123to2
@@ -269,6 +270,10 @@ combineToDistinguishedEltsBy eq (l:ls)
                          -> mapMaybe (\ll -> maybe (Just (e:ll)) (const Nothing) $ find (eq e) ll)
                                      ls
                       ) l
+
+zipWithN :: ([x] -> y) -> [[x]] -> [y]
+zipWithN f l | any null l = []
+             | otherwise  = f (map head l) : zipWithN f (map tail l)
 
 -------------------------------------------------------------------------
 -- Tupling, untupling
