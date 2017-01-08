@@ -201,7 +201,7 @@ type SolveState c g s = SolveState' c (Rule c g () ()) (StoredCHR c g) s
 class ( IsCHRConstraint env c s
       , IsCHRGuard env g s
       , LookupApply s s
-      , VarUpdatable s s
+      -- , VarUpdatable s s
       , CHREmptySubstitution s
       , TrTrKey c ~ TTKey c
       ) => IsCHRSolvable env c g s

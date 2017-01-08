@@ -17,7 +17,9 @@ module UHC.Util.Lookup.Types
 
 -------------------------------------------------------------------------------------------
 import qualified Data.Set as Set
-import           Prelude                     hiding (lookup)
+import           Control.Arrow
+import           Prelude                     hiding (lookup, map)
+import qualified Data.List                   as List
 -------------------------------------------------------------------------------------------
 
 -------------------------------------------------------------------------------------------
@@ -56,6 +58,7 @@ class Lookup c k v | c -> k, c -> v where
   keys          :: c -> [k]
   keysSet       :: Ord k => c -> Set.Set k
   elems         :: c -> [v]
+  map           :: (v -> v) -> c -> c
 
   -- defs for functions of which def is optional 
   singleton k v         = fromList [(k,v)]
@@ -68,9 +71,10 @@ class Lookup c k v | c -> k, c -> v where
   unionsWith f l        = foldr1 (unionWith f) l
   unions                = unionsWith const
   delete                = alter (const Nothing)
-  keys                  = map fst . toList
+  keys                  = List.map fst . toList
   keysSet               = Set.fromList . keys
-  elems                 = map snd . toList
+  elems                 = List.map snd . toList
+  map f                 = fromList . List.map (second f) . toList
 
 -- | Default for 'alter' when 'lookup', 'insert' (or 'inserWith'), and 'delete' are defined
 alterDefault :: Lookup c k v => (Maybe v -> Maybe v) -> k -> c -> c

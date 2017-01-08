@@ -11,10 +11,11 @@ module UHC.Util.Lookup.Instances
   where
 
 -------------------------------------------------------------------------------------------
-import qualified Data.IntMap as IMap
-import qualified Data.Map as Map
-import qualified Data.Set as Set
-import           Data.Array.IArray as IAr
+import qualified Data.IntMap                as IMap
+import qualified Data.Map                   as Map
+import qualified Data.Set                   as Set
+import qualified UHC.Util.VecAlloc          as VAr
+import           Data.Array.IArray          as IAr
 import           UHC.Util.Lookup.Types
 -------------------------------------------------------------------------------------------
 
@@ -42,6 +43,7 @@ instance Ord k => Lookup (Map.Map k v) k v where
   keys              = Map.keys
   keysSet           = Map.keysSet
   elems             = Map.elems
+  map               = Map.map
 
 instance Lookup (IMap.IntMap v) IMap.Key v where
   lookup            = IMap.lookup
@@ -62,6 +64,7 @@ instance Lookup (IMap.IntMap v) IMap.Key v where
   empty             = IMap.empty
   keys              = IMap.keys
   elems             = IMap.elems
+  map               = IMap.map
   -- keysSet            = IMap.keysSet
 
 {-
@@ -86,6 +89,13 @@ instance (Ix i, IArray a e) => Lookup (a i e) i e where
   alter             = alterDefault
   delete            = error "instance Lookup for IArray: no impl for delete"
 -}
+
+instance Lookup (VAr.VecAlloc e) Int e where
+  lookup            = VAr.lookup
+  alter             = VAr.alter
+  toList            = VAr.toList
+  fromList          = VAr.fromList
+  null              = VAr.null
 
 -------------------------------------------------------------------------------------------
 -- Instances: LookupApply

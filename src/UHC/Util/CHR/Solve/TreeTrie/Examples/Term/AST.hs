@@ -20,9 +20,10 @@ module UHC.Util.CHR.Solve.TreeTrie.Examples.Term.AST
 import           UHC.Util.VarLookup
 import qualified UHC.Util.Lookup                                as Lk
 import qualified UHC.Util.Lookup.Stacked                        as Lk
+import qualified UHC.Util.Lookup.Scoped                         as Lk hiding (empty)
 import           UHC.Util.Substitutable
 import           UHC.Util.TreeTrie
-import           UHC.Util.Pretty as PP
+import           UHC.Util.Pretty                                as PP
 import           UHC.Util.Serialize
 import           UHC.Util.CHR.Key
 import           UHC.Util.CHR.Base
@@ -33,9 +34,11 @@ import           UHC.Util.Lens
 import           UHC.Util.CHR.GTerm
 import           Data.Typeable
 import           Data.Maybe
-import qualified Data.Map as Map
-import qualified Data.Set as Set
-import qualified Data.List as List
+import qualified Data.Map                                       as Map
+import qualified Data.IntMap                                    as IntMap
+import qualified UHC.Util.VecAlloc                              as VAr
+import qualified Data.Set                                       as Set
+import qualified Data.List                                      as List
 import           Control.Monad
 import           Control.Monad.IO.Class
 import           Control.Applicative
@@ -45,7 +48,9 @@ import qualified UHC.Util.CHR.Solve.TreeTrie.MonoBacktrackPrio  as MBP
 import           UHC.Util.Debug
 
 
-type Var = String -- Int
+type Var = -- IVar
+           String
+           
 
 data Key
   = Key_Int     !Int            
@@ -66,7 +71,7 @@ instance PP Key where
 
 -- | Terms
 data Tm
-  = Tm_Var Var              -- ^ variable (to be substituted)
+  = Tm_Var Var             -- ^ variable (to be substituted)
   | Tm_Int Int              -- ^ int value (for arithmetic)
   | Tm_Str String
   | Tm_Bool Bool            -- ^ bool value
@@ -74,12 +79,6 @@ data Tm
   | Tm_Lst [Tm] (Maybe Tm)  -- ^ special case: list with head segment and term tail
   | Tm_Op  POp    [Tm]      -- ^ interpretable (when solving) term structure
   deriving (Show, Eq, Ord, Typeable, Generic)
-
-{-
-tmIsVar :: Tm -> Maybe Var
-tmIsVar (Tm_Var v) = Just v
-tmIsVar _          = Nothing
--}
 
 instance VarTerm Tm where
   varTermMbKey (Tm_Var v) = Just v
@@ -197,13 +196,18 @@ instance Bounded P where
   minBound = P_Tm $ Tm_Int $ fromIntegral $ unPrio $ minBound
   maxBound = P_Tm $ Tm_Int $ fromIntegral $ unPrio $ maxBound
 
+-- type S = IntMap.IntMap Tm
 type S = Map.Map Var Tm
+-- type S = VAr.VecAlloc Tm
+-- type S = Lk.DefaultScpsLkup Var Tm
 
 type instance VarLookupKey S = Var
 type instance VarLookupVal S = Tm
 
+{-
+-}
 instance PP S where
-  pp = ppAssocLV . Map.toList
+  pp = ppAssocLV . Lk.toList
 
 type instance ExtrValVarKey G = Var
 type instance ExtrValVarKey C = Var
@@ -213,16 +217,16 @@ type instance ExtrValVarKey P = Var
 type instance CHRMatchableKey S = Key
 
 instance VarLookup S where
-  varlookupWithMetaLev _ = Map.lookup
-  varlookupKeysSetWithMetaLev _ = Map.keysSet
-  varlookupSingletonWithMetaLev _ = Map.singleton
-  varlookupEmpty = Map.empty
+  varlookupWithMetaLev _ = Lk.lookup
+  varlookupKeysSetWithMetaLev _ = Lk.keysSet
+  varlookupSingletonWithMetaLev _ = Lk.singleton
+  varlookupEmpty = Lk.empty
 
 instance Lk.LookupApply S S where
   apply = Lk.union
 
 instance VarUpdatable S S where
-  varUpd s = Map.map (s `varUpd`) -- (|+>)
+  varUpd s = {- Lk.apply s . -} Lk.map (s `varUpd`) -- (|+>)
 
 instance VarUpdatable Tm S where
   s `varUpd` t = case fromJust $ varlookupResolveVal varTermMbKey t s <|> return t of
@@ -268,7 +272,7 @@ instance VarExtractable P where
   varFreeSet (P_Tm t) = varFreeSet t
 
 instance CHREmptySubstitution S where
-  chrEmptySubst = Map.empty
+  chrEmptySubst = Lk.empty
 
 instance IsConstraint C where
   cnstrSolvesVia (C_Con _ _) = ConstraintSolvesVia_Rule
@@ -452,7 +456,8 @@ instance GTermAs C G P P Tm where
         return $ Tm_Op (fromJust o') [a,b]
       where o' = List.lookup o [("+", PBOp_Add), ("-", PBOp_Sub), ("*", PBOp_Mul), ("Mod", PBOp_Mod), ("<", PBOp_Lt), ("<=", PBOp_Le)]
     GTm_Con c a -> forM a asTm >>= (return . Tm_Con c)
-    GTm_Var v -> return $ Tm_Var v
+    GTm_Var v -> -- Tm_Var <$> gtermasVar v
+                 return $ Tm_Var v
     GTm_Str v -> return $ Tm_Str v
     GTm_Int i -> return $ Tm_Int (fromInteger i)
     GTm_Nil   -> return $ Tm_Lst [] Nothing

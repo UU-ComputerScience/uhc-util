@@ -1,3 +1,6 @@
+{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TupleSections #-}
+
 -------------------------------------------------------------------------------------------
 --- Generic terms describing constraints, providing interpretation to AST of your choice
 -------------------------------------------------------------------------------------------
@@ -7,6 +10,11 @@ module UHC.Util.CHR.GTerm.AST
   
   , GTermAs(..)
   
+  , GTermAsState(..)
+  , emptyGTermAsState
+  
+  , gtermasVar
+  
   , gtermasFail
   )
   where
@@ -15,9 +23,31 @@ import           Data.Char
 import           Data.Typeable
 import           GHC.Generics
 import           Control.Monad.Except
+import           Control.Monad.State
+import qualified Data.Map                   as Map
 
-import           UHC.Util.Pretty as PP
+import           UHC.Util.Pretty            as PP
 import           UHC.Util.Utils
+import           UHC.Util.Lens
+import           UHC.Util.CHR.Types
+
+-------------------------------------------------------------------------------------------
+--- Supporting types
+-------------------------------------------------------------------------------------------
+
+data GTermAsState
+  = GTermAsState
+      { _gtermasNmToVarMp       :: NmToVarMp
+      }
+
+emptyGTermAsState :: GTermAsState
+emptyGTermAsState = GTermAsState emptyNmToVarMp
+      
+-------------------------------------------------------------------------------------------
+--- Lens
+-------------------------------------------------------------------------------------------
+
+mkLabel ''GTermAsState
 
 -------------------------------------------------------------------------------------------
 --- Term language/AST
@@ -49,7 +79,7 @@ instance PP GTm where
 -------------------------------------------------------------------------------------------
 
 -- | Interpretation monad, which is partial
-type GTermAsM = Either PP_Doc
+type GTermAsM = StateT GTermAsState (Either PP_Doc)
 
 -- | Term interpretation in context of CHR
 class GTermAs cnstr guard bprio prio tm
@@ -79,6 +109,12 @@ class GTermAs cnstr guard bprio prio tm
   asAltBacktrackPrio :: GTm -> GTermAsM bprio
   --
   asRulePrio :: GTm -> GTermAsM prio
+
+--
+gtermasVar :: String -> GTermAsM IVar
+gtermasVar s = modL gtermasNmToVarMp $ \m -> maybe (let i = Map.size m in (i, Map.insert s i m)) (,m) $ Map.lookup s m
+  
+  -- insertLookupWithKey :: Ord k => (k -> a -> a -> a) -> k -> a -> Map k a -> (Maybe a, Map k a)
 
 -- | Fail the interpretation
 gtermasFail :: GTm -> String -> GTermAsM a

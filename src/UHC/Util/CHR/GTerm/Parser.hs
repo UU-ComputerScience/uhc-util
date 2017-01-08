@@ -8,6 +8,7 @@ module UHC.Util.CHR.GTerm.Parser
 import qualified Data.Set as Set
 
 import           Control.Monad
+import           Control.Monad.State
 
 import           UU.Parsing
 import           UU.Scanner
@@ -18,6 +19,7 @@ import           UHC.Util.ParseUtils
 import           UHC.Util.ScanUtils
 import           UHC.Util.Pretty
 
+import           UHC.Util.CHR.Types
 import           UHC.Util.CHR.Rule
 import           UHC.Util.CHR.GTerm.AST
 
@@ -40,7 +42,7 @@ scanOpts
 -------------------------------------------------------------------------------------------
 
 -- | Parse a file as a CHR spec + queries
-parseFile :: GTermAs c g bp rp tm => FilePath -> IO (Either PP_Doc ([Rule c g bp rp], [c]))
+parseFile :: GTermAs c g bp rp tm => FilePath -> IO (Either PP_Doc ([Rule c g bp rp], [c], NmToVarMp))
 parseFile f = do
     toks <- scanFile
       (Set.toList $ scoKeywordsTxt scanOpts)
@@ -49,7 +51,7 @@ parseFile f = do
       (Set.toList $ scoOpChars scanOpts)
       f
     (prog, query) <- parseIOMessage show pProg toks
-    return $ do
+    return $ fmap (\((r,c),s) -> (r, c, _gtermasNmToVarMp s)) $ flip runStateT emptyGTermAsState $ do
       prog <- forM prog $ \r@(Rule {ruleHead=hcs, ruleGuard=gs, ruleBodyAlts=as, ruleBacktrackPrio=mbp, rulePrio=mrp}) -> do
         mbp <- maybe (return Nothing) (fmap Just . asHeadBacktrackPrio) mbp
         mrp <- maybe (return Nothing) (fmap Just . asRulePrio) mrp

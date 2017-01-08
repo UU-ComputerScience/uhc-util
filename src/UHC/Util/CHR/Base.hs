@@ -69,6 +69,8 @@ module UHC.Util.CHR.Base
   -- , CHRBuiltinSolvable(..)
   
   , CHRTrOpt(..)
+  
+  , module UHC.Util.CHR.Types
   )
   where
 
@@ -85,6 +87,7 @@ import           Unsafe.Coerce
 import qualified Data.Set as Set
 import           UHC.Util.Pretty
 import           UHC.Util.CHR.Key
+import           UHC.Util.CHR.Types
 import           Control.Monad
 import           Control.Monad.State.Strict
 import           Control.Monad.Except

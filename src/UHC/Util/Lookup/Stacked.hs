@@ -23,7 +23,7 @@ import           Control.Monad.State
 import           UHC.Util.Lookup.Types
 import           UHC.Util.Pretty
 import           UHC.Util.Lens               as L
-import           Prelude                     hiding (lookup, null)
+import           Prelude                     hiding (lookup, null, map)
 import           Data.Maybe
 import qualified Data.List                   as List
 import qualified Data.Map                    as Map
@@ -109,14 +109,14 @@ instance Stacked (Stacks lkup) where
   push h (Stacks t) = Stacks (h:t)
 
 instance (Lookup lkup k v) => Lookup (Stacks lkup) k v where
-  lookup  k  = listToMaybe . catMaybes . map (lookup k) . unStacks
-  alter f k  = Stacks . map (alter f k) . unStacks
+  lookup  k  = listToMaybe . catMaybes . List.map (lookup k) . unStacks
+  alter f k  = Stacks . List.map (alter f k) . unStacks
   null       = all null . unStacks
   toList     = concatMap toList . unStacks
   fromList   = lifts . fromList
 
   -- for performance reasons
-  keysSet = Set.unions . map keysSet . unStacks
+  keysSet = Set.unions . List.map keysSet . unStacks
 
 -- modifications only for top level, otherwise use <$>
 instance LookupApply l1 l2 => LookupApply l1 (Stacks l2) where
@@ -126,5 +126,5 @@ instance Show (Stacks s) where
   show _ = "Stacks"
 
 instance PP s => PP (Stacks s) where
-  pp (Stacks xs) = ppCurlysCommas $ map pp xs
+  pp (Stacks xs) = ppCurlysCommas $ List.map pp xs
 

@@ -92,7 +92,7 @@ import           Data.Maybe
 import           UHC.Util.Pretty
 import           UHC.Util.AssocL
 import           UHC.Util.VarLookup
-import           UHC.Util.Lookup.Types
+import           UHC.Util.Lookup.Types      (Lookup)
 import           UHC.Util.Utils
 import           Control.Monad
 import           Data.Typeable              (Typeable)

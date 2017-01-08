@@ -46,6 +46,7 @@ library
     UHC.Util.CHR,
     UHC.Util.CHR.Key,
     UHC.Util.CHR.Base,
+    UHC.Util.CHR.Types,
     UHC.Util.CHR.Rule,
     UHC.Util.CHR.Solve.TreeTrie.Mono,
     UHC.Util.CHR.Solve.TreeTrie.MonoBacktrackPrio,
@@ -89,7 +90,8 @@ library
     UHC.Util.TreeTrie2,
     UHC.Util.Utils,
     UHC.Util.VarLookup,
-    UHC.Util.VarMp
+    UHC.Util.VarMp,
+    UHC.Util.VecAlloc
   Other-Modules:
     UHC.Util.CHR.Solve.TreeTrie.Internal.Shared,
     UHC.Util.CHR.Solve.TreeTrie.Internal,

@@ -19,11 +19,14 @@ import           UU.Scanner
 
 import           UHC.Util.Substitutable
 import           UHC.Util.Pretty
+import           UHC.Util.Utils
+import           UHC.Util.Lens
+import qualified UHC.Util.Lookup                                    as Lk
 import           UHC.Util.CHR.Rule
+import           UHC.Util.CHR.Types
 import           UHC.Util.CHR.GTerm.Parser
-import           UHC.Util.CHR.Solve.TreeTrie.MonoBacktrackPrio as MBP
+import           UHC.Util.CHR.Solve.TreeTrie.MonoBacktrackPrio      as MBP
 import           UHC.Util.CHR.Solve.TreeTrie.Examples.Term.AST
--- import           UHC.Util.CHR.Solve.TreeTrie.Examples.Term.Parser
 import           UHC.Util.CHR.Solve.TreeTrie.Visualizer
 
 data RunOpt
@@ -47,7 +50,7 @@ runFile runopts f = do
     mbParse <- parseFile f
     case mbParse of
       Left e -> putPPLn e
-      Right (prog, query) -> do
+      Right (prog, query, varToNmMp) -> do
         let sopts = defaultCHRSolveOpts
                       { chrslvOptSucceedOnLeftoverWork = RunOpt_SucceedOnLeftoverWork `elem` runopts
                       , chrslvOptSucceedOnFailedSolve  = RunOpt_SucceedOnFailedSolve  `elem` runopts
@@ -78,7 +81,7 @@ runFile runopts f = do
                     liftIO $ putStrLn $ "Written visualization as " ++ fileName
                 else (return ())
               return r
-        runCHRMonoBacktrackPrioT (emptyCHRGlobState) (emptyCHRBackState {- _chrbstBacktrackPrio=0 -}) {- 0 -} mbp
+        runCHRMonoBacktrackPrioT (chrgstVarToNmMp ^= Lk.inverse (flip (,)) varToNmMp $ emptyCHRGlobState) (emptyCHRBackState {- _chrbstBacktrackPrio=0 -}) {- 0 -} mbp
 
         -- done
         msg $ "DONE " ++ f

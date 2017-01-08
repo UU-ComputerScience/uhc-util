@@ -10,6 +10,7 @@ import           Data.Maybe
 import           Data.List
 import qualified Data.Map as Map
 import           UHC.Util.Pretty
+import qualified UHC.Util.Lookup as Lk
 import           UHC.Util.PrettySimple
 import           UHC.Util.CHR.Rule
 import           UHC.Util.CHR.GTerm.Parser
@@ -179,7 +180,7 @@ stepToNodes state@(BuildState _ _ nodeMap nodeId layer) step
     (BuildState nodes edges' nodeMap' nodeId' layer', primaryNode) =
       createNodes
         (maybe "[untitled]" id (ruleName rule))
-        (Map.elems (stepSubst step))
+        (Lk.elems (stepSubst step))
         alt
         state
     edges'' =

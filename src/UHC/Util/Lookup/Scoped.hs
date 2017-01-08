@@ -23,8 +23,9 @@ import           Control.Arrow
 import           Control.Monad.State
 import           UHC.Util.Lookup.Types       hiding (empty)
 import qualified UHC.Util.Lookup.Types       as Lkup
+import           UHC.Util.Pretty             hiding (empty)
 import           UHC.Util.Lens               as L
-import           Prelude                     hiding (lookup, null)
+import           Prelude                     hiding (lookup, null, map)
 import qualified Data.List                   as List
 import qualified Data.Map                    as Map
 import qualified Data.Vector.Unboxed         as UV
@@ -46,12 +47,22 @@ data Scopes
       , _scopesCur     :: ScpId
       }
 
+instance Show Scopes where
+  show (Scopes v _ _) = show v
+
+instance PP Scopes where
+  pp = pp . show
+
 -- | Scoped item
 data ScopedItem v
   = ScopedItem
       { _scopeditemId  :: ScpId
       , _scopeditemVal :: v
       }
+  deriving Show
+
+instance PP v => PP (ScopedItem v) where
+  pp (ScopedItem i v) = v >|< ppParens i
 
 -- | Default scope lookup
 data ScpsLkup lkup scps
@@ -59,6 +70,12 @@ data ScpsLkup lkup scps
       { _scpslkupBase    :: lkup
       , _scpslkupScopes  :: scps
       }
+  deriving Show
+
+{-
+instance (PP lkup, PP scps) => PP (ScpsLkup lkup scps) where
+  pp (ScpsLkup lkup scps) = lkup >-< scps
+-}
 
 -------------------------------------------------------------------------------------------
 -- Lenses
@@ -177,7 +194,7 @@ instance (Scoped scps, Lookup lkup k (ScopedItem v)) => Lookup (ScpsLkup lkup sc
   -}
   
   toList (ScpsLkup lkup scps) = [ (k,v) | (k, ScopedItem sc v) <- toList lkup, curIsVisibleFrom sc scps ]
-  fromList l = (ScpsLkup (fromList $ map (\(k,v) -> (k, ScopedItem (scope s) v)) l) s)
+  fromList l = (ScpsLkup (fromList $ List.map (\(k,v) -> (k, ScopedItem (scope s) v)) l) s)
     where s = empty
 
   {-

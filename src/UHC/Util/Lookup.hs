@@ -12,11 +12,14 @@ module UHC.Util.Lookup
   , lookupResolveVar
   , lookupResolveVal
   , lookupResolveAndContinueM
+  
+  , inverse
   )
   where
 
 -------------------------------------------------------------------------------------------
-import           Prelude                        hiding (lookup)
+import           Prelude                        hiding (lookup, map)
+import qualified Data.List                      as List
 import           Control.Applicative
 import           UHC.Util.Lookup.Types
 import           UHC.Util.Lookup.Instances
@@ -40,4 +43,12 @@ lookupResolveVal isVar v m = isVar v >>= \k -> lookupResolveVar isVar k m <|> re
 -- | Monadically lookup a variable, resolve it, continue with either a fail or success monad continuation
 lookupResolveAndContinueM :: (Monad m, Lookup s (VarLookupKey s) (VarLookupVal s)) => (VarLookupVal s -> Maybe (VarLookupKey s)) -> (m s) -> (m a) -> (VarLookupVal s -> m a) -> VarLookupKey s -> m a
 lookupResolveAndContinueM tmIsVar gets failFind okFind k = gets >>= \s -> maybe failFind okFind $ lookupResolveVar tmIsVar k s
+
+-------------------------------------------------------------------------------------------
+--- Utils
+-------------------------------------------------------------------------------------------
+
+-- | Inverse of a lookup
+inverse :: (Lookup l1 k1 v1, Lookup l2 k2 v2) => (k1 -> v1 -> (k2,v2)) -> l1 -> l2
+inverse mk = fromList . List.map (uncurry mk) . toList
 

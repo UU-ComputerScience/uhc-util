@@ -24,6 +24,7 @@ module UHC.Util.CHR.Solve.TreeTrie.MonoBacktrackPrio
 
   , CHRGlobState(..)
   , emptyCHRGlobState
+  , chrgstVarToNmMp
   
   , CHRBackState(..)
   , emptyCHRBackState
@@ -99,6 +100,7 @@ import           UHC.Util.Lookup                               (Lookup, LookupAp
 import qualified UHC.Util.Lookup                               as Lk
 import           UHC.Util.VarMp
 import           UHC.Util.AssocL
+import           UHC.Util.Lens
 import           UHC.Util.Fresh
 import           UHC.Util.TreeTrie as TreeTrie
 import qualified Data.Set as Set
@@ -291,11 +293,12 @@ data CHRGlobState cnstr guard bprio prio subst env m
       , _chrgstScheduleQueue         :: !(Que.MinPQueue (CHRPrioEvaluatableVal bprio) (CHRMonoBacktrackPrioT cnstr guard bprio prio subst env m (SolverResult subst)))
       , _chrgstTrace                 :: SolveTrace' cnstr (StoredCHR cnstr guard bprio prio) subst
       , _chrgstStatNrSolveSteps      :: !Int
+      , _chrgstVarToNmMp             :: VarToNmMp
       }
   deriving (Typeable)
 
 emptyCHRGlobState :: CHRGlobState c g b p s e m
-emptyCHRGlobState = CHRGlobState emptyCHRStore 0 emptyWorkStore initWorkTime Que.empty emptySolveTrace 0
+emptyCHRGlobState = CHRGlobState emptyCHRStore 0 emptyWorkStore initWorkTime Que.empty emptySolveTrace 0 emptyVarToNmMp
 
 -- | Backtrackable state
 data CHRBackState cnstr bprio subst env
