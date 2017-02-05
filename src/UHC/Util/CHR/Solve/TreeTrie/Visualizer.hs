@@ -14,10 +14,10 @@ import qualified UHC.Util.Lookup as Lk
 import           UHC.Util.PrettySimple
 import           UHC.Util.CHR.Rule
 import           UHC.Util.CHR.GTerm.Parser
-import           UHC.Util.CHR.Solve.TreeTrie.Mono
+-- import           UHC.Util.CHR.Solve.TreeTrie.Mono
 import           UHC.Util.CHR.Solve.TreeTrie.MonoBacktrackPrio as MBP
 import           UHC.Util.CHR.Solve.TreeTrie.Examples.Term.AST
-import           UHC.Util.CHR.Solve.TreeTrie.Internal
+-- import           UHC.Util.CHR.Solve.TreeTrie.Internal
 import           UHC.Util.CHR.Solve.TreeTrie.Internal.Shared
 import           UHC.Util.Substitutable
 import           Data.Graph.Inductive.Graph

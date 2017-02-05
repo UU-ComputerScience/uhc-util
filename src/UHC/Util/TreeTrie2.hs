@@ -32,7 +32,6 @@ module UHC.Util.TreeTrie2
   , TreeTrieMp1Key(..)
   , TreeTrieMpKey
   -}
-  -- , TreeTrieKey
   , Key
   
   {-
@@ -57,6 +56,7 @@ module UHC.Util.TreeTrie2
   , prekey1Nil
   , prekey1Delegate
   , prekey1WithChildren
+  , prekey1With2Children
   , prekey1WithChild
   
     -- * TreeTrie
@@ -165,9 +165,6 @@ key1IsWild _         = False
 newtype Key k = Key {unKey :: [Key1 k]}
   deriving (Eq, Ord, Generic, Typeable, Show)
 
--- | Alias
-type TreeTrieKey k = Key k
-
 instance PP k => PP (Key k) where
   pp = ppBracketsCommas . unKey
 
@@ -211,6 +208,7 @@ type instance TrTrKey [x] = TrTrKey x
 data PreKey1Cont y where
   PreKey1Cont_None :: PreKey1Cont y
   PreKey1Cont      :: (TrTrKey y ~ TrTrKey x, TreeTrieKeyable x) =>  x  -> PreKey1Cont y
+  PreKey1Cont2     :: (TrTrKey y ~ TrTrKey x1, TrTrKey y ~ TrTrKey x2, TreeTrieKeyable x1, TreeTrieKeyable x2) =>  x1 -> x2  -> PreKey1Cont y
   PreKey1Conts     :: (TrTrKey y ~ TrTrKey x, TreeTrieKeyable x) => [x] -> PreKey1Cont y
 
 data PreKey1 x
@@ -222,6 +220,11 @@ data PreKey1 x
 -- | Keyable values, i.e. capable of yielding a TreeTrieKey for retrieval from a trie
 class TreeTrieKeyable x where
   toTreeTriePreKey1 :: x -> PreKey1 x
+
+{-
+instance TreeTrieKeyable (a,b) where
+  toTreeTriePreKey1 (a,b) = PreKey1Cont2 a b
+-}
 
 toTreeTrieKey :: TreeTrieKeyable x => x -> Key (TrTrKey x)
 toTreeTrieKey = keyRawToCanon . Key . mkx
@@ -235,6 +238,7 @@ toTreeTrieKey = keyRawToCanon . Key . mkx
         cont c = case c of
           PreKey1Cont_None -> nil
           PreKey1Cont  x   -> mkx x
+          PreKey1Cont2 x y -> zipWithN Key1_Multi [mkx x, mkx y]
           PreKey1Conts xs  -> zipWithN Key1_Multi $ map mkx xs
 
 -- | Single key
@@ -260,6 +264,10 @@ prekey1WithChild k c = PreKey1 k (PreKey1Cont c)
 -- | Key with children
 prekey1WithChildren :: (TrTrKey y ~ TrTrKey x, TreeTrieKeyable y) => TrTrKey x -> [y] -> PreKey1 x
 prekey1WithChildren k cs = PreKey1 k (PreKey1Conts cs)
+
+-- | Key with 2 children
+prekey1With2Children :: (TrTrKey y1 ~ TrTrKey x, TrTrKey y2 ~ TrTrKey x, TreeTrieKeyable y1, TreeTrieKeyable y2) => TrTrKey x -> y1 -> y2 -> PreKey1 x
+prekey1With2Children k c1 c2 = PreKey1 k (PreKey1Cont2 c1 c2)
 
 -------------------------------------------------------------------------------------------
 --- TreeTrie structure

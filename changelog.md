@@ -2,6 +2,7 @@
 
 ## 0.1.6.8
 
+- [api] addition of replacement for TreeTrie required for CHR solving (gives x4 performance improvement), also forcing changes in uhc
 - [api] rewrite of scoped lookup/map
 
 ## 0.1.6.7

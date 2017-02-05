@@ -61,8 +61,8 @@ runFile runopts f = do
             mbp = do
               -- print program
               liftIO $ putPPLn $ "Rules" >-< indent 2 (vlist $ map pp prog)
-              liftIO $ putPPLn $ "Rule TT  keys" >-< indent 2 (vlist $ map (pp . TT.chrToKey . head . ruleHead) prog)
-              liftIO $ putPPLn $ "Rule TT2 keys" >-< indent 2 (vlist $ map (pp . TT2.toTreeTrieKey) prog)
+              -- liftIO $ putPPLn $ "Rule TT  keys" >-< indent 2 (vlist $ map (pp . TT.chrToKey . head . ruleHead) prog)
+              -- liftIO $ putPPLn $ "Rule TT2 keys" >-< indent 2 (vlist $ map (pp . TT2.toTreeTrieKey) prog)
               -- freshen query vars
               query <- slvFreshSubst Set.empty query >>= \s -> return $ s `varUpd` query
               -- print query
