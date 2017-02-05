@@ -28,12 +28,13 @@ module UHC.Util.CHR.Solve.TreeTrie.Internal.Shared
   where
 
 import           UHC.Util.CHR.Key
-import           UHC.Util.TreeTrie as TreeTrie
+import           UHC.Util.TreeTrie          as TreeTrie
+-- import           UHC.Util.TreeTrie2         as TreeTrie
 
-import           UHC.Util.Pretty as Pretty
+import           UHC.Util.Pretty            as Pretty
 import           UHC.Util.AssocL
 
-import qualified Data.Map as Map
+import qualified Data.Map                   as Map
 
 -------------------------------------------------------------------------------------------
 --- Choice of Trie structure

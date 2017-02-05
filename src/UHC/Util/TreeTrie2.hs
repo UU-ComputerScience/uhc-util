@@ -31,8 +31,10 @@ module UHC.Util.TreeTrie2
     TreeTrie1Key(..)
   , TreeTrieMp1Key(..)
   , TreeTrieMpKey
+  -}
   , TreeTrieKey
   
+  {-
   , TrTrKey
   
   , ppTreeTrieKey
@@ -56,15 +58,19 @@ module UHC.Util.TreeTrie2
   , prekey1WithChildren
   , prekey1WithChild
   
-  {-
     -- * TreeTrie
   , TreeTrie
   , emptyTreeTrie
   , empty
   , toListByKey, toList
   , fromListByKeyWith, fromList
-
+  {-
+  -}
+  
     -- * Lookup
+  , lookup
+  , lookupResultToList
+  {-
   , TreeTrieLookup(..)
   
   , lookupPartialByKey
@@ -92,6 +98,7 @@ module UHC.Util.TreeTrie2
 import qualified Data.Set                   as Set
 import qualified Data.Map                   as Map
 import           Data.Maybe
+import           Data.Monoid
 import           Prelude                    hiding (lookup,null)
 import qualified UHC.Util.FastSeq           as Seq
 import qualified Data.List                  as List
@@ -108,13 +115,14 @@ import           UHC.Util.Serialize
 --- Key AST, used to index into TreeTrie
 -------------------------------------------------------------------------------------------
 
--- | Key used on 1 level of trie
+-- | Key used on 1 level of trie.
+-- Key1_Wild plays a special role, may occur in Key1_Multi only, and in there it is guaranteed to have non wild siblings, allowing easy wildcard lookup where only not all elements of the group need be a specific Key1_Single
 data Key1 k
   = Key1_Single k
   | Key1_Multi  [Key1 k]
   | Key1_Wild                   -- ^ equal to anything
   | Key1_Nil                    -- ^ equal to nothing, except Key1_Wild
-  deriving (Generic, Typeable)
+  deriving (Generic, Typeable {-, Eq, Ord -})
 
 instance Functor Key1 where
   fmap f (Key1_Single k) = Key1_Single $ f k
@@ -122,6 +130,8 @@ instance Functor Key1 where
   fmap _ Key1_Wild       = Key1_Wild
   fmap _ Key1_Nil        = Key1_Nil
 
+{-
+-}
 instance Eq k => Eq (Key1 k) where
   Key1_Single k1 == Key1_Single k2 = k1  == k2
   Key1_Multi ks1 == Key1_Multi ks2 = ks1 == ks2
@@ -153,9 +163,17 @@ instance PP k => PP (Key1 k) where
   pp  Key1_Wild      = pp "*"
   pp  Key1_Nil       = pp "_"
 
+key1IsWild :: Key1 k -> Bool
+key1IsWild Key1_Wild = True
+key1IsWild _         = False
+{-# INLINE key1IsWild #-}
+
 -- | Full key
 newtype Key k = Key {unKey :: [Key1 k]}
   deriving (Eq, Ord, Generic, Typeable, Show)
+
+-- | Alias
+type TreeTrieKey k = Key k
 
 instance PP k => PP (Key k) where
   pp = ppBracketsCommas . unKey
@@ -184,7 +202,7 @@ keyRawToCanon :: Key k -> Key k
 keyRawToCanon = Key . simp . unKey
   where simp ks = case ks of
           (k:ks) | Key1_Nil  <- kc -> []
-                 | Key1_Wild <- kc -> [] -- [Key1_Wild]
+                 | Key1_Wild <- kc -> [] -- [Key1_Wild] -- if only wild further subtree matching would succeed by def
                  | otherwise       -> kc : simp ks
             where kc = key1RawToCanon k
           _ -> []
@@ -226,21 +244,27 @@ toTreeTrieKey = keyRawToCanon . Key . mkx
           PreKey1Cont  x   -> mkx x
           PreKey1Conts xs  -> zipWithN Key1_Multi $ map mkx xs
 
+-- | Single key
 prekey1 :: TrTrKey x -> PreKey1 x
 prekey1 k = PreKey1 k PreKey1Cont_None
 
+-- | Wildcard, matching anything
 prekey1Wild :: PreKey1 x
 prekey1Wild = PreKey1_Wild
 
+-- | No key
 prekey1Nil :: PreKey1 x
 prekey1Nil = PreKey1_Nil
 
+-- | No key, delegate to next layer
 prekey1Delegate :: (TrTrKey y ~ TrTrKey x, TreeTrieKeyable y) => y -> PreKey1 x
 prekey1Delegate c = PreKey1_Deleg (PreKey1Cont c)
 
+-- | Key with single child
 prekey1WithChild :: (TrTrKey y ~ TrTrKey x, TreeTrieKeyable y) => TrTrKey x -> y -> PreKey1 x
 prekey1WithChild k c = PreKey1 k (PreKey1Cont c)
 
+-- | Key with children
 prekey1WithChildren :: (TrTrKey y ~ TrTrKey x, TreeTrieKeyable y) => TrTrKey x -> [y] -> PreKey1 x
 prekey1WithChildren k cs = PreKey1 k (PreKey1Conts cs)
 
@@ -265,13 +289,11 @@ emptyTreeTrie = TreeTrie Nothing Map.empty
 
 empty = emptyTreeTrie
 
-{-
 instance (Show k, Show v) => Show (TreeTrie k v) where
   showsPrec _ t = showList $ toListByKey t
 
 instance (PP k, PP v) => PP (TreeTrie k v) where
-  pp t = ppBracketsCommasBlock $ map (\(a,b) -> ppTreeTrieKey a >#< ":" >#< b) $ toListByKey t
--}
+  pp t = ppBracketsCommasBlock $ map (\(a,b) -> a >#< ":" >#< b) $ toListByKey t
 
 -------------------------------------------------------------------------------------------
 --- Conversion
@@ -279,224 +301,82 @@ instance (PP k, PP v) => PP (TreeTrie k v) where
 
 -- Reconstruction of original key-value pairs.
 
-{-
-toFastSeqSubs :: TreeTrieChildren k v -> Seq.FastSeq (TreeTrieKey k, v)
-toFastSeqSubs ttries
-  = Seq.unions
-      [ Seq.map (\(TreeTrieKey ks,v) -> (TreeTrieKey $ k:ks, v)) $ toFastSeq True t
+toFastSeqSubsWith :: (Key k -> v -> v') -> TreeTrieChildren k v -> Seq.FastSeq v'
+toFastSeqSubsWith mk ttries
+  = mconcat
+      [ toFastSeqWith (\(Key ks) v -> mk (Key $ k:ks) v) True t
       | (k,t) <- Map.toList ttries
       ]
 
-toFastSeq :: Bool -> TreeTrie k v -> Seq.FastSeq (TreeTrieKey k, v)
-toFastSeq inclEmpty ttrie
-  =          (case ttrieMbVal ttrie of
-                Just v | inclEmpty -> Seq.singleton (TreeTrieKey [], v)
-                _                  -> Seq.empty
-             )
-    Seq.:++: toFastSeqSubs (ttrieSubs ttrie)
+toFastSeqSubs :: TreeTrieChildren k v -> Seq.FastSeq (Key k, v)
+toFastSeqSubs = toFastSeqSubsWith (,)
+{-
+toFastSeqSubs ttries
+  = mconcat
+      [ Seq.map (\(Key ks,v) -> (Key $ k:ks, v)) $ toFastSeq True t
+      | (k,t) <- Map.toList ttries
+      ]
+-}
 
-toListByKey, toList :: TreeTrie k v -> [(TreeTrieKey k,v)]
+toFastSeqWith :: (Key k -> v -> v') -> Bool -> TreeTrie k v -> Seq.FastSeq v'
+toFastSeqWith mk inclEmpty ttrie
+  =           (case ttrieMbVal ttrie of
+                 Just v | inclEmpty -> Seq.singleton $ mk (Key []) v
+                 _                  -> Seq.empty
+              )
+    `mappend` toFastSeqSubsWith mk (ttrieSubs ttrie)
+
+toFastSeq :: Bool -> TreeTrie k v -> Seq.FastSeq (Key k, v)
+toFastSeq = toFastSeqWith (,)
+{-
+toFastSeq inclEmpty ttrie
+  =           (case ttrieMbVal ttrie of
+                 Just v | inclEmpty -> Seq.singleton (Key [], v)
+                 _                  -> Seq.empty
+              )
+    `mappend` toFastSeqSubs (ttrieSubs ttrie)
+-}
+
+toListByKey, toList :: TreeTrie k v -> [(Key k,v)]
 toListByKey = Seq.toList . toFastSeq True
 
 toList = toListByKey
 
-fromListByKeyWith :: Ord k => (v -> v -> v) -> [(TreeTrieKey k,v)] -> TreeTrie k v
+fromListByKeyWith :: Ord k => (v -> v -> v) -> [(Key k,v)] -> TreeTrie k v
 fromListByKeyWith cmb = unionsWith cmb . map (uncurry singleton)
 
-fromListByKey :: Ord k => [(TreeTrieKey k,v)] -> TreeTrie k v
+fromListByKey :: Ord k => [(Key k,v)] -> TreeTrie k v
 fromListByKey = unions . map (uncurry singleton)
 
-fromListWith :: Ord k => (v -> v -> v) -> [(TreeTrieKey k,v)] -> TreeTrie k v
+fromListWith :: Ord k => (v -> v -> v) -> [(Key k,v)] -> TreeTrie k v
 fromListWith cmb = fromListByKeyWith cmb
 
-fromList :: Ord k => [(TreeTrieKey k,v)] -> TreeTrie k v
+fromList :: Ord k => [(Key k,v)] -> TreeTrie k v
 fromList = fromListByKey
--}
-
--------------------------------------------------------------------------------------------
---- TreeTrie lookup/insertion, how to
--------------------------------------------------------------------------------------------
-
-{-
-
--- | How to lookup in a TreeTrie
-data TreeTrieLookup
-  = TTL_Exact                           -- lookup with exact match
-  | TTL_WildInTrie                      -- lookup with wildcard matching in trie
-  | TTL_WildInKey                       -- lookup with wildcard matching in key
-  deriving (Eq)
-  
--}
 
 -------------------------------------------------------------------------------------------
 --- Lookup
 -------------------------------------------------------------------------------------------
 
+type LkRes v = (Seq.FastSeq v, Seq.FastSeq v, Maybe v)
+
+-- | Lookup giving back possible precise result and values found whilst descending into trie (corresponding to wildcard in key in trie) and remaining when key is exhausted (corresponding to wildcard in key)
+lookupWith :: Ord k => (Key k -> v -> v') -> Key k -> TreeTrie k v -> LkRes v'
+lookupWith mkRes keys ttrie = case unKey keys of
+    [] -> (mempty, toFastSeqWith mkRes True ttrie, fmap (mkRes $ Key []) $ ttrieMbVal ttrie)
+    (k : ks)
+       -> case Map.lookup k $ ttrieSubs ttrie of
+            Just ttrie'
+              -> (pp `mappend` p, s, m)
+              where (p, s, m) = lookupWith (\(Key ks) v -> mkRes (Key (k : ks)) v) (Key ks) ttrie'
+            _ -> (pp, mempty, Nothing)
+       where pp = maybe mempty (Seq.singleton . mkRes (Key [])) (ttrieMbVal ttrie)
+
+-- | Lookup giving back possible precise result and values found whilst descending into trie (corresponding to wildcard in key in trie) and remaining when key is exhausted (corresponding to wildcard in key)
+lookup :: Ord k => Key k -> TreeTrie k v -> LkRes v
+lookup = lookupWith $ \_ v -> v
+
 {-
-data LookupAllMatch v
-  = LookupAllMatch
-      { lookupAllMatchWildInTrie    :: [v]
-      , lookupAllMatchExact         :: Maybe v
-      , lookupAllMatchWildInKey     :: [v]
-      }
-  deriving Show
-
-emptyLookupAllMatch = LookupAllMatch [] Nothing []
-
--- | Incorrect, under dev
-lookupAllMatch :: Ord k => TreeTrieKey k -> TreeTrie k v -> LookupAllMatch v
-lookupAllMatch (TreeTrieKey ks) ttrie
-    = l id ks ttrie
-  where
-    -- lookup
-    l updTKey ks ttrie = case ks of
-      []     -> emptyLookupAllMatch { lookupAllMatchExact = ttrieMbVal ttrie }
-      (k:ks) -> case Map.lookup k $ ttrieSubs ttrie of
-        Nothing     -> LookupAllMatch [] Nothing []
-        Just ttrie' -> case l id ks ttrie' of
-          m -> -- @(LookupAllMatch {lookupAllMatchWildInTrie=subs1, lookupAllMatchWildInKey=subs2}) ->
-              m { lookupAllMatchWildInTrie = catMaybes (map lookupAllMatchExact subs1) ++ concatMap lookupAllMatchWildInTrie subs1
-                , lookupAllMatchWildInKey  = catMaybes (map lookupAllMatchExact subs2) ++ concatMap lookupAllMatchWildInKey  subs2
-                }
-            where subs1 -- (subs,mbs)
-                    = -- unzip
-                        [ case ks of
-                            []                             -> l id [] t
-                            (_:_) | Map.null (ttrieSubs t) -> match (fromJust mbm) ks
-                                  | otherwise              -> l (fromJust mbm) ks t
-                               where match m (km:kms)
-                                       = case matchTreeTrieMpKeyTo kt' km of
-                                           Just m -> match m kms
-                                           _      -> emptyLookupAllMatch
-                                       where kt' = m $ TreeTrieMpKey $ repeat (TTM1K [])
-                                     match _ []
-                                       = l id [] t
-                        | (kt,t) <- Map.toList $ ttrieSubs ttrie
-                        , let kt' = updTKey kt
-                              mbm = matchTreeTrieMpKeyTo kt' k
-                        , isJust mbm
-                        ]
-                  subs2 -- (subs,mbs)
-                    = -- unzip
-                        [ case ks of
-                            (ksk:ksks)                  -> l id (fromJust m ksk : ksks) t
-                            [] | Map.null (ttrieSubs t) -> l id  [] t
-                               | otherwise              -> l id ([fromJust m $ TreeTrieMpKey $ repeat (TTM1K [])]) t
-                        | (kt,t) <- Map.toList $ ttrieSubs ttrie
-                        , let m = matchTreeTrieMpKeyTo k kt
-                        , isJust m
-                        ]
--}
-{-
-    -- lookup
-    l updTKey ks ttrie = case ks of
-      []     -> dflt ttrie
-      (k:ks) -> case Map.lookup k $ ttrieSubs ttrie of
-        Nothing     -> LookupAllMatch [] Nothing []
-        Just ttrie' -> case l id ks ttrie' of
-          m -> -- @(LookupAllMatch {lookupAllMatchWildInTrie=subs1, lookupAllMatchWildInKey=subs2}) ->
-              m { lookupAllMatchWildInTrie = catMaybes (map lookupAllMatchExact subs1) ++ concatMap lookupAllMatchWildInTrie subs1
-                , lookupAllMatchWildInKey  = catMaybes (map lookupAllMatchExact subs2) ++ concatMap lookupAllMatchWildInKey  subs2
-                }
-            where subs1 -- (subs,mbs)
-                    = -- unzip
-                        [ case ks of
-                            []                             -> l id [] t
-                            (_:_) | Map.null (ttrieSubs t) -> match (fromJust mbm) ks
-                                  | otherwise              -> l (fromJust mbm) ks t
-                               where match m (km:kms)
-                                       = case matchTreeTrieMpKeyTo kt' km of
-                                           Just m -> match m kms
-                                           _      -> emptyLookupAllMatch
-                                       where kt' = m $ TreeTrieMpKey $ repeat (TTM1K [])
-                                     match _ []
-                                       = l id [] t
-                        | (kt,t) <- Map.toList $ ttrieSubs ttrie
-                        , let kt' = updTKey kt
-                              mbm = matchTreeTrieMpKeyTo kt' k
-                        , isJust mbm
-                        ]
-                  subs2 -- (subs,mbs)
-                    = -- unzip
-                        [ case ks of
-                            (ksk:ksks)                  -> l id (fromJust m ksk : ksks) t
-                            [] | Map.null (ttrieSubs t) -> l id  [] t
-                               | otherwise              -> l id ([fromJust m $ TreeTrieMpKey $ repeat (TTM1K [])]) t
-                        | (kt,t) <- Map.toList $ ttrieSubs ttrie
-                        , let m = matchTreeTrieMpKeyTo k kt
-                        , isJust m
-                        ]
-
-    -- default return
-    dflt ttrie = emptyLookupAllMatch { lookupAllMatchExact = ttrieMbVal ttrie }
--}
-{-
-
--- | Normal lookup for exact match + partial matches (which require some sort of further unification, determining whether it was found)
-lookupPartialByKey' :: forall k v v' . (PP k,Ord k) => (TreeTrieKey k -> v -> v') -> TreeTrieLookup -> TreeTrieKey k -> TreeTrie k v -> ([v'],Maybe v')
-lookupPartialByKey' mkRes ttrieLookup keys ttrie
-  = l id mkRes keys ttrie
-  where l :: (TreeTrieMpKey k -> TreeTrieMpKey k) -> (TreeTrieKey k -> v -> v') -> TreeTrieKey k -> TreeTrie k v -> ([v'],Maybe v')
-        l = case ttrieLookup of
-              -- Exact match
-              TTL_Exact -> \_ mkRes (TreeTrieMpKey keys) ttrie ->
-                case keys of
-                  [] -> dflt mkRes ttrie
-                  (k : ks)
-                     -> case Map.lookup k $ ttrieSubs ttrie of
-                          Just ttrie'
-                            -> ([], m)
-                            where (_,m) = l id (res mkRes k) (TreeTrieMpKey ks) ttrie'
-                          _ -> ([], Nothing)
-              
-              -- Match with possible wildcard in Trie
-              TTL_WildInTrie -> \updTKey mkRes (TreeTrieMpKey keys) ttrie ->
-                -- tr "TTL_WildInTrie" (ppTreeTrieKey keys >#< (ppTreeTrieMpKey $ updTKey $ replicate (5) (TTM1K []))) $
-                case keys of
-                  [] -> dflt mkRes ttrie
-                  (k : ks)
-                     -> (catMaybes mbs ++ concat subs, Nothing)
-                     where (subs,mbs)
-                             = unzip
-                                 [ case ks of
-                                     []                                  -> l id (res mkRes k) [] t
-                                     (ksk:ksks) | Map.null (ttrieSubs t) -> match (res mkRes k) (fromJust mbm) ks
-                                                | otherwise              -> l (fromJust mbm) (res mkRes k) ks t
-                                        where match mkRes m (km:kms)
-                                                = case matchTreeTrieMpKeyTo kt' km of
-                                                    Just m -> match (res mkRes k) m kms
-                                                    _      -> ([], Nothing)
-                                                where kt' = m $ repeat (TTM1K [])
-                                              match mkRes _ []
-                                                = l id (res mkRes k) [] t
-                                 | (kt,t) <- Map.toList $ ttrieSubs ttrie
-                                 , let kt' = updTKey kt
-                                       mbm = -- (\v -> tr "XX" (ppTreeTrieMpKey kt >#< (ppTreeTrieMpKey $ updTKey $ replicate (5) (TTM1K [])) >#< ppTreeTrieMpKey kt' >#< ppTreeTrieMpKey k >#< maybe (pp "--") (\f -> ppTreeTrieMpKey $ f $ repeat (TTM1K [])) v) v) $ 
-                                             matchTreeTrieMpKeyTo kt' k
-                                 , isJust mbm
-                                 ]
-              
-              -- Match with possible wildcard in Key
-              TTL_WildInKey -> \updTKey mkRes (TreeTrieMpKey keys) ttrie ->
-                case keys of
-                  [] -> dflt mkRes ttrie
-                  (k : ks)
-                     -> (catMaybes mbs ++ concat subs, Nothing)
-                     where (subs,mbs)
-                             = unzip
-                                 [ case ks of
-                                     (ksk:ksks)                  -> l id (res mkRes kt) (TreeTrieKey $ fromJust m ksk : ksks) t
-                                     [] | Map.null (ttrieSubs t) -> l id (res mkRes kt) (TreeTrieKey []) t
-                                        | otherwise              -> l id (res mkRes kt) (TreeTrieKey [fromJust m $ repeat (TTM1K [])]) t
-                                 | (kt,t) <- Map.toList $ ttrieSubs ttrie
-                                 , let m = -- (\v -> tr "YY" (ppTreeTrieMpKey k >#< ppTreeTrieMpKey kt >#< maybe (pp "--") (\f -> ppTreeTrieMpKey $ f $ repeat (TTM1K [])) v) v) $ 
-                                           matchTreeTrieMpKeyTo k kt
-                                 , isJust m
-                                 ]
-          
-          -- Utils
-          where dflt mkRes ttrie = ([],fmap (mkRes []) $ ttrieMbVal ttrie)
-                res mkRes k = \ks v -> mkRes (k : ks) v
 
 lookupPartialByKey :: (PP k,Ord k) => TreeTrieLookup -> TreeTrieKey k -> TreeTrie k v -> ([v],Maybe v)
 lookupPartialByKey = lookupPartialByKey' (\_ v -> v)
@@ -505,12 +385,12 @@ lookupByKey, lookup :: (PP k,Ord k) => TreeTrieKey k -> TreeTrie k v -> Maybe v
 lookupByKey keys ttrie = snd $ lookupPartialByKey TTL_WildInTrie keys ttrie
 
 lookup = lookupByKey
+-}
 
 -- | Convert the lookup result to a list of results
-lookupResultToList :: ([v],Maybe v) -> [v]
-lookupResultToList (vs,mv) = maybeToList mv ++ vs
+lookupResultToList :: LkRes v -> [v]
+lookupResultToList (p,s,mv) = maybeToList mv ++ Seq.toList (p `mappend` s)
 
--}
 
 -------------------------------------------------------------------------------------------
 --- Observation
@@ -534,22 +414,19 @@ elems = map snd . toListByKey
 --- Construction
 -------------------------------------------------------------------------------------------
 
-{-
-singleton :: Ord k => TreeTrieKey k -> v -> TreeTrie k v
-singleton (TreeTrieKey keys) val
+singleton :: Ord k => Key k -> v -> TreeTrie k v
+singleton (Key keys) val
   = s keys
   where s []       = TreeTrie (Just val) Map.empty
-        s (k : ks) = TreeTrie Nothing (Map.singleton k $ singleton (TreeTrieKey ks) val) 
+        s (k : ks) = TreeTrie Nothing (Map.singleton k $ singleton (Key ks) val) 
 
 singletonKeyable :: (Ord (TrTrKey v),TreeTrieKeyable v) => v -> TreeTrie (TrTrKey v) v
 singletonKeyable val = singleton (toTreeTrieKey val) val
--}
 
 -------------------------------------------------------------------------------------------
 --- Union, insert, ...
 -------------------------------------------------------------------------------------------
 
-{-
 unionWith :: Ord k => (v -> v -> v) -> TreeTrie k v -> TreeTrie k v -> TreeTrie k v
 unionWith cmb t1 t2
   = TreeTrie
@@ -570,18 +447,17 @@ unionsWith cmb ts = foldr1 (unionWith cmb) ts
 unions :: Ord k => [TreeTrie k v] -> TreeTrie k v
 unions = unionsWith const
 
-insertByKeyWith :: Ord k => (v -> v -> v) -> TreeTrieKey k -> v -> TreeTrie k v -> TreeTrie k v
+insertByKeyWith :: Ord k => (v -> v -> v) -> Key k -> v -> TreeTrie k v -> TreeTrie k v
 insertByKeyWith cmb keys val ttrie = unionsWith cmb [singleton keys val,ttrie]
 
-insertByKey :: Ord k => TreeTrieKey k -> v -> TreeTrie k v -> TreeTrie k v
+insertByKey :: Ord k => Key k -> v -> TreeTrie k v -> TreeTrie k v
 insertByKey = insertByKeyWith const
 
-insert :: Ord k => TreeTrieKey k -> v -> TreeTrie k v -> TreeTrie k v
+insert :: Ord k => Key k -> v -> TreeTrie k v -> TreeTrie k v
 insert = insertByKey
 
 insertKeyable :: (Ord (TrTrKey v),TreeTrieKeyable v) => v -> TreeTrie (TrTrKey v) v -> TreeTrie (TrTrKey v) v
 insertKeyable val = insertByKey (toTreeTrieKey val) val
--}
 
 -------------------------------------------------------------------------------------------
 --- Delete, ...
@@ -611,32 +487,15 @@ deleteListByKey keys ttrie = foldl (\t k -> deleteByKey k t) ttrie keys
 --- Instances: Serialize
 -------------------------------------------------------------------------------------------
 
-{-
-instance Serialize k => Serialize (TreeTrie1Key k) where
-  sput (TT1K_Any            ) = sputWord8 0
-  sput (TT1K_One   a        ) = sputWord8 1 >> sput a
-  sget
-    = do t <- sgetWord8
-         case t of
-            0 -> return TT1K_Any
-            1 -> liftM  TT1K_One         sget
-
-instance Serialize k => Serialize (TreeTrieMp1Key k) where
-  sput (TTM1K_Any            ) = sputWord8 0 -- >> sput a
-  sput (TTM1K       a        ) = sputWord8 1 >> sput a
-  sget
-    = do t <- sgetWord8
-         case t of
-            0 -> return TTM1K_Any     -- sget
-            1 -> liftM  TTM1K         sget
-
 instance (Ord k, Serialize k, Serialize v) => Serialize (TreeTrie k v) where
   sput (TreeTrie a b) = sput a >> sput b
   sget = liftM2 TreeTrie sget sget
   
-instance (Serialize k) => Serialize (TreeTrieMpKey k)
-instance (Serialize k) => Serialize (TreeTrieKey k)
--}
+instance (Serialize k) => Serialize (Key k) where
+  sput (Key a) = sput a
+  sget = liftM Key sget
+  
+instance (Serialize k) => Serialize (Key1 k)
 
 -------------------------------------------------------------------------------------------
 --- Test
