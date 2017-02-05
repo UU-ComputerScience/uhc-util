@@ -87,6 +87,7 @@ import           Unsafe.Coerce
 import qualified Data.Set as Set
 import           UHC.Util.Pretty
 import           UHC.Util.CHR.Key
+import qualified UHC.Util.TreeTrie2         as TT2
 import           UHC.Util.CHR.Types
 import           Control.Monad
 import           Control.Monad.State.Strict
@@ -278,9 +279,14 @@ class ( CHRMatchable env c subst
       , Typeable c
       , Serialize c
       , TTKeyable c
+      , TT2.TreeTrieKeyable c
       , IsConstraint c
-      , Ord c, Ord (TTKey c)
-      , PP c, PP (TTKey c)
+      , Ord c
+      , Ord (TTKey c)
+      , Ord (TT2.TrTrKey c)
+      , PP c
+      , PP (TTKey c)
+      , PP (TT2.TrTrKey c)
       ) => IsCHRConstraint env c subst
 
 -------------------------------------------------------------------------------------------

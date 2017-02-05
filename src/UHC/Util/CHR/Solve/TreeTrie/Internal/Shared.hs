@@ -12,12 +12,16 @@ module UHC.Util.CHR.Solve.TreeTrie.Internal.Shared
   , chrToWorkKey
 
   , CHRKey
+  , CHRKey2
 
   , WorkTime
   , initWorkTime
   
   , WorkKey
-  , Work(..)
+  , WorkKey2
+  , Work'(..)
+  , Work
+  , Work2
   
   , SolveStep'(..)
   , SolveTrace'
@@ -29,7 +33,7 @@ module UHC.Util.CHR.Solve.TreeTrie.Internal.Shared
 
 import           UHC.Util.CHR.Key
 import           UHC.Util.TreeTrie          as TreeTrie
--- import           UHC.Util.TreeTrie2         as TreeTrie
+import qualified UHC.Util.TreeTrie2         as TT2
 
 import           UHC.Util.Pretty            as Pretty
 import           UHC.Util.AssocL
@@ -40,13 +44,22 @@ import qualified Data.Map                   as Map
 --- Choice of Trie structure
 -------------------------------------------------------------------------------------------
 
-type CHRTrie' k v = TreeTrie.TreeTrie (TTKey k) v
-type CHRTrieKey v = TreeTrie.TreeTrieKey (TTKey v)
+type CHRTrie'  k v = TreeTrie.TreeTrie  (TTKey k) v
+-- type CHRTrie2' k v = TreeTrie2.TreeTrie (TreeTrie2.TrTrKey k) v
+type CHRTrieKey  v = TreeTrie.TreeTrieKey  (TTKey v)
+-- type CHRTrieKey2 v = TreeTrie2.TreeTrieKey (TTKey v)
 
 -- | Obtain key for use in rule
 chrToKey :: (TTKeyable x, TrTrKey x ~ TTKey x) => x -> CHRTrieKey x
 chrToKey = ttkFixate . toTTKey
 {-# INLINE chrToKey #-}
+
+{-
+-- | Obtain key for use in rule
+chrToKey2 :: (TT2.TreeTrieKeyable x) => x -> TT2.Key (TT2.TrTrKey x)
+chrToKey2 = toTreeTrieKey
+{-# INLINE chrToKey2 #-}
+-}
 
 -- | Obtain key for use in to be solved context (i.e. work)
 chrToWorkKey :: (TTKeyable x) => x -> CHRTrieKey x
@@ -58,7 +71,8 @@ chrToWorkKey = ttkFixate . toTTKey' (defaultTTKeyableOpts {ttkoptsVarsAsWild = F
 -------------------------------------------------------------------------------------------
 
 -- | Convenience alias for key into CHR store
-type CHRKey v = CHRTrieKey v
+type CHRKey  v = CHRTrieKey v
+type CHRKey2 v = TT2.Key (TT2.TrTrKey v)
 
 -------------------------------------------------------------------------------------------
 --- WorkTime, the time/history counter for solver work
@@ -74,12 +88,13 @@ initWorkTime = 0
 --- Solver work and/or residual (non)work
 -------------------------------------------------------------------------------------------
 
-type WorkKey       v = CHRKey v
+type WorkKey       v = CHRKey  v
+type WorkKey2      v = CHRKey2 v
 
 -- | A chunk of work to do when solving, a constraint + sequence nr
-data Work c
+data Work' k c
   = Work
-      { workKey     :: WorkKey c                    -- ^ the key into the CHR store
+      { workKey     :: k                            -- ^ the key into the CHR store
       , workCnstr   :: !c                           -- ^ the constraint to be reduced
       , workTime    :: WorkTime                     -- ^ the timestamp identification at which the work was added
       }
@@ -91,13 +106,18 @@ data Work c
       }
   | Work_Fail
 
-type instance TTKey (Work c) = TTKey c
+type Work  c = Work' (WorkKey  c) c
+type Work2 c = Work' (WorkKey2 c) c
 
-instance Show (Work c) where
+type instance TTKey       (Work' k c) = TTKey       c
+type instance TT2.TrTrKey (Work' k c) = TT2.TrTrKey c
+
+instance Show (Work' k c) where
   show _ = "SolveWork"
 
-instance (PP (TTKey c), PP c) => PP (Work c) where
-  pp (Work         k c t) = ppParens k >|< "@" >|< t >#< c
+instance (PP k, PP c) => PP (Work' k c) where
+  pp (Work {workKey=k, workCnstr=c, workTime=t})
+                          = ppParens k >|< "@" >|< t >#< c
   pp (Work_Residue   c  ) = pp                           c
   pp (Work_Solve     c  ) = pp                           c
   pp (Work_Fail         ) = pp "fail"

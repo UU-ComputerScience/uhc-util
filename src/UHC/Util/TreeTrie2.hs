@@ -32,7 +32,8 @@ module UHC.Util.TreeTrie2
   , TreeTrieMp1Key(..)
   , TreeTrieMpKey
   -}
-  , TreeTrieKey
+  -- , TreeTrieKey
+  , Key
   
   {-
   , TrTrKey
@@ -70,24 +71,16 @@ module UHC.Util.TreeTrie2
     -- * Lookup
   , lookup
   , lookupResultToList
-  {-
-  , TreeTrieLookup(..)
-  
-  , lookupPartialByKey
-  , lookupPartialByKey'
-  , lookupByKey
-  , lookup
-  , lookupResultToList
-
     -- * Properties/observations
   , isEmpty, null
-  , elems
+  -- , elems
   
     -- * Construction
   , singleton, singletonKeyable
   , unionWith, union, unionsWith, unions
   , insertByKeyWith, insertByKey
   
+  {-
     -- * Deletion
   , deleteByKey, delete
   , deleteListByKey
