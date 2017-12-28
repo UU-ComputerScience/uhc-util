@@ -4,6 +4,12 @@ uhc-utils
 Utilities required by UHC (Utrecht Haskell Compiler)
 
 
+CHR part
+========
+
+Has been moved to chr-* packages (https://github.com/atzedijkstra/chr)
+
+
 status/disclamer
 ================
 
