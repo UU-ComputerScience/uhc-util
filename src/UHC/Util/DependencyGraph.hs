@@ -51,8 +51,10 @@ instance Show (DpdGr n) where
 instance (Ord n,PP n) => PP (DpdGr n) where
   pp g = "DpdGr" >#< ("topsort:" >#< ppCommas (dgTopSort g) >-< "scc   :" >#< ppBracketsCommas (dgSCC g) >-< "edges  :" >#< (ppBracketsCommas $ map (\(n,_,ns) -> n >|< ":" >|< ppBracketsCommas ns) $ dgEdges $ g))
 
+{- is present in fgl lib
 instance Show (SCC n) where
   show _ = "SCC"
+-}
 
 instance PP n => PP (SCC n) where
   pp (AcyclicSCC n ) = "ASCC" >#< n

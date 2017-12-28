@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.7.0
+
+- [incompatibility] with previous versions, CHR (and required code) moved to separate libs chr-*
+- [compatibility] with ghc 8.2.x
+
 ## 0.1.6.8
 
 - [api] addition of replacement for TreeTrie required for CHR solving (gives x4 performance improvement), also forcing changes in uhc

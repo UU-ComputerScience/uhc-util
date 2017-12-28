@@ -2,8 +2,10 @@
 {-# LANGUAGE TypeOperators, TypeSynonymInstances, FlexibleInstances, DefaultSignatures, UndecidableInstances #-}
 
 module UHC.Util.Utils
-  ( -- * Set
-    unionMapSet
+  ( module CHR.Utils
+  
+    -- * Set
+  , unionMapSet
 
     -- * Map
   , inverseMap
@@ -13,7 +15,8 @@ module UHC.Util.Utils
   
     -- * List
   , hdAndTl', hdAndTl
-  , maybeNull, maybeHd
+  -- , maybeNull
+  -- , maybeHd
   , wordsBy
   , initlast, initlast2
   , last'
@@ -21,10 +24,10 @@ module UHC.Util.Utils
   , listSaturate, listSaturateWith
   , spanOnRest
   , filterMb
-  , splitPlaces
-  , combineToDistinguishedEltsBy
+  -- , splitPlaces
+  -- , combineToDistinguishedEltsBy
   , partitionOnSplit
-  , zipWithN
+  -- , zipWithN
   
     -- * Tuple
   , tup123to1, tup123to2
@@ -77,20 +80,20 @@ module UHC.Util.Utils
   , showUnprefixed
   
     -- * Ordering
-  , orderingLexic
-  , orderingLexicList
+  -- , orderingLexic
+  -- , orderingLexicList
   
     -- * Misc
-  , panic
+  -- , panic
   
-  , isSortedByOn
-  , sortOnLazy
-  , sortOn
-  , sortByOn
-  , groupOn
-  , groupByOn
-  , groupSortOn
-  , groupSortByOn
+  -- , isSortedByOn
+  -- , sortOnLazy
+  -- , sortOn
+  -- , sortByOn
+  -- , groupOn
+  -- , groupByOn
+  -- , groupSortOn
+  -- , groupSortByOn
   , nubOn
   
   , consecutiveBy
@@ -123,6 +126,7 @@ import GHC.Generics
 import qualified Data.Set as Set
 import qualified Data.Map as Map
 import qualified Data.Graph as Graph
+import CHR.Utils
 
 -------------------------------------------------------------------------
 -- Set
@@ -158,6 +162,7 @@ hdAndTl :: [a] -> (a,[a])
 hdAndTl = hdAndTl' (panic "hdAndTl")
 {-# INLINE hdAndTl  #-}
 
+{-
 maybeNull :: r -> ([a] -> r) -> [a] -> r
 maybeNull n f l = if null l then n else f l
 {-# INLINE maybeNull  #-}
@@ -165,6 +170,7 @@ maybeNull n f l = if null l then n else f l
 maybeHd :: r -> (a -> r) -> [a] -> r
 maybeHd n f = maybeNull n (f . head)
 {-# INLINE maybeHd  #-}
+-}
 
 -- | Split up in words by predicate
 wordsBy :: (a -> Bool) -> [a] -> [[a]]
@@ -257,6 +263,7 @@ splitPlaces ps es = spl 0 ps es
           where (es1,es2) = splitAt (p-pos) es
                 spls = spl (pos + length es1) ps es2
 
+{-
 -- | Combine [[x1..xn],..,[y1..ym]] to [[x1..y1],[x2..y1],..,[xn..ym]].
 --   Each element [xi..yi] is distinct based on the the key k in xi==(k,_)
 combineToDistinguishedEltsBy :: (e -> e -> Bool) -> [[e]] -> [[e]]
@@ -274,6 +281,7 @@ combineToDistinguishedEltsBy eq (l:ls)
 zipWithN :: ([x] -> y) -> [[x]] -> [y]
 zipWithN f l | any null l = []
              | otherwise  = f (map head l) : zipWithN f (map tail l)
+-}
 
 -------------------------------------------------------------------------
 -- Tupling, untupling
@@ -434,13 +442,16 @@ splitForQualified s
 -- Misc
 -------------------------------------------------------------------------
 
+{-
 -- | Error, with message
 panic m = error ("panic: " ++ m)
+-}
 
 -------------------------------------------------------------------------
 -- group/sort/nub combi's
 -------------------------------------------------------------------------
 
+{-
 isSortedByOn :: (b -> b -> Ordering) -> (a -> b) -> [a] -> Bool
 isSortedByOn cmp sel l
   = isSrt l
@@ -476,6 +487,7 @@ groupByOn eq sel = groupBy (eq `on` sel) -- (\e1 e2 -> sel e1 `eq` sel e2)
 
 groupSortByOn :: (b -> b -> Ordering) -> (a -> b) -> [a] -> [[a]]
 groupSortByOn cmp sel = groupByOn (\e1 e2 -> cmp e1 e2 == EQ) sel . sortByOn cmp sel
+-}
 
 nubOn :: Eq b => (a->b) -> [a] -> [a]
 nubOn sel = nubBy ((==) `on` sel) -- (\a1 a2 -> sel a1 == sel a2)
@@ -522,6 +534,7 @@ partitionAndRebuild _ [] = ([], [], \_ _ -> [])
 -- Ordering
 -------------------------------------------------------------------------
 
+{-
 -- | Reduce compare results lexicographically to one compare result
 orderingLexicList :: [Ordering] -> Ordering
 orderingLexicList = foldr1 orderingLexic
@@ -531,6 +544,7 @@ orderingLexicList = foldr1 orderingLexic
 orderingLexic :: Ordering -> Ordering -> Ordering
 orderingLexic o1 o2 = if o1 == EQ then o2 else o1
 {-# INLINE orderingLexic #-}
+-}
 
 -------------------------------------------------------------------------
 -- Maybe

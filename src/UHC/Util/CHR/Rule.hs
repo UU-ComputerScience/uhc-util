@@ -41,7 +41,6 @@ module UHC.Util.CHR.Rule
   )
   where
 
-import qualified UHC.Util.TreeTrie2             as TT2
 import           UHC.Util.CHR.Base
 import           UHC.Util.VarMp
 import           UHC.Util.Utils
@@ -137,14 +136,10 @@ instance (PP c, PP g, PP p, PP bp) => PP (Rule c g bp p) where
           ppChr l = ppSpaces l -- vlist l -- ppCurlysBlock
 
 type instance TTKey (Rule cnstr guard bprio prio) = TTKey cnstr
-type instance TT2.TrTrKey (Rule cnstr guard bprio prio) = TT2.TrTrKey cnstr
 
 instance (TTKeyable cnstr) => TTKeyable (Rule cnstr guard bprio prio) where
   toTTKey' o chr = toTTKey' o $ head $ ruleHead chr
   
-instance (TT2.TreeTrieKeyable cnstr) => TT2.TreeTrieKeyable (Rule cnstr guard bprio prio) where
-  toTreeTriePreKey1 chr = TT2.prekey1Delegate $ head $ ruleHead chr
-
 -------------------------------------------------------------------------------------------
 --- Existentially quantified Rule representations to allow for mix of arbitrary universes
 -------------------------------------------------------------------------------------------

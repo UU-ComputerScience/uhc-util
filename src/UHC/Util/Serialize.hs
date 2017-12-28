@@ -99,7 +99,7 @@ import           System.IO
 import           System.IO (openBinaryFile)
 import           UHC.Util.Utils
 import           Data.Typeable
-import           Data.Typeable.Internal
+-- import           Data.Typeable.Internal
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 import qualified Data.List as List
@@ -381,6 +381,7 @@ instance Serialize Int16 where
   sput = sputPlain
   sget = sgetPlain
 
+{- FIXME? TypeRep changed, this does not work anymore...
 instance Serialize TyCon where
   sput tc = sput (tyConPackage tc) >> sput (tyConModule tc) >> sput (tyConName tc)
   sget = liftM3 mkTyCon3 sget sget sget
@@ -389,7 +390,9 @@ instance Serialize TypeRep where
   sput tr = sput tc >> sput ka >> sput ta
     where (tc,ka,ta) = splitPolyTyConApp tr
   sget = liftM3 mkPolyTyConApp sget sget sget
-
+-}  
+  
+  
 {-
 instance Serialize String where
   sput = sputShared
