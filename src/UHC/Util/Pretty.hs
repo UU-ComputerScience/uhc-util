@@ -4,19 +4,16 @@
 -------------------------------------------------------------------------
 
 module UHC.Util.Pretty
-  ( -- module UU.Pretty
-    -- module UHC.Util.Chitil.Pretty
-    module CHR.Pretty
+  ( module CHR.Pretty
 
   , putPPFPath
   )
   where
 
--- import UU.Pretty
--- import UHC.Util.Chitil.Pretty
 import CHR.Pretty
-import           UHC.Util.FPath
-import           System.IO
+import UHC.Util.FPath
+import UHC.Util.Time
+import System.IO
 
 
 -------------------------------------------------------------------------
@@ -28,6 +25,8 @@ instance PP FPath where
   pp = pp . fpathToStr
 
 
+instance PP ClockTime where
+  pp = pp . show
 
 -------------------------------------------------------------------------
 -- PP printing to file

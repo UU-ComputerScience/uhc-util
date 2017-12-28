@@ -7,6 +7,7 @@ module UHC.Util.VarLookup
     
     , VarLookupCmb(..)
     
+    , varlookupMap
     )
   where
 
@@ -28,3 +29,12 @@ infixr 7 |+>
 -- build on LookupApply, if available
 instance {-# OVERLAPPABLE #-} Lk.LookupApply m1 m2 => VarLookupCmb m1 m2 where
   (|+>) = Lk.apply
+
+-------------------------------------------------------------------------------------------
+--- Util/convenience
+-------------------------------------------------------------------------------------------
+
+-- | Combine lookup with map; should be obsolete...
+varlookupMap :: VarLookup m => (VarLookupVal m -> Maybe res) -> VarLookupKey m -> m -> Maybe res
+varlookupMap get k m = varlookup k m >>= get
+{-# INLINE varlookupMap #-}

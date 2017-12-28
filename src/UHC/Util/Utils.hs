@@ -101,7 +101,7 @@ module UHC.Util.Utils
   , partitionAndRebuild
   
     -- * Maybe
-  , panicJust
+  -- , panicJust
   , ($?)
   , orMb
   , maybeAnd
@@ -550,9 +550,11 @@ orderingLexic o1 o2 = if o1 == EQ then o2 else o1
 -- Maybe
 -------------------------------------------------------------------------
 
+{-
 panicJust :: String -> Maybe a -> a
 panicJust m = maybe (panic m) id
 {-# INLINE panicJust #-}
+-}
 
 infixr 0  $?
 
