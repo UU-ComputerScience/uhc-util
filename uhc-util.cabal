@@ -27,7 +27,7 @@ library
     fgl >= 5.6,
     hashable >= 1.2.4,
     containers >= 0.4,
-    directory >= 1.1,
+    directory >= 1.2,
     array >= 0.3,
     process >= 1.1,
     binary >= 0.5,

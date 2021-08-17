@@ -470,6 +470,4 @@ searchPathForReadableFile paths suffs fp
 -------------------------------------------------------------------------------------------
 
 fpathGetModificationTime :: FPath -> IO UTCTime
-fpathGetModificationTime fp = do let fn = fpathToStr fp
-                                 t <- getModificationTime fn
-                                 return (toUTCTime t)
+fpathGetModificationTime fp = getModificationTime (fpathToStr fp)
