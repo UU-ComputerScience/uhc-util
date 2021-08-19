@@ -23,7 +23,7 @@ import           Prelude hiding (length, init, null, concat)
 import qualified Prelude as P
 import           Data.Maybe
 import qualified Data.List as L
-import           Data.List hiding (concat, init, null, isPrefixOf, length, inits)
+import           Data.List hiding (concat, init, null, isPrefixOf, length, inits, singleton)
 import           Control.Monad
 import           UHC.Util.Utils
 import           UHC.Util.Binary
